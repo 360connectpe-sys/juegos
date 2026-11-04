@@ -6,6 +6,9 @@
 (function () {
   const C = window.CNB, UI = window.UI, NET = window.NET, A = window.AUDIO, $ = UI.$;
 
+  // Dirección base del juego (sirve en la raíz de un servidor o dentro de una carpeta, como en GitHub Pages)
+  const BASE = location.pathname.replace(/index\.html$/, '');
+
   // ---------------- Perfil del jugador ----------------
   const PERFIL_KEY = 'cnb-perfil';
   const azar = () => C.COLOR_KEYS[Math.floor(Math.random() * C.COLOR_KEYS.length)];
@@ -96,7 +99,7 @@
     $('e-inicio').textContent = '';
     codigo = r.code; yo = r.slot; ultimaClave = ''; revanchaPedida = false;
     NET.session.set(r.code, r.token);
-    try { history.replaceState(null, '', '/?sala=' + r.code); } catch (e) {}
+    try { history.replaceState(null, '', BASE + '?sala=' + r.code); } catch (e) {}
   }
   $('b-crear').onclick = crear;
   $('b-unirse').onclick = () => { A.play('click'); const f = $('f-unirse'); f.hidden = !f.hidden; if (!f.hidden) $('i-codigo').focus(); };
@@ -112,7 +115,7 @@
   document.addEventListener('visibilitychange', () => (document.hidden ? A.suspend() : A.resume()));
 
   // ---------------- Sala de espera ----------------
-  const enlace = () => `${location.origin}/?sala=${codigo}`;
+  const enlace = () => `${location.origin}${BASE}?sala=${codigo}`;
   $('b-copiar-codigo').onclick = () => UI.copiar(codigo, '¡Código copiado!');
   $('b-copiar-enlace').onclick = () => UI.copiar(enlace(), '¡Enlace copiado!');
   $('b-listo').onclick = () => {
@@ -126,7 +129,7 @@
     NET.session.clear();
     st = null; yo = null; codigo = null; ultimaClave = '';
     rJuego.reset();
-    try { history.replaceState(null, '', '/'); } catch (e) {}
+    try { history.replaceState(null, '', BASE); } catch (e) {}
     UI.show('s-inicio');
   }
   $('b-salir-sala').onclick = salir;
@@ -353,6 +356,9 @@
     else { NET.session.clear(); if (codigo) { UI.toast(r.error || 'No se pudo volver a la sala.'); codigo = null; yo = null; st = null; UI.show('s-inicio'); } }
   });
   NET.on('disconnect', () => { if (codigo) UI.toast('Se perdió la conexión. Reconectando…'); });
+  // Solo en la versión sin servidor (Firebase): el anfitrión lleva la partida en su navegador
+  NET.on('hostAway', fuera => { if (codigo && fuera) { UI.toast('El anfitrión perdió la conexión. Esperando…'); decir('El anfitrión se desconectó. Si vuelve pronto, seguimos.', { pose: 'sad' }); } else if (codigo && fuera === false) UI.toast('¡El anfitrión volvió!'); });
+  NET.on('closed', () => { if (!codigo) return; NET.session.clear(); codigo = null; yo = null; st = null; rJuego.reset(); UI.toast('El anfitrión cerró la sala.'); try { history.replaceState(null, '', BASE); } catch (e) {} UI.show('s-inicio'); });
 
   NET.on('state', s => {
     if (!codigo || s.code !== codigo) return;

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1B3D">
+<title>CONECTI NAVAL BATTLE</title>
+<meta name="description" content="¡Domina el mar, conquista la batalla! Batalla naval online 1 contra 1 con Conecti de 360 Connect.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main id="app">
+
+  <!-- ================= INICIO ================= -->
+  <section class="pantalla" id="s-inicio">
+    <header class="titulo">
+      <h1><span class="t1">CONECTI</span><span class="t2">NAVAL BATTLE</span></h1>
+      <p class="sub">¡Domina el mar, conquista la batalla!</p>
+    </header>
+
+    <div class="escena-marco"><canvas id="c-portada" aria-label="Vista previa de tu barco"></canvas></div>
+
+    <div class="panel">
+      <label class="campo" for="i-nombre"><span>NOMBRE DE CAPITÁN</span>
+        <input id="i-nombre" maxlength="14" autocomplete="nickname" placeholder="Tu nombre">
+      </label>
+      <div class="colores">
+        <div><span class="rot">CONECTI</span><div class="muestras" id="m-conecti" role="radiogroup" aria-label="Color de Conecti"></div></div>
+        <div><span class="rot">BARCO</span><div class="muestras" id="m-barco" role="radiogroup" aria-label="Color del barco"></div></div>
+      </div>
+    </div>
+
+    <div class="botones">
+      <button class="btn grande" id="b-crear">CREAR PARTIDA</button>
+      <button class="btn grande sec" id="b-unirse">UNIRSE A PARTIDA</button>
+    </div>
+    <form class="unirse" id="f-unirse" hidden>
+      <label for="i-codigo" class="rot">CÓDIGO DE LA SALA</label>
+      <div class="fila">
+        <input id="i-codigo" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CNX-ABCD">
+        <button class="btn" type="submit">ENTRAR</button>
+      </div>
+    </form>
+    <p class="error" id="e-inicio" role="alert"></p>
+
+    <div class="panel instrucciones">
+      <h2>CÓMO SE JUEGA</h2>
+      <ol>
+        <li><b>Muévete</b> hasta 24 pasos con ◀ ▶ (15 s).</li>
+        <li><b>Apunta</b>: elige ángulo, potencia y proyectil (20 s).</li>
+        <li><b>¡Fuego!</b> Proa y popa son puntos débiles: <b class="r">−20</b>. El centro está blindado: <b class="a">−8</b>.</li>
+        <li>Hunde el barco rival antes de que hunda el tuyo.</li>
+      </ol>
+    </div>
+    <p class="pie">Un juego de <b>360 Connect</b> · Placas NFC + QR · WhatsApp 974 337 299</p>
+  </section>
+
+  <!-- ================= SALA DE ESPERA ================= -->
+  <section class="pantalla" id="s-sala" hidden>
+    <div class="conecti-panel" id="cp-sala"><canvas class="cp-avatar" width="12" height="16"></canvas><p class="cp-texto"></p></div>
+    <h2>CÓDIGO DE TU SALA</h2>
+    <div class="codigo" id="t-codigo">CNX-····</div>
+    <div class="fila wrap">
+      <button class="btn sec" id="b-copiar-codigo">COPIAR CÓDIGO</button>
+      <button class="btn sec" id="b-copiar-enlace">COPIAR ENLACE</button>
+      <a class="btn wa" id="a-whatsapp" href="#" target="_blank" rel="noopener">WHATSAPP</a>
+    </div>
+    <div class="jugadores" id="l-jugadores"></div>
+    <button class="btn grande" id="b-listo">¡ESTOY LISTO!</button>
+    <button class="btn chico sec" id="b-salir-sala">SALIR</button>
+  </section>
+
+  <!-- ================= COMBATE ================= -->
+  <section class="pantalla juego" id="s-juego" hidden>
+    <div class="hud">
+      <div class="hud-j" id="hud-0"></div>
+      <div class="hud-centro">
+        <div class="hud-turno" id="hud-turno">—</div>
+        <div class="hud-reloj" id="hud-reloj">--</div>
+      </div>
+      <div class="hud-j der" id="hud-1"></div>
+    </div>
+
+    <div class="escena-marco juego-marco">
+      <canvas id="c-juego" aria-label="Mar de batalla"></canvas>
+      <div class="capa" id="ov-pausa" hidden>
+        <p class="capa-t">PARTIDA EN PAUSA</p>
+        <p id="ov-pausa-txt"></p>
+      </div>
+      <div class="capa fin" id="ov-fin" hidden>
+        <canvas id="c-fin" width="12" height="16"></canvas>
+        <p class="capa-t" id="fin-titulo"></p>
+        <p id="fin-texto"></p>
+        <div class="fila wrap">
+          <button class="btn" id="b-revancha">SOLICITAR REVANCHA</button>
+          <button class="btn sec" id="b-menu">VOLVER AL MENÚ</button>
+          <button class="btn sec" id="b-invitar">COPIAR ENLACE PARA INVITAR</button>
+        </div>
+        <p class="nota" id="fin-nota"></p>
+      </div>
+    </div>
+
+    <div class="conecti-panel" id="cp-juego"><canvas class="cp-avatar" width="12" height="16"></canvas><p class="cp-texto"></p></div>
+
+    <!-- Controles: solo se muestra el bloque de la fase actual -->
+    <div class="controles" id="ctl-mover" hidden>
+      <div class="medidor"><span>MOTOR</span><div class="barra"><i id="motor-barra"></i></div><span id="motor-txt">24/24</span></div>
+      <div class="fila">
+        <button class="btn tactil" id="b-izq" aria-label="Mover a la izquierda">◀</button>
+        <button class="btn" id="b-confirmar">CONFIRMAR</button>
+        <button class="btn tactil" id="b-der" aria-label="Mover a la derecha">▶</button>
+      </div>
+      <p class="ayuda">Teclado: A/← y D/→ para moverte · Espacio para confirmar</p>
+    </div>
+
+    <div class="controles" id="ctl-apuntar" hidden>
+      <div class="ajuste">
+        <span class="rot">ÁNGULO</span>
+        <button class="btn mini" id="b-ang-menos" aria-label="Bajar ángulo">−</button>
+        <input type="range" id="r-angulo" min="15" max="80" step="1" value="45" aria-label="Ángulo">
+        <button class="btn mini" id="b-ang-mas" aria-label="Subir ángulo">+</button>
+        <output id="o-angulo">45°</output>
+      </div>
+      <div class="ajuste">
+        <span class="rot">POTENCIA</span>
+        <button class="btn mini" id="b-pot-menos" aria-label="Bajar potencia">−</button>
+        <input type="range" id="r-potencia" min="20" max="100" step="1" value="60" aria-label="Potencia">
+        <button class="btn mini" id="b-pot-mas" aria-label="Subir potencia">+</button>
+        <output id="o-potencia">60%</output>
+      </div>
+      <div class="fila">
+        <div class="proyectiles" role="radiogroup" aria-label="Proyectil">
+          <button class="proy" data-p="tiktok" role="radio"><canvas width="12" height="12"></canvas>TIKTOK</button>
+          <button class="proy" data-p="instagram" role="radio"><canvas width="12" height="12"></canvas>INSTAGRAM</button>
+        </div>
+        <button class="btn grande fuego" id="b-disparar">¡DISPARAR!</button>
+      </div>
+      <p class="ayuda">Teclado: ↑/↓ ángulo · ←/→ potencia · 1/2 proyectil · Espacio dispara</p>
+    </div>
+
+    <div class="controles espera" id="ctl-espera"><p id="t-espera">Observa el mar...</p></div>
+    <button class="btn chico sec" id="b-abandonar">ABANDONAR PARTIDA</button>
+  </section>
+</main>
+
+<div class="sonido">
+  <button class="btn mini" id="b-sonido" aria-label="Sonido">♪</button>
+  <input type="range" id="r-volumen" min="0" max="100" value="70" aria-label="Volumen">
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="shared/constants.js"></script>
+<script src="js/engine-bundle.js"></script>
+<script src="assets/sprites/sprites.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/net-firebase.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

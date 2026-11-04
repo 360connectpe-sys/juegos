@@ -13,6 +13,18 @@ Batalla naval de artillería 1 contra 1, online y por turnos, en pixel art de 8 
 
 ---
 
+## 0. Jugar ya, sin instalar nada
+
+**https://360connectpe-sys.github.io/juegos/naval-battle/**
+
+Esa es la **versión sin servidor**: funciona en GitHub Pages y usa Firebase (el mismo proyecto de Conecti Duelo) para conectar a los dos jugadores. El navegador de quien **crea la sala** ejecuta el mismo motor del servidor (`server/*.js`, empaquetado en `js/engine-bundle.js`) y es la autoridad de la partida: turnos, tiempos, física y daño. El invitado solo envía sus acciones.
+
+Diferencias con la versión con servidor (Render):
+- El anfitrión debe **mantener la página abierta y en pantalla** durante la partida. Si la recarga o la cierra, la partida termina (si el invitado se desconecta, sí puede volver en 30 s).
+- Un jugador muy experto podría modificar su propio navegador si es el anfitrión; con el servidor en Render eso no es posible.
+
+Se genera con `node scripts/build-pages.js` (copia `public/`, cambia Socket.io por `pages/net-firebase.js` y escribe el resultado en `../naval-battle/`). Después de cambiar el juego, vuelve a ejecutarlo.
+
 ## 1. Instalar y arrancar
 
 Requisitos: **Node.js 18 o superior** (probado con Node 22).
