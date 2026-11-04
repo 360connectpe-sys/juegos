@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Conecti Naval</title>
+<meta name="description" content="Batalla naval online 1 contra 1 con Conecti de 360 Connect.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&display=swap">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+  /* Mar profundo de marca: tableros como placas cuadradas, Conecti como anfitrión fijo arriba de cada pantalla. */
+  :root {
+    --abismo:#081C40; --mar:#0E3C7A; --mar2:#145098; --celeste:#1FA4F5; --azul:#2F5BEA; --navy:#0F1B3D;
+    --espuma:#E9F6FF; --texto:#F4F9FF; --tenue:#A9C6EE; --verde:#25D366; --fuego:#FF6B3D; --oro:#FFD84A; --rojo:#FF4D5E;
+    --display:"Baloo 2", "Arial Rounded MT Bold", system-ui, sans-serif;
+    --cuerpo:"Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  html { background:var(--abismo); }
+  html, body { margin:0; min-height:100%; }
+  body {
+    background:
+      radial-gradient(120% 60% at 50% 0%, rgba(31,164,245,.25), transparent 60%),
+      repeating-radial-gradient(circle at 20% 120%, rgba(255,255,255,.035) 0 2px, transparent 2px 22px),
+      linear-gradient(180deg, var(--mar) 0%, var(--abismo) 70%);
+    background-attachment:fixed;
+    color:var(--texto); font-family:var(--cuerpo); font-size:15px; line-height:1.5;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button { font:inherit; color:inherit; }
+  .pantalla { max-width:980px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:16px;
+    padding-block:18px 28px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  [hidden] { display:none !important; }
+
+  /* ---------- Conecti anfitrión ---------- */
+  .anfitrion { width:100%; max-width:640px; display:flex; align-items:flex-end; gap:12px; }
+  .avatar { flex:none; width:76px; height:76px; border-radius:50%; overflow:hidden; border:3px solid var(--celeste);
+    background:#9CC3F0; box-shadow:0 6px 18px rgba(0,0,0,.35); }
+  .avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+  .avatar.grande { width:150px; height:150px; border-width:4px; }
+  .globo { position:relative; flex:1; min-width:0; background:var(--espuma); color:var(--navy); border-radius:18px 18px 18px 6px;
+    padding:12px 16px; font-weight:800; font-size:15px; line-height:1.4; box-shadow:0 6px 18px rgba(0,0,0,.25); }
+  .globo b { color:var(--azul); }
+  .globo .quien { display:block; font-family:var(--display); font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--celeste); font-weight:800; }
+  .salta { animation:salta .6s ease; }
+  @keyframes salta { 30% { transform:translateY(-12px) rotate(-6deg); } 60% { transform:translateY(0) rotate(4deg); } }
+  .tiembla { animation:tiembla .5s ease; }
+  @keyframes tiembla { 20%,60% { transform:translateX(-6px); } 40%,80% { transform:translateX(6px); } }
+  @media (prefers-reduced-motion: reduce) { .salta, .tiembla { animation:none; } }
+
+  /* ---------- Tipografía y botones ---------- */
+  h1 { font-family:var(--display); font-weight:800; font-size:clamp(40px, 11vw, 64px); line-height:.95; margin:0; text-align:center; text-wrap:balance; }
+  h1 .a { color:var(--celeste); }
+  h2 { font-family:var(--display); font-weight:800; font-size:22px; margin:0; text-align:center; }
+  .lema { margin:0; font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--tenue); font-weight:800; }
+  .btn { border:0; border-radius:999px; padding:14px 26px; font-family:var(--display); font-weight:800; font-size:18px; cursor:pointer;
+    background:var(--celeste); color:var(--navy); box-shadow:0 5px 0 var(--azul); transition:transform .08s; }
+  .btn:active:not(:disabled) { transform:translateY(4px); box-shadow:0 1px 0 var(--azul); }
+  .btn.sec { background:transparent; color:var(--texto); box-shadow:inset 0 0 0 2px var(--tenue); }
+  .btn.sec:active { box-shadow:inset 0 0 0 2px var(--tenue); }
+  .btn.grande { font-size:22px; padding:16px 34px; }
+  .btn:disabled { opacity:.4; cursor:default; }
+  .btn:focus-visible, .celda:focus-visible, .arma:focus-visible, .barco-sel:focus-visible, input:focus-visible { outline:3px solid var(--oro); outline-offset:3px; }
+  .wa { display:inline-flex; align-items:center; gap:8px; border-radius:999px; padding:12px 20px; background:var(--verde); color:#05341A;
+    font-family:var(--display); font-weight:800; font-size:16px; text-decoration:none; box-shadow:0 4px 0 #128C4A; }
+  .fila { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:center; }
+  .tarjeta { width:100%; max-width:640px; background:rgba(8,28,64,.55); border:1px solid rgba(169,198,238,.25); border-radius:20px; padding:16px; }
+  .error { min-height:1.5em; margin:0; color:#FF9AA4; font-weight:800; text-align:center; }
+
+  /* ---------- Inicio ---------- */
+  .armas-info { display:grid; gap:10px; }
+  .arma-info { display:grid; grid-template-columns:40px 1fr; gap:12px; align-items:center; }
+  .arma-info svg { width:40px; height:40px; }
+  .arma-info b { font-family:var(--display); font-size:17px; }
+  .arma-info span { display:block; color:var(--tenue); font-size:13px; line-height:1.35; }
+  .flota-info { display:flex; gap:10px; flex-wrap:wrap; font-size:13px; color:var(--tenue); }
+  .flota-info span { background:rgba(255,255,255,.07); border-radius:999px; padding:4px 12px; }
+
+  /* ---------- Sala ---------- */
+  .codigo { font-family:var(--display); font-weight:800; font-size:clamp(48px, 16vw, 76px); letter-spacing:.14em; line-height:1;
+    background:var(--espuma); color:var(--navy); border-radius:18px; padding:14px 18px 8px 30px; user-select:all; -webkit-user-select:all; }
+  input#inputCodigo { font-family:var(--display); font-weight:800; font-size:40px; letter-spacing:.2em; text-align:center; text-transform:uppercase;
+    width:8.2em; max-width:100%; padding:10px 8px 4px; border-radius:16px; border:3px solid var(--celeste); background:var(--espuma); color:var(--navy); }
+  .espera::after { content:""; display:inline-block; width:1.4em; text-align:left; animation:puntos 1.2s steps(4) infinite; }
+  @keyframes puntos { 0% { content:""; } 25% { content:"."; } 50% { content:".."; } 75% { content:"..."; } }
+
+  /* ---------- Tableros ---------- */
+  .tablero { --lado: min(92vw, 420px); width:var(--lado); display:grid; grid-template-columns:repeat(8, 1fr); gap:3px; padding:6px;
+    background:linear-gradient(160deg, #1A5DB0, #0B3570); border-radius:14px; border:3px solid #5FB7FF; box-shadow:0 10px 30px rgba(0,0,0,.35); position:relative; }
+  .tablero.chico { --lado: min(44vw, 230px); gap:2px; padding:4px; border-width:2px; border-radius:10px; }
+  .celda { aspect-ratio:1; border:0; padding:0; border-radius:6px; background:rgba(120,200,255,.16); position:relative; cursor:pointer;
+    display:grid; place-items:center; overflow:hidden; }
+  .tablero.chico .celda { border-radius:3px; cursor:default; }
+  .celda:hover { background:rgba(160,220,255,.3); }
+  .tablero.chico .celda:hover { background:rgba(120,200,255,.16); }
+  .celda.mira { background:rgba(255,216,74,.55) !important; box-shadow:inset 0 0 0 2px var(--oro); }
+  .celda.agua::after { content:""; width:34%; height:34%; border-radius:50%; background:rgba(255,255,255,.75); box-shadow:0 0 0 3px rgba(255,255,255,.25); }
+  .celda.impacto { background:var(--fuego) !important; }
+  .celda.impacto::after { content:""; width:46%; height:46%; background:#FFE16B; clip-path:polygon(50% 0, 62% 35%, 100% 38%, 70% 60%, 80% 100%, 50% 75%, 20% 100%, 30% 60%, 0 38%, 38% 35%); }
+  .celda.hundido { background:#3A2230 !important; }
+  .celda.hundido::after { content:"✕"; color:var(--rojo); font-weight:800; font-size:clamp(10px, 3.4vw, 22px); background:none; clip-path:none; width:auto; height:auto; }
+  /* Barcos propios */
+  .celda.barco { background:var(--b-color) !important; }
+  .celda.barco.nfc { --b-color:#2E9BF5; }
+  .celda.barco.qr { --b-color:#F2F7FF; }
+  .celda.barco.ini.h { border-radius:40% 6px 6px 40%; }
+  .celda.barco.fin.h { border-radius:6px 40% 40% 6px; }
+  .celda.barco.ini.v { border-radius:40% 40% 6px 6px; }
+  .celda.barco.fin.v { border-radius:6px 6px 40% 40%; }
+  .celda.barco.marca.nfc::before { content:""; width:56%; height:56%; background:
+      radial-gradient(circle at 20% 50%, #fff 0 12%, transparent 13%),
+      radial-gradient(circle at 20% 50%, transparent 0 32%, #fff 33% 42%, transparent 43%),
+      radial-gradient(circle at 20% 50%, transparent 0 58%, #fff 59% 68%, transparent 69%); }
+  .celda.barco.marca.qr::before { content:""; width:52%; height:52%; background:
+      conic-gradient(var(--navy) 25%, transparent 0 50%, var(--navy) 0 75%, transparent 0) 0 0 / 50% 50%; outline:2px solid var(--navy); }
+  .celda.barco.sel { box-shadow:inset 0 0 0 3px var(--oro); }
+  .celda.barco.impacto { background:var(--fuego) !important; }
+  .celda.barco.hundido { background:#3A2230 !important; }
+  .celda.boom { animation:boom .55s ease; }
+  @keyframes boom { 0% { transform:scale(1); filter:brightness(1); } 30% { transform:scale(1.25); filter:brightness(2); } 100% { transform:scale(1); } }
+  .celda.splash { animation:splash .55s ease; }
+  @keyframes splash { 0% { box-shadow:0 0 0 0 rgba(255,255,255,.9); } 100% { box-shadow:0 0 0 14px rgba(255,255,255,0); } }
+  .tablero.bloqueado .celda { cursor:default; }
+
+  /* ---------- Colocación ---------- */
+  .barcos-sel { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .barco-sel { display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.08); border:2px solid transparent; border-radius:14px;
+    padding:8px 14px; cursor:pointer; text-align:left; }
+  .barco-sel.activo { border-color:var(--oro); background:rgba(255,216,74,.12); }
+  .barco-sel .casco { display:flex; gap:2px; }
+  .barco-sel .casco i { width:16px; height:16px; border-radius:4px; background:var(--b-color); display:block; }
+  .barco-sel b { font-family:var(--display); font-size:16px; display:block; line-height:1.1; }
+  .barco-sel small { color:var(--tenue); font-size:12px; }
+
+  /* ---------- Combate ---------- */
+  .combate { width:100%; display:grid; grid-template-columns:1fr; gap:16px; justify-items:center; }
+  @media (min-width: 820px) { .combate { grid-template-columns:auto auto; align-items:start; justify-content:center; column-gap:28px; } .tablero.chico { --lado: 260px; } }
+  .zona { display:flex; flex-direction:column; align-items:center; gap:10px; min-width:0; }
+  .rotulo { font-family:var(--display); font-weight:800; font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:var(--tenue); margin:0; }
+  .turno { font-family:var(--display); font-weight:800; font-size:15px; letter-spacing:.06em; padding:6px 16px; border-radius:999px; text-transform:uppercase; }
+  .turno.mio { background:var(--oro); color:var(--navy); }
+  .turno.suyo { background:rgba(255,255,255,.12); color:var(--tenue); }
+  .vidas { width:100%; display:grid; gap:6px; }
+  .vida { display:grid; grid-template-columns:auto 1fr auto; gap:8px; align-items:center; font-size:13px; font-weight:800; }
+  .vida .barra { height:10px; border-radius:999px; background:rgba(0,0,0,.35); overflow:hidden; }
+  .vida .barra i { display:block; height:100%; border-radius:999px; background:linear-gradient(90deg, #3BD16F, #9BF27A); transition:width .5s; }
+  .vida.baja .barra i { background:linear-gradient(90deg, var(--rojo), #FF9A5E); }
+  .vida .num { font-variant-numeric:tabular-nums; color:var(--tenue); min-width:3.2em; text-align:right; }
+  .vida.muerto { opacity:.5; text-decoration:line-through; }
+  .armas { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; width:min(92vw, 420px); }
+  .arma { display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 4px; border-radius:14px; border:2px solid rgba(169,198,238,.3);
+    background:rgba(8,28,64,.6); cursor:pointer; }
+  .arma svg { width:34px; height:34px; }
+  .arma b { font-family:var(--display); font-size:14px; line-height:1.1; }
+  .arma small { font-size:11px; color:var(--tenue); font-weight:800; }
+  .arma.activa { border-color:var(--oro); background:rgba(255,216,74,.14); }
+  .arma:disabled { opacity:.35; cursor:default; }
+  .ayuda-arma { margin:0; font-size:13px; color:var(--tenue); text-align:center; min-height:1.4em; }
+  .mi-zona { display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:center; width:min(92vw, 420px); }
+  @media (min-width: 820px) { .mi-zona { grid-template-columns:1fr; width:260px; } }
+
+  /* ---------- Proyectil ---------- */
+  #fx { position:fixed; inset:0; pointer-events:none; z-index:50; }
+  .proyectil { position:absolute; width:44px; height:44px; margin:-22px 0 0 -22px; filter:drop-shadow(0 6px 8px rgba(0,0,0,.45)); }
+  .proyectil svg { width:100%; height:100%; }
+
+  /* ---------- Fin ---------- */
+  .fin-titulo { font-family:var(--display); font-weight:800; font-size:clamp(36px, 10vw, 56px); line-height:1; margin:0; text-align:center; }
+  .fin-titulo.gana { color:var(--oro); }
+  .pie { font-size:12px; color:var(--tenue); text-align:center; margin:0; }
+</style>
+</head>
+<body>
+<!-- Gradiente compartido del ícono de Instagram -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs><linearGradient id="gIG" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FEDA75"/><stop offset=".35" stop-color="#FA7E1E"/><stop offset=".65" stop-color="#D62976"/><stop offset="1" stop-color="#962FBF"/></linearGradient></defs>
+</svg>
+<div id="fx"></div>
+
+<!-- ===== Pantalla 1: Inicio ===== -->
+<section class="pantalla" id="pInicio">
+  <div class="avatar grande" id="avatarInicio"><img src="conecti.jpg" alt="Conecti, la mascota de 360 Connect"></div>
+  <h1>CONECTI<br><span class="a">NAVAL</span></h1>
+  <p class="lema">Conecta · Promociona · Crece</p>
+  <div class="anfitrion"><div class="globo" id="globoInicio"><span class="quien">Conecti</span>¡Hola! Soy Conecti. Esconde tus 2 barcos y hunde los de tu rival lanzando <b>WhatsApp</b>, <b>Instagram</b> y <b>TikTok</b>.</div></div>
+  <div class="fila">
+    <button class="btn grande" id="btnCrear">CREAR SALA</button>
+    <button class="btn sec grande" id="btnIrUnirse">UNIRSE</button>
+  </div>
+  <p class="error" id="errInicio"></p>
+  <div class="tarjeta">
+    <h2 style="text-align:left;margin-bottom:10px">Tus armas</h2>
+    <div class="armas-info" id="armasInfo"></div>
+    <h2 style="text-align:left;margin:16px 0 8px">Tu flota</h2>
+    <div class="flota-info"><span>Barco NFC · 3 casillas · 6 de vida</span><span>Barco QR · 2 casillas · 4 de vida</span></div>
+  </div>
+</section>
+
+<!-- ===== Unirse ===== -->
+<section class="pantalla" id="pUnirse" hidden>
+  <div class="anfitrion"><div class="avatar"><img src="conecti.jpg" alt=""></div>
+    <div class="globo"><span class="quien">Conecti</span>Escribe el código de 5 letras que te mandó tu rival.</div></div>
+  <form id="formUnirse" class="fila" style="flex-direction:column">
+    <input id="inputCodigo" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCDE" aria-label="Código de la sala">
+    <button class="btn grande" type="submit">ENTRAR</button>
+  </form>
+  <p class="error" id="errUnirse"></p>
+  <button class="btn sec" id="btnVolverUnirse">VOLVER</button>
+</section>
+
+<!-- ===== Pantalla 2: Sala de espera ===== -->
+<section class="pantalla" id="pSala" hidden>
+  <div class="anfitrion"><div class="avatar" id="avatarSala"><img src="conecti.jpg" alt=""></div>
+    <div class="globo"><span class="quien">Conecti</span>Comparte este código con tu rival. <b>¡Yo te aviso cuando llegue!</b></div></div>
+  <h2>Código de tu sala</h2>
+  <div class="codigo" id="codigoSala">-----</div>
+  <div class="fila">
+    <a class="wa" id="waSala" href="#" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+    <button class="btn sec" id="btnCopiar">Copiar código</button>
+  </div>
+  <p class="espera" style="color:var(--oro);font-weight:800;margin:0">Esperando a tu rival</p>
+  <button class="btn sec" id="btnCancelar">Cancelar</button>
+</section>
+
+<!-- ===== Pantalla 3: Colocación de barcos ===== -->
+<section class="pantalla" id="pColocar" hidden>
+  <div class="anfitrion"><div class="avatar" id="avatarColocar"><img src="conecti.jpg" alt=""></div>
+    <div class="globo" id="globoColocar"><span class="quien">Conecti</span></div></div>
+  <div class="barcos-sel" id="barcosSel"></div>
+  <div class="tablero" id="tabColocar"></div>
+  <div class="fila">
+    <button class="btn sec" id="btnGirar">↻ Girar</button>
+    <button class="btn sec" id="btnAzar">Al azar</button>
+    <button class="btn" id="btnListo">¡LISTO!</button>
+  </div>
+  <button class="btn sec" id="btnSalirColocar" style="font-size:14px;padding:8px 16px">Salir de la sala</button>
+</section>
+
+<!-- ===== Pantalla 4: Combate ===== -->
+<section class="pantalla" id="pCombate" hidden>
+  <div class="anfitrion"><div class="avatar" id="avatarCombate"><img src="conecti.jpg" alt=""></div>
+    <div class="globo" id="globoCombate"><span class="quien">Conecti</span></div></div>
+  <span class="turno" id="turno"></span>
+  <div class="combate">
+    <div class="zona">
+      <p class="rotulo">Mar de tu rival</p>
+      <div class="vidas" id="vidasRival" style="width:min(92vw, 420px)"></div>
+      <div class="tablero" id="tabRival"></div>
+      <div class="armas" id="armas"></div>
+      <p class="ayuda-arma" id="ayudaArma"></p>
+      <button class="btn grande" id="btnLanzar" disabled>¡LANZAR!</button>
+    </div>
+    <div class="zona">
+      <p class="rotulo">Tu mar</p>
+      <div class="mi-zona">
+        <div class="tablero chico bloqueado" id="tabMio"></div>
+        <div class="vidas" id="vidasMias"></div>
+      </div>
+      <button class="btn sec" id="btnSalirCombate" style="font-size:14px;padding:8px 16px">Salir de la sala</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Fin ===== -->
+<section class="pantalla" id="pFin" hidden>
+  <div class="avatar grande" id="avatarFin"><img src="conecti.jpg" alt=""></div>
+  <p class="fin-titulo" id="finTitulo"></p>
+  <div class="anfitrion"><div class="globo" id="globoFin"><span class="quien">Conecti</span></div></div>
+  <div class="fila">
+    <button class="btn grande" id="btnRevancha">REVANCHA</button>
+    <button class="btn sec" id="btnSalirFin">Salir</button>
+  </div>
+  <p class="espera" id="finEspera" style="color:var(--oro);font-weight:800;margin:0" hidden>Esperando que tu rival acepte</p>
+  <div class="tarjeta" style="text-align:center;display:grid;gap:12px;justify-items:center">
+    <p style="margin:0;font-weight:800">¿Quieres que tus clientes te sigan, te escriban y te dejen reseñas con un solo toque?</p>
+    <a class="wa" href="https://wa.me/51974337299?text=Hola%2C%20jugu%C3%A9%20Conecti%20Naval%20y%20quiero%20una%20placa%20NFC" target="_blank" rel="noopener">WhatsApp 974 337 299</a>
+    <p class="pie">Placas NFC + QR · TikTok @360connectpe · Instagram @360_connect_pe</p>
+  </div>
+</section>
+
+<script>
+// =====================================================================
+//  Conexión: Firebase Realtime Database (mismo proyecto que Conecti Duelo)
+//  Sala: salas/<CODIGO de 5> = { tipo, creado, j0:{on}, j1:{on},
+//    p: { p<partida>: { listo:{j0,j1}, disparos:{ d<n>: {j, arma, x, y, res} } } },
+//    revancha: { p<partida>: {j0, j1} } }
+//  Los barcos NUNCA se suben: cada celular guarda los suyos y responde
+//  los disparos que recibe (res). Así el rival dispara de verdad a ciegas.
+// =====================================================================
+const FIREBASE = {
+  apiKey: "AIzaSyDoilyRBvsKCh3alD0nEJsMuitR89Q2Anc",
+  authDomain: "connect-juegos-4be1b.firebaseapp.com",
+  databaseURL: "https://connect-juegos-4be1b-default-rtdb.firebaseio.com",
+  projectId: "connect-juegos-4be1b",
+  storageBucket: "connect-juegos-4be1b.firebasestorage.app",
+  messagingSenderId: "23629421007",
+  appId: "1:23629421007:web:e3b200ebf1beaa710adaba"
+};
+let db = null;
+try { firebase.initializeApp(FIREBASE); db = firebase.database(); } catch (e) { console.error(e); }
+
+// ================== Reglas del juego ==================
+const N = 8;
+const BARCOS = {
+  nfc: { nombre:'Barco NFC', largo:3, vida:6 },
+  qr:  { nombre:'Barco QR',  largo:2, vida:4 },
+};
+const IDS = ['nfc', 'qr'];
+const ARMAS = {
+  whatsapp:  { nombre:'WhatsApp',  sub:'Mensaje directo', ayuda:'1 casilla · 2 de daño · sin límite', usos:Infinity, dmg:2, patron:[[0,0]] },
+  instagram: { nombre:'Instagram', sub:'Historia',        ayuda:'Cruz de 5 casillas · 1 de daño c/u', usos:3, dmg:1, patron:[[0,0],[1,0],[-1,0],[0,1],[0,-1]] },
+  tiktok:    { nombre:'TikTok',    sub:'Viral',           ayuda:'Fila de 3 casillas · 1 de daño c/u', usos:3, dmg:1, patron:[[-1,0],[0,0],[1,0]] },
+};
+const ORDEN_ARMAS = ['whatsapp', 'instagram', 'tiktok'];
+
+function icono(arma) {
+  if (arma === 'instagram') return `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="url(#gIG)"/><rect x="6" y="6" width="12" height="12" rx="3.8" fill="none" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12" r="2.9" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17.3" cy="6.7" r="1.25" fill="#fff"/></svg>`;
+  if (arma === 'tiktok') {
+    const nota = 'M12.6 4.8v9.1a3 3 0 1 1-3-3 M12.6 4.8c.5 2 2 3.3 4.1 3.4';
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#111"/>
+      <path d="${nota}" fill="none" stroke="#25F4EE" stroke-width="2.3" stroke-linecap="round" transform="translate(-.8 .7)"/>
+      <path d="${nota}" fill="none" stroke="#FE2C55" stroke-width="2.3" stroke-linecap="round" transform="translate(.8 -.5)"/>
+      <path d="${nota}" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round"/></svg>`;
+  }
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="#25D366"/><path d="M12 5.6a6.2 6.2 0 0 0-5.3 9.4l-.9 3.2 3.3-.9A6.2 6.2 0 1 0 12 5.6z" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.6 9c.2-.4.6-.4.8 0l.5 1.1c.1.3 0 .5-.2.7l-.3.3c.4.9 1.1 1.6 2 2l.3-.3c.2-.2.4-.3.7-.2l1.1.5c.4.2.4.6 0 .8-.6.6-1.5.8-2.3.4a6.3 6.3 0 0 1-3-3c-.4-.8-.2-1.7.4-2.3z" fill="#fff"/></svg>`;
+}
+
+const celdasDe = b => Array.from({ length: BARCOS[b.id].largo }, (_, i) => b.h ? [b.x + i, b.y] : [b.x, b.y + i]);
+const dentro = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
+function choca(flota, id, cand) {
+  const ocupadas = new Set();
+  for (const k of IDS) if (k !== id && flota[k]) celdasDe(flota[k]).forEach(([x, y]) => ocupadas.add(x + ',' + y));
+  return celdasDe(cand).some(([x, y]) => !dentro(x, y) || ocupadas.has(x + ',' + y));
+}
+function flotaAlAzar() {
+  const f = {};
+  for (const id of IDS) {
+    for (let t = 0; t < 200; t++) {
+      const h = Math.random() < 0.5, L = BARCOS[id].largo;
+      const c = { id, h, x: Math.floor(Math.random() * (h ? N - L + 1 : N)), y: Math.floor(Math.random() * (h ? N : N - L + 1)) };
+      if (!choca(f, id, c)) { f[id] = c; break; }
+    }
+  }
+  return f;
+}
+const patronEn = (arma, x, y) => ARMAS[arma].patron.map(([dx, dy]) => [x + dx, y + dy]).filter(([a, b]) => dentro(a, b));
+
+// ================== Sonido ==================
+let ac = null;
+function audio() { try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) {} }
+function tono(f0, f1, dur, tipo = 'sine', vol = .12, ret = 0) {
+  if (!ac) return; const t = ac.currentTime + ret, o = ac.createOscillator(), g = ac.createGain();
+  o.type = tipo; o.frequency.setValueAtTime(f0, t); if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur); o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + .02);
+}
+function ruido(dur, frec, vol = .25) {
+  if (!ac) return; const n = Math.floor(ac.sampleRate * dur), buf = ac.createBuffer(1, n, ac.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  s.buffer = buf; f.type = 'lowpass'; f.frequency.value = frec; g.gain.value = vol; s.connect(f).connect(g).connect(ac.destination); s.start();
+}
+const SFX = {
+  lanzar:  () => tono(300, 900, .35, 'triangle', .08),
+  agua:    () => ruido(.45, 1800, .22),
+  boom:    () => { ruido(.6, 600, .4); tono(120, 40, .5, 'sine', .25); },
+  hundido: () => { ruido(.9, 400, .4); [392, 330, 262, 196].forEach((f, i) => tono(f, 0, .25, 'square', .05, .2 + i * .14)); },
+  turno:   () => { tono(660, 0, .08, 'sine', .1); tono(880, 0, .12, 'sine', .1, .09); },
+  gana:    () => [523, 659, 784, 1047].forEach((f, i) => tono(f, 0, .2, 'square', .06, i * .13)),
+  pierde:  () => [392, 330, 262].forEach((f, i) => tono(f, 0, .3, 'triangle', .12, i * .2)),
+  blip:    () => tono(700, 0, .05, 'sine', .08),
+};
+
+// ================== Estado local ==================
+const $ = id => document.getElementById(id);
+let codigo = null, yo = 0, salaRef = null, datos = null, recibido = false, partida = 0, rivalVisto = false;
+let pantalla = 'inicio';
+let flota = flotaAlAzar(), barcoSel = 'nfc', listoEnviado = false;
+let armaSel = 'whatsapp', mira = null;
+let animados = 0, animando = false, resolviendo = -1, finMostrado = false;
+
+function mostrar(id) {
+  pantalla = id;
+  ['pInicio', 'pUnirse', 'pSala', 'pColocar', 'pCombate', 'pFin'].forEach(p => $(p).hidden = p !== id);
+  window.scrollTo(0, 0);
+}
+function hablar(globoId, html, reaccion) {
+  $(globoId).innerHTML = '<span class="quien">Conecti</span>' + html;
+  if (reaccion) {
+    const av = { globoColocar:'avatarColocar', globoCombate:'avatarCombate', globoFin:'avatarFin' }[globoId];
+    const el = av && $(av);
+    if (el) { el.classList.remove('salta', 'tiembla'); void el.offsetWidth; el.classList.add(reaccion); }
+  }
+}
+
+// ================== Salas ==================
+const LETRAS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const genCodigo = () => Array.from({ length: 5 }, () => LETRAS[Math.floor(Math.random() * LETRAS.length)]).join('');
+const SIN_RED = 'No se pudo conectar con el juego. Revisa tu internet e intenta otra vez.';
+
+async function crearSala() {
+  if (!db) { $('errInicio').textContent = SIN_RED; return; }
+  $('errInicio').textContent = 'Creando sala...';
+  try {
+    for (let i = 0; i < 6; i++) {
+      const c = genCodigo();
+      const r = await db.ref('salas/' + c).transaction(a => a === null ? { tipo:'naval', creado: firebase.database.ServerValue.TIMESTAMP, j0:{ on:true } } : undefined);
+      if (r.committed) { $('errInicio').textContent = ''; entrar(c, 0); return; }
+    }
+    $('errInicio').textContent = 'No se pudo crear la sala. Intenta otra vez.';
+  } catch (e) { console.error(e); $('errInicio').textContent = SIN_RED; }
+}
+
+async function unirse(c) {
+  c = (c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const err = $('errUnirse');
+  if (c.length !== 5) { err.textContent = 'El código tiene 5 letras o números.'; return; }
+  if (!db) { err.textContent = SIN_RED; return; }
+  err.textContent = 'Entrando...';
+  try {
+    const ref = db.ref('salas/' + c);
+    const snap = await ref.once('value');
+    const v = snap.val();
+    if (!v || v.tipo !== 'naval') { err.textContent = 'Esa sala no existe. Revisa el código.'; return; }
+    const r = await ref.child('j1').transaction(a => a === null ? { on:true } : undefined);
+    if (!r.committed) { err.textContent = 'Esa sala ya está llena.'; return; }
+    err.textContent = '';
+    entrar(c, 1);
+  } catch (e) { console.error(e); err.textContent = SIN_RED; }
+}
+
+function entrar(c, n) {
+  codigo = c; yo = n; partida = 0; rivalVisto = n === 1; datos = null; recibido = false;
+  salaRef = db.ref('salas/' + c);
+  const presencia = salaRef.child('j' + n + '/on');
+  db.ref('.info/connected').on('value', s => { if (s.val() === true && salaRef) { presencia.onDisconnect().set(false); presencia.set(true); } });
+  salaRef.on('value', s => { datos = s.val(); recibido = true; procesar(); });
+  if (n === 0) {
+    $('codigoSala').textContent = c;
+    const enlace = location.href.split(/[?#]/)[0] + '?sala=' + c;
+    $('waSala').href = 'https://wa.me/?text=' + encodeURIComponent(`⚓ ¡Te reto a Conecti Naval! Entra aquí: ${enlace} (código ${c})`);
+    mostrar('pSala');
+  } else empezarColocacion();
+}
+
+function salir() {
+  if (salaRef) {
+    salaRef.off(); db.ref('.info/connected').off();
+    const p = salaRef.child('j' + yo + '/on'); p.onDisconnect().cancel(); p.set(false);
+  }
+  salaRef = null; codigo = null; datos = null;
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  mostrar('pInicio');
+}
+
+// ================== Lectura del estado compartido ==================
+const P = () => (((datos || {}).p || {})['p' + partida]) || {};
+const jug = n => ((datos || {})['j' + n]) || {};
+function disparos() {
+  const d = P().disparos || {};
+  return Object.keys(d).map(k => ({ i: +k.slice(1), ...d[k] })).sort((a, b) => a.i - b.i);
+}
+// Quién dispara el disparo número i (alterna; en cada revancha empieza el otro)
+const tiradorDe = i => (i + partida) % 2;
+function resumen(limite) {
+  const ds = disparos();
+  let resueltos = 0; while (resueltos < ds.length && ds[resueltos].i === resueltos && ds[resueltos].res) resueltos++;
+  const vis = Math.min(limite ?? resueltos, resueltos);
+  const hp = [{ nfc:6, qr:4 }, { nfc:6, qr:4 }];
+  const marcas = [{}, {}];        // marcas[j]: casillas del mar de j que recibieron disparos
+  const hundidos = [{}, {}];      // hundidos[j][barco] = celdas
+  const usos = [{}, {}];
+  let ganador = -1;
+  for (let k = 0; k < vis; k++) {
+    const d = ds[k], t = d.j, def = 1 - t;
+    usos[t][d.arma] = (usos[t][d.arma] || 0) + 1;
+    hp[def] = { ...d.res.hp };
+    for (const c of d.res.celdas || []) { const key = c.x + ',' + c.y; marcas[def][key] = (marcas[def][key] === 'impacto' || c.h) ? 'impacto' : 'agua'; }
+    for (const h of d.res.hundidos || []) hundidos[def][h.barco] = h.celdas;
+    if (d.res.fin) ganador = t;
+  }
+  const pendiente = ds.length > resueltos && ds[resueltos].i === resueltos ? ds[resueltos] : null;
+  return { ds, resueltos, vis, hp, marcas, hundidos, usos, ganador, pendiente, turnoDe: tiradorDe(resueltos) };
+}
+
+// ================== Motor: se ejecuta con cada cambio de la sala ==================
+function procesar() {
+  if (!salaRef || !recibido) return;
+  if (!datos) { if (pantalla !== 'pInicio') { alert_('La sala se cerró.'); } return; }
+  const r = jug(1 - yo);
+  if (r.on !== undefined) rivalVisto = true;
+
+  if (pantalla === 'pSala' && datos.j1) { SFX.turno(); empezarColocacion(); return; }
+
+  // Revancha: los dos aceptaron
+  const rv = (((datos.revancha || {})['p' + partida]) || {});
+  if (pantalla === 'pFin') {
+    if (rv.j0 && rv.j1) { partida++; empezarColocacion(); return; }
+    $('finEspera').hidden = !rv['j' + yo];
+    if (rv['j' + (1 - yo)] && !rv['j' + yo]) hablar('globoFin', '¡Tu rival quiere la <b>revancha</b>! ¿Aceptas?', 'salta');
+  }
+
+  const listo = P().listo || {};
+  if (pantalla === 'pColocar' && listo.j0 && listo.j1) { empezarCombate(); return; }
+  if (pantalla === 'pColocar' && listoEnviado) hablar('globoColocar', rivalDesconectado() ? 'Tu rival se desconectó. Esperando a que vuelva...' : 'Tu rival todavía está escondiendo sus barcos<span class="espera"></span>');
+
+  if (pantalla === 'pCombate') {
+    responderDisparo();
+    if (!animando) animarSiguiente();
+  }
+}
+const rivalDesconectado = () => rivalVisto && jug(1 - yo).on === false;
+function alert_(t) { hablar('globoInicio', t); salir(); $('errInicio').textContent = t; }
+
+// El defensor calcula el resultado con SUS barcos (guardados solo en su celular)
+function responderDisparo() {
+  const s = resumen();
+  const d = s.pendiente;
+  if (!d || d.j === yo || resolviendo === d.i) return;
+  resolviendo = d.i;
+  const hp = { ...s.hp[yo] };
+  const antes = { ...hp };
+  const celdas = [];
+  const arma = ARMAS[d.arma] ? d.arma : 'whatsapp';
+  for (const [x, y] of patronEn(arma, d.x | 0, d.y | 0)) {
+    const barco = IDS.find(id => celdasDe(flota[id]).some(([a, b]) => a === x && b === y));
+    if (barco && hp[barco] > 0) hp[barco] = Math.max(0, hp[barco] - ARMAS[arma].dmg);
+    celdas.push({ x, y, h: barco ? 1 : 0 });
+  }
+  const hundidos = IDS.filter(id => antes[id] > 0 && hp[id] === 0).map(id => ({ barco:id, celdas: celdasDe(flota[id]) }));
+  const res = { celdas, hp, hundidos, fin: IDS.every(id => hp[id] === 0) };
+  salaRef.child(`p/p${partida}/disparos/d${d.i}/res`).transaction(a => a === null ? res : undefined);
+}
+
+// ================== Pantalla de colocación ==================
+function empezarColocacion() {
+  listoEnviado = false; finMostrado = false; animados = 0; resolviendo = -1; mira = null; armaSel = 'whatsapp';
+  const guardada = cargarFlota();
+  flota = guardada || flotaAlAzar();
+  barcoSel = 'nfc';
+  mostrar('pColocar');
+  $('btnListo').disabled = false; $('btnGirar').disabled = false; $('btnAzar').disabled = false;
+  hablar('globoColocar', partida === 0
+    ? '¡Llegó tu rival! Esconde tus 2 barcos: toca un barco y luego una casilla. Usa <b>Girar</b> para cambiar su dirección.'
+    : '¡Revancha! Vuelve a esconder tus barcos donde tu rival no los encuentre.', 'salta');
+  if (guardada && (P().listo || {})['j' + yo]) { listoEnviado = true; bloquearColocacion(); }
+  pintarColocacion();
+  procesar();
+}
+const claveFlota = () => `conectiNaval-${codigo}-p${partida}-j${yo}`;
+function guardarFlota() { try { localStorage.setItem(claveFlota(), JSON.stringify(flota)); } catch (e) {} }
+function cargarFlota() { try { const f = JSON.parse(localStorage.getItem(claveFlota())); return f && f.nfc && f.qr ? f : null; } catch (e) { return null; } }
+
+function pintarColocacion() {
+  const sel = $('barcosSel'); sel.innerHTML = '';
+  for (const id of IDS) {
+    const b = document.createElement('button');
+    b.className = 'barco-sel' + (id === barcoSel ? ' activo' : '');
+    b.style.setProperty('--b-color', id === 'nfc' ? '#2E9BF5' : '#F2F7FF');
+    b.innerHTML = `<span class="casco">${'<i></i>'.repeat(BARCOS[id].largo)}</span><span><b>${BARCOS[id].nombre}</b><small>${BARCOS[id].largo} casillas · ${BARCOS[id].vida} de vida</small></span>`;
+    b.onclick = () => { if (listoEnviado) return; barcoSel = id; SFX.blip(); pintarColocacion(); };
+    sel.appendChild(b);
+  }
+  pintarTablero($('tabColocar'), {
+    flota, sel: listoEnviado ? null : barcoSel,
+    alTocar: listoEnviado ? null : (x, y) => {
+      const aqui = IDS.find(id => celdasDe(flota[id]).some(([a, b]) => a === x && b === y));
+      if (aqui && aqui !== barcoSel) { barcoSel = aqui; SFX.blip(); pintarColocacion(); return; }
+      const L = BARCOS[barcoSel].largo, h = flota[barcoSel].h;
+      const cand = { id: barcoSel, h, x: h ? Math.min(x, N - L) : x, y: h ? y : Math.min(y, N - L) };
+      if (choca(flota, barcoSel, cand)) { hablar('globoColocar', '¡Ahí choca con tu otro barco! Prueba en otra casilla.', 'tiembla'); return; }
+      flota[barcoSel] = cand; SFX.blip(); pintarColocacion();
+    },
+  });
+}
+$('btnGirar').onclick = () => {
+  if (listoEnviado) return;
+  const b = flota[barcoSel], L = BARCOS[barcoSel].largo;
+  const cand = { ...b, h: !b.h };
+  if (cand.h) cand.x = Math.min(cand.x, N - L); else cand.y = Math.min(cand.y, N - L);
+  if (choca(flota, barcoSel, cand)) { hablar('globoColocar', 'No puedo girarlo ahí porque choca. Muévelo primero.', 'tiembla'); return; }
+  flota[barcoSel] = cand; SFX.blip(); pintarColocacion();
+};
+$('btnAzar').onclick = () => { if (listoEnviado) return; flota = flotaAlAzar(); SFX.blip(); pintarColocacion(); };
+$('btnListo').onclick = () => {
+  audio(); if (listoEnviado) return;
+  listoEnviado = true; guardarFlota(); bloquearColocacion();
+  salaRef.child(`p/p${partida}/listo/j${yo}`).set(true);
+  hablar('globoColocar', '¡Barcos escondidos! Tu rival todavía está escondiendo los suyos<span class="espera"></span>', 'salta');
+  pintarColocacion();
+};
+function bloquearColocacion() { $('btnListo').disabled = true; $('btnGirar').disabled = true; $('btnAzar').disabled = true; }
+
+// ================== Tableros ==================
+function pintarTablero(cont, { flota: f, marcas = {}, hundidos = {}, sel = null, mira: m = null, alTocar = null }) {
+  const barcoEn = {};
+  if (f) for (const id of IDS) celdasDe(f[id]).forEach(([x, y], i, arr) => barcoEn[x + ',' + y] = { id, ini: i === 0, fin: i === arr.length - 1, medio: i === Math.floor(arr.length / 2), h: f[id].h });
+  const hund = {};
+  for (const id in hundidos) (hundidos[id] || []).forEach(([x, y]) => hund[x + ',' + y] = id);
+  const miraSet = new Set((m || []).map(([x, y]) => x + ',' + y));
+  if (cont.children.length !== N * N) {
+    cont.innerHTML = '';
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const c = document.createElement('button');
+      c.className = 'celda'; c.dataset.x = x; c.dataset.y = y;
+      c.setAttribute('aria-label', `Casilla ${'ABCDEFGH'[x]}${y + 1}`);
+      cont.appendChild(c);
+    }
+  }
+  for (const c of cont.children) {
+    const x = +c.dataset.x, y = +c.dataset.y, k = x + ',' + y, b = barcoEn[k];
+    const cls = ['celda'];
+    if (b) cls.push('barco', b.id, b.h ? 'h' : 'v', b.ini && 'ini', b.fin && 'fin', b.medio && 'marca', b.id === sel && 'sel');
+    if (hund[k]) cls.push('hundido');
+    else if (marcas[k]) cls.push(marcas[k]);
+    if (miraSet.has(k)) cls.push('mira');
+    const anim = ['boom', 'splash'].filter(a => c.classList.contains(a));
+    c.className = cls.filter(Boolean).concat(anim).join(' ');
+    c.onclick = alTocar ? () => alTocar(x, y) : null;
+    c.tabIndex = alTocar ? 0 : -1;
+  }
+}
+
+// ================== Combate ==================
+function empezarCombate() {
+  flota = cargarFlota() || flota;
+  animados = 0; animando = false; finMostrado = false; mira = null; armaSel = 'whatsapp';
+  mostrar('pCombate');
+  pintarCombate();
+  procesar();
+}
+
+function pintarCombate() {
+  const s = resumen(animados);
+  const miTurno = !animando && s.vis === s.resueltos && !s.pendiente && s.turnoDe === yo && s.ganador < 0;
+  const rival = 1 - yo;
+  // Vidas
+  $('vidasRival').innerHTML = IDS.map(id => filaVida(BARCOS[id].nombre + ' rival', s.hp[rival][id], BARCOS[id].vida)).join('');
+  $('vidasMias').innerHTML = IDS.map(id => filaVida(BARCOS[id].nombre, s.hp[yo][id], BARCOS[id].vida)).join('');
+  // Tableros
+  pintarTablero($('tabRival'), {
+    marcas: s.marcas[rival], hundidos: s.hundidos[rival], mira: miTurno && mira ? patronEn(armaSel, mira[0], mira[1]) : null,
+    alTocar: miTurno ? (x, y) => { mira = [x, y]; SFX.blip(); pintarCombate(); } : null,
+  });
+  $('tabRival').classList.toggle('bloqueado', !miTurno);
+  pintarTablero($('tabMio'), { flota, marcas: s.marcas[yo], hundidos: s.hundidos[yo] });
+  // Armas
+  const cont = $('armas');
+  if (!cont.children.length) {
+    for (const a of ORDEN_ARMAS) {
+      const b = document.createElement('button');
+      b.className = 'arma'; b.dataset.a = a;
+      b.innerHTML = `${icono(a)}<b>${ARMAS[a].nombre}</b><small></small>`;
+      b.onclick = () => { armaSel = a; SFX.blip(); pintarCombate(); };
+      cont.appendChild(b);
+    }
+  }
+  const usos = s.usos[yo];
+  if (ARMAS[armaSel].usos - (usos[armaSel] || 0) <= 0) armaSel = 'whatsapp';
+  for (const b of cont.children) {
+    const a = b.dataset.a, quedan = ARMAS[a].usos - (usos[a] || 0);
+    b.querySelector('small').textContent = quedan === Infinity ? 'sin límite' : `quedan ${quedan}`;
+    b.disabled = !miTurno || quedan <= 0;
+    b.classList.toggle('activa', a === armaSel);
+  }
+  $('ayudaArma').textContent = `${ARMAS[armaSel].sub}: ${ARMAS[armaSel].ayuda}`;
+  $('btnLanzar').disabled = !miTurno || !mira;
+  // Turno y Conecti
+  const t = $('turno');
+  if (s.ganador >= 0) { t.textContent = 'Fin de la batalla'; t.className = 'turno suyo'; }
+  else if (animando || s.vis < s.resueltos) { t.textContent = '¡Disparo en camino!'; t.className = 'turno suyo'; }
+  else if (s.turnoDe === yo) { t.textContent = 'Tu turno'; t.className = 'turno mio'; }
+  else { t.textContent = 'Turno del rival'; t.className = 'turno suyo'; }
+  if (!animando && s.ganador < 0 && s.vis === s.resueltos) {
+    if (rivalDesconectado()) hablar('globoCombate', 'Tu rival se desconectó. Esperando a que vuelva<span class="espera"></span>');
+    else if (miTurno && !mira && !hablaFija) hablar('globoCombate', '¡Conecti dice que es <b>tu turno</b>! Elige un arma y toca una casilla del mar rival.');
+    else if (miTurno && mira) hablar('globoCombate', `Apuntando a <b>${'ABCDEFGH'[mira[0]]}${mira[1] + 1}</b> con ${ARMAS[armaSel].nombre}. ¡Toca <b>LANZAR</b>!`);
+    else if (!miTurno && !hablaFija) hablar('globoCombate', '¡Cruza los dedos! Tu rival está apuntando<span class="espera"></span>');
+  }
+}
+let hablaFija = false;   // deja visible la reacción al último disparo hasta que el jugador actúe
+function filaVida(nombre, v, max) {
+  return `<div class="vida${v <= 0 ? ' muerto' : v / max <= .5 ? ' baja' : ''}"><span>${nombre}</span><span class="barra"><i style="width:${v / max * 100}%"></i></span><span class="num">${v}/${max}</span></div>`;
+}
+
+$('btnLanzar').onclick = async () => {
+  audio();
+  const s = resumen(animados);
+  if (!mira || s.pendiente || s.turnoDe !== yo || s.ganador >= 0 || animando) return;
+  const [x, y] = mira, arma = armaSel;
+  mira = null; hablaFija = false;
+  $('btnLanzar').disabled = true;
+  hablar('globoCombate', `¡${ARMAS[arma].nombre} en camino!`, 'salta');
+  await salaRef.child(`p/p${partida}/disparos/d${s.resueltos}`).transaction(a => a === null ? { j: yo, arma, x, y } : undefined);
+};
+
+// Anima los disparos ya resueltos, uno por uno, en las dos pantallas
+async function animarSiguiente() {
+  const s = resumen();
+  if (animados >= s.resueltos) { pintarCombate(); return; }
+  animando = true;
+  pintarCombate();
+  const d = s.ds[animados];
+  const mio = d.j === yo;
+  const tab = mio ? $('tabRival') : $('tabMio');
+  await volar(d.arma, tab, d.x, d.y);
+  animados++;
+  pintarCombate();
+  const hits = (d.res.celdas || []).filter(c => c.h).length;
+  for (const c of d.res.celdas || []) {
+    const el = tab.children[c.y * N + c.x];
+    if (el) { el.classList.remove('boom', 'splash'); void el.offsetWidth; el.classList.add(c.h ? 'boom' : 'splash'); }
+  }
+  const hundido = (d.res.hundidos || [])[0];
+  const nombre = id => BARCOS[id].nombre;
+  const tocado = IDS.find(id => (d.res.celdas || []).some(c => c.h) && d.res.hp[id] < resumenAntes(d.i).hp[1 - d.j][id]);
+  if (d.res.fin) {} // se anuncia en la pantalla final
+  else if (hundido) { SFX.hundido(); hablar('globoCombate', mio ? `¡Hundiste su <b>${nombre(hundido.barco)}</b>! Sigue así.` : `¡Oh no! Hundieron tu <b>${nombre(hundido.barco)}</b>.`, mio ? 'salta' : 'tiembla'); }
+  else if (hits) { SFX.boom(); hablar('globoCombate', mio ? `¡Impacto directo! Le diste a su <b>${nombre(tocado || 'nfc')}</b>.` : `¡Ay! Le dieron a tu <b>${nombre(tocado || 'nfc')}</b>.`, mio ? 'salta' : 'tiembla'); }
+  else { SFX.agua(); hablar('globoCombate', mio ? '¡Agua! Prueba en otra zona del mar.' : '¡Uf! Tu rival tiró al agua.', mio ? 'tiembla' : 'salta'); }
+  hablaFija = true;
+  await espera(d.res.fin ? 1400 : 1100);
+  animando = false;
+  if (d.res.fin) { mostrarFin(d.j); return; }
+  const s2 = resumen(animados);
+  if (s2.turnoDe === yo && animados >= s2.resueltos) SFX.turno();
+  pintarCombate();
+  if (animados < resumen().resueltos) animarSiguiente();
+}
+function resumenAntes(i) { return resumen(i); }
+const espera = ms => new Promise(r => setTimeout(r, ms));
+
+function volar(arma, tablero, x, y) {
+  SFX.lanzar();
+  const celda = tablero.children[y * N + x];
+  if (!celda || matchMedia('(prefers-reduced-motion: reduce)').matches) return espera(200);
+  const r = celda.getBoundingClientRect();
+  const fin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  const ini = { x: innerWidth / 2, y: innerHeight + 30 };
+  const p = document.createElement('div');
+  p.className = 'proyectil'; p.innerHTML = icono(arma);
+  $('fx').appendChild(p);
+  const medio = { x: (ini.x + fin.x) / 2, y: Math.min(ini.y, fin.y) - 120 };
+  const a = p.animate([
+    { transform: `translate(${ini.x}px, ${ini.y}px) scale(.6) rotate(0deg)` },
+    { transform: `translate(${medio.x}px, ${medio.y}px) scale(1.4) rotate(200deg)`, offset: .5 },
+    { transform: `translate(${fin.x}px, ${fin.y}px) scale(.8) rotate(400deg)` },
+  ], { duration: 750, easing: 'ease-in' });
+  return new Promise(res => { a.onfinish = () => { p.remove(); res(); }; });
+}
+
+// ================== Fin ==================
+function mostrarFin(ganador) {
+  if (finMostrado) return; finMostrado = true;
+  const gane = ganador === yo;
+  mostrar('pFin');
+  $('finTitulo').textContent = gane ? '¡GANASTE!' : 'GANÓ TU RIVAL';
+  $('finTitulo').className = 'fin-titulo' + (gane ? ' gana' : '');
+  $('btnRevancha').disabled = false; $('finEspera').hidden = true;
+  hablar('globoFin', gane
+    ? '¡Hundiste toda su flota! Así de rápido conecta una placa NFC + QR con tus clientes.'
+    : 'Esta vez hundieron tu flota. ¡Pide la <b>revancha</b> y demuestra quién manda en el mar!', gane ? 'salta' : 'tiembla');
+  gane ? SFX.gana() : SFX.pierde();
+  procesar();
+}
+$('btnRevancha').onclick = () => { audio(); $('btnRevancha').disabled = true; $('finEspera').hidden = false; salaRef.child(`revancha/p${partida}/j${yo}`).set(true); };
+
+// ================== Botones generales ==================
+$('armasInfo').innerHTML = ORDEN_ARMAS.map(a => `<div class="arma-info">${icono(a)}<div><b>${ARMAS[a].nombre} · ${ARMAS[a].sub}</b><span>${ARMAS[a].ayuda}</span></div></div>`).join('');
+$('btnCrear').onclick = () => { audio(); crearSala(); };
+$('btnIrUnirse').onclick = () => { audio(); $('errUnirse').textContent = ''; mostrar('pUnirse'); $('inputCodigo').focus(); };
+$('formUnirse').onsubmit = e => { e.preventDefault(); audio(); unirse($('inputCodigo').value); };
+$('inputCodigo').oninput = e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+$('btnVolverUnirse').onclick = () => mostrar('pInicio');
+$('btnCancelar').onclick = () => { if (salaRef) salaRef.remove(); salir(); };
+$('btnCopiar').onclick = async () => {
+  try { await navigator.clipboard.writeText(codigo); $('btnCopiar').textContent = '¡Copiado!'; }
+  catch (e) { const r = document.createRange(); r.selectNodeContents($('codigoSala')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+  setTimeout(() => $('btnCopiar').textContent = 'Copiar código', 1500);
+};
+['btnSalirColocar', 'btnSalirCombate', 'btnSalirFin'].forEach(id => $(id).onclick = salir);
+
+// Entrar directo con el enlace ?sala=CODIGO
+if (!db) $('errInicio').textContent = SIN_RED;
+const salaURL = new URLSearchParams(location.search).get('sala');
+if (salaURL && db) { $('inputCodigo').value = salaURL.toUpperCase().slice(0, 5); mostrar('pUnirse'); unirse(salaURL); }
+</script>
+</body>
+</html>
