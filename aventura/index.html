@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Conecti Aventura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+<style>
+  /* Juego de plataformas 8 bits a pantalla completa: lienzo pixelado arriba, controles táctiles abajo. */
+  :root {
+    --navy:#0F1B3D; --navy2:#1D2D5C; --celeste:#1FA4F5; --azul:#2F5BEA; --verde:#25D366; --blanco:#FFFFFF;
+    --pixel:"Press Start 2P", ui-monospace, "Courier New", monospace;
+    color-scheme: dark;
+  }
+  html, body { margin:0; height:100%; background:var(--navy); color:var(--blanco); overflow:hidden;
+    touch-action:none; user-select:none; -webkit-user-select:none; font-family:var(--pixel); }
+  #app { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+  #controles { display:none; width:100%; max-width:560px; box-sizing:border-box;
+    padding:12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+    justify-content:space-between; align-items:center; gap:12px; }
+  .tactil #controles { display:flex; }
+  .cruz { display:flex; gap:12px; }
+  .btn { width:76px; height:76px; border-radius:14px; background:var(--navy2); border:3px solid #3A5BB0; color:var(--blanco);
+    font:inherit; font-size:22px; display:grid; place-items:center; box-shadow:0 5px 0 #070D20; touch-action:none; }
+  .btn.on { transform:translateY(4px); box-shadow:0 1px 0 #070D20; background:var(--azul); }
+  .btn.saltar { width:100px; height:100px; border-radius:50%; background:var(--celeste); border-color:#9FDCFF; color:var(--navy); font-size:11px; }
+  .btn.saltar.on { background:#7FD0FF; }
+  .capa { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    text-align:center; padding:16px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px));
+    background:rgba(15,27,61,.84); line-height:1.8; }
+  .capa h1 { margin:0; font-size:clamp(18px, 5vw, 30px); line-height:1.4; color:var(--blanco); text-shadow:3px 3px 0 var(--azul); text-wrap:balance; }
+  .capa h1 span { color:var(--celeste); text-shadow:3px 3px 0 var(--navy2); }
+  .capa p { margin:0; font-size:clamp(8px, 2.4vw, 11px); max-width:440px; }
+  .capa .grande { font-size:clamp(10px, 3vw, 14px); color:#FFD84A; }
+  .capa button { font:inherit; font-size:13px; padding:14px 22px; background:var(--celeste); color:var(--navy); border:0;
+    box-shadow:0 5px 0 var(--azul); cursor:pointer; }
+  .capa button:focus-visible, .capa a:focus-visible { outline:3px solid #FFD84A; outline-offset:3px; }
+  .capa button:active { transform:translateY(4px); box-shadow:0 1px 0 var(--azul); }
+  .capa a.wa { font-size:10px; padding:12px 16px; background:var(--verde); color:#06351A; text-decoration:none; box-shadow:0 4px 0 #128C4A; }
+  .ayuda { font-size:8px !important; opacity:.75; }
+  .leyenda { display:grid; grid-template-columns:auto auto; gap:6px 12px; font-size:8px; text-align:left; background:rgba(255,255,255,.08); padding:10px 14px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="c" aria-label="Conecti Aventura"></canvas>
+  <div id="controles">
+    <div class="cruz">
+      <button class="btn" data-k="izq" aria-label="Izquierda">◀</button>
+      <button class="btn" data-k="der" aria-label="Derecha">▶</button>
+    </div>
+    <button class="btn saltar" data-k="saltar" aria-label="Saltar">SALTA</button>
+  </div>
+
+  <div class="capa" id="capaInicio">
+    <h1>CONECTI<br><span>AVENTURA</span></h1>
+    <p>Cruza Trujillo con Conecti en 2 niveles, contra el reloj, hasta llegar a la tienda. Golpea los bloques NFC, junta seguidores y reseñas, y salta sobre las comisiones.</p>
+    <div class="leyenda">
+      <span>Bloque NFC</span><span>+100</span>
+      <span>Ícono de red</span><span>+50</span>
+      <span>Pisar comisión</span><span>+100</span>
+      <span>Tiempo que sobra</span><span>x10</span>
+    </div>
+    <button id="btnJugar">JUGAR</button>
+    <p class="ayuda" id="ayuda">← → para moverte · ESPACIO para saltar</p>
+  </div>
+
+  <div class="capa" id="capaFin" hidden>
+    <h1 id="finTitulo">FIN DEL<br><span>JUEGO</span></h1>
+    <p id="finTexto"></p>
+    <p class="grande" id="finPuntos"></p>
+    <p id="finRecord"></p>
+    <button id="btnOtra">JUGAR OTRA VEZ</button>
+    <p>Conecta tu negocio de verdad con una placa NFC + QR.</p>
+    <a class="wa" href="https://wa.me/51974337299?text=Hola%2C%20jugu%C3%A9%20Conecti%20Aventura%20y%20quiero%20una%20placa" target="_blank" rel="noopener">WHATSAPP 974 337 299</a>
+    <p class="ayuda">@360connectpe · @360_connect_pe</p>
+  </div>
+</div>
+
+<script>
+// ================== Configuración ==================
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const T = 16, VH = 224, ROWS = 14, COLS = 200;
+let VW = 256;
+const tactil = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+if (tactil) { document.body.classList.add('tactil'); document.getElementById('ayuda').textContent = 'Usa los botones de abajo'; }
+
+function ajustar() {
+  const W = innerWidth, H = innerHeight;
+  const dispH = H - (tactil ? 130 : 0);
+  VW = Math.max(208, Math.min(400, Math.round(VH * W / dispH)));
+  const esc = Math.min(W / VW, dispH / VH);
+  cv.width = VW; cv.height = VH;
+  cv.style.width = Math.floor(VW * esc) + 'px';
+  cv.style.height = Math.floor(VH * esc) + 'px';
+  ctx.imageSmoothingEnabled = false;
+}
+addEventListener('resize', ajustar); ajustar();
+
+// ================== Sonido (ondas cuadradas, efectos propios) ==================
+let ac = null;
+function activarAudio() {
+  try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) {}
+}
+function tono(f0, f1, dur, tipo = 'square', vol = 0.07, retraso = 0) {
+  if (!ac) return;
+  const t = ac.currentTime + retraso, o = ac.createOscillator(), g = ac.createGain();
+  o.type = tipo; o.frequency.setValueAtTime(f0, t);
+  if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+const SFX = {
+  salto:   () => tono(260, 620, 0.14),
+  icono:   () => { tono(880, 0, 0.06); tono(1175, 0, 0.18, 'square', 0.06, 0.06); },
+  bloque:  () => tono(150, 80, 0.08, 'triangle', 0.18),
+  aplasta: () => tono(520, 110, 0.12),
+  dano:    () => { tono(660, 140, 0.45); tono(330, 70, 0.45, 'triangle', 0.1, 0.05); },
+  meta:    () => [523, 659, 784, 988, 1047].forEach((f, i) => tono(f, 0, 0.16, 'square', 0.06, i * 0.1)),
+  fin:     () => [440, 349, 294, 220].forEach((f, i) => tono(f, 0, 0.28, 'triangle', 0.14, i * 0.22)),
+};
+
+// ================== Sprites en pixel art ==================
+const PAL = {
+  B:'#2E8FF0', W:'#F2F7FF', K:'#0F1B3D', P:'#F7A1B0', Q:'#FFFFFF', H:'#FFFFFF', L:'#1B1B1B',
+  R:'#E53935', r:'#B71C1C', Y:'#FFC928', y:'#E09A00',
+};
+const CUERPO = [
+  '..BBBBBBBB..',
+  '.BBBBBBBBBB.',
+  '.BWWWWWWWWB.',
+  '.BWKWWWWKWB.',
+  '.BWKKWWKKWB.',
+  '.BPWWWWWWPB.',
+  '.BWWKWWKWWB.',
+  '.BWWWKKWWWB.',
+  '.BBBBBBBBBB.',
+];
+const BRAZOS_ABAJO = ['HBBBQQQQBBBH', '.BBBQKQKBBB.', '.BBBKQKQBBB.', '..BBBBBBBB..'];
+const PIES_A = ['...L....L...', '...L....L...', '..HH....HH..'];
+const PIES_B = ['....L..L....', '....L..L....', '...HH..HH...'];
+const CONECTI = {
+  quieto: [...CUERPO, ...BRAZOS_ABAJO, ...PIES_A],
+  paso:   [...CUERPO, ...BRAZOS_ABAJO, ...PIES_B],
+  salto:  ['H.BBBBBBBB.H', 'HBBBBBBBBBBH', ...CUERPO.slice(2), '.BBBQQQQBBB.', '.BBBQKQKBBB.', '.BBBKQKQBBB.', '..BBBBBBBB..', '..L......L..', '.HH......HH.', '............'],
+};
+const COMISION = [
+  '....RRRRRR....',
+  '..RRRRRRRRRR..',
+  '.RWWRRRRRRWWR.',
+  '.RRKWRRRRWKRR.',
+  'RRRRRRRRRRRRRR',
+  'RRRWWRRRRRWRRR',
+  'RRRWWRRRRWRRRR',
+  'RRRRRRRRWRRRRR',
+  'RRRRRRRWRRRRRR',
+  'RRRRRRWRRWWRRR',
+  'RRRRRWRRRWWRRR',
+  '.rRRRRRRRRRRr.',
+  '..KK......KK..',
+];
+const CABEZA = CUERPO.slice(0, 8);
+const COMISION_B = [...COMISION.slice(0, 12), '...KK....KK...'];
+const ESTRELLA = [
+  '....YY....',
+  '....YY....',
+  '...YYYY...',
+  'YYYYYYYYYY',
+  '.YYYYYYYY.',
+  '..YYYYYY..',
+  '..YYYYYY..',
+  '.YYY..YYY.',
+  '.YY....YY.',
+  'y........y',
+];
+
+function sprite(mapa, x, y, voltear = false) {
+  const w = mapa[0].length;
+  for (let j = 0; j < mapa.length; j++) {
+    const fila = mapa[j];
+    for (let i = 0; i < w; i++) {
+      const c = fila[i];
+      if (c === '.') continue;
+      ctx.fillStyle = PAL[c];
+      ctx.fillRect(x + (voltear ? w - 1 - i : i), y + j, 1, 1);
+    }
+  }
+}
+
+// Íconos de 10×10 px
+const TIPOS = ['instagram', 'tiktok', 'whatsapp', 'google'];
+function icono(tipo, x, y) {
+  x = Math.round(x); y = Math.round(y);
+  const f = (c, a, b, w, h) => { ctx.fillStyle = c; ctx.fillRect(x + a, y + b, w, h); };
+  if (tipo === 'instagram') {
+    const g = ctx.createLinearGradient(x, y + 10, x + 10, y);
+    g.addColorStop(0, '#FEDA75'); g.addColorStop(.4, '#FA7E1E'); g.addColorStop(.7, '#D62976'); g.addColorStop(1, '#962FBF');
+    ctx.fillStyle = g; ctx.fillRect(x + 1, y, 8, 10); ctx.fillRect(x, y + 1, 10, 8);
+    f('#fff', 2, 2, 6, 1); f('#fff', 2, 7, 6, 1); f('#fff', 2, 2, 1, 6); f('#fff', 7, 2, 1, 6); f('#fff', 4, 4, 2, 2); f('#fff', 8, 1, 1, 1);
+  } else if (tipo === 'tiktok') {
+    f('#111', 1, 0, 8, 10); f('#111', 0, 1, 10, 8);
+    f('#25F4EE', 2, 6, 1, 2); f('#FE2C55', 6, 3, 1, 1);
+    f('#fff', 5, 2, 1, 6); f('#fff', 6, 2, 2, 1); f('#fff', 7, 3, 1, 1); f('#fff', 3, 6, 2, 2);
+  } else if (tipo === 'whatsapp') {
+    f('#25D366', 2, 0, 6, 10); f('#25D366', 0, 2, 10, 6); f('#25D366', 1, 1, 8, 8);
+    f('#fff', 3, 2, 4, 1); f('#fff', 2, 3, 1, 4); f('#fff', 7, 3, 1, 4); f('#fff', 3, 7, 4, 1); f('#fff', 2, 7, 1, 1); f('#fff', 1, 8, 1, 1);
+    f('#fff', 4, 4, 2, 2);
+  } else {
+    sprite(ESTRELLA, x, y);
+  }
+}
+
+// ================== Niveles ==================
+let mapa, enemigos, iconos, pops, textos, golpes, nivel = 1, tiempo = 0;
+const POSTE = 172, PUERTA = 182;
+const NIVELES = {
+  1: { nombre: 'EL BARRIO', tiempo: 120, velEnemigo: 30,
+       cielo: '#6EC1FF', ciudad: '#A8DCFF', ventana: '#C9EAFF', nube: '#FFFFFF', nubeSombra: '#D3ECFF', colina: '#3FB45F', colinaOsc: '#2E9A4C', estrellas: false },
+  2: { nombre: 'CENTRO DE NOCHE', tiempo: 150, velEnemigo: 40,
+       cielo: '#16224F', ciudad: '#2A3B78', ventana: '#FFD86B', nube: '#3A4C8A', nubeSombra: '#2C3C74', colina: '#1F6B45', colinaOsc: '#16523A', estrellas: true },
+};
+function construirNivel(n) {
+  mapa = Array.from({ length: ROWS }, () => Array(COLS).fill('.'));
+  enemigos = []; iconos = []; pops = []; textos = []; golpes = {};
+  const vel = NIVELES[n].velEnemigo;
+  const suelo = (a, b) => { for (let x = a; x <= b; x++) { mapa[12][x] = '#'; mapa[13][x] = '#'; } };
+  const put = (x, y, s) => [...s].forEach((c, i) => {
+    const tx = x + i;
+    if (c === 'e' || c === 'h') enemigos.push({ x: tx * T + 1, y: y * T + 3, w: 14, h: 13, vx: -vel, vy: 0, vivo: true, aplastado: 0, activo: false, suelo: false, salta: c === 'h', tSalto: 0.6 + Math.random() });
+    else if (c === 'o') iconos.push({ tipo: TIPOS[tx % 4], x: tx * T + 3, y: y * T + 3 });
+    else if (c !== ' ') mapa[y][tx] = c;
+  });
+  const columna = (x, h) => { for (let i = 0; i < h; i++) mapa[11 - i][x] = 'S'; };
+  const escalera = (x, n, sube = true) => { for (let i = 0; i < n; i++) { const h = sube ? i + 1 : n - i; for (let j = 0; j < h; j++) mapa[11 - j][x + i] = 'S'; } };
+
+  if (n === 1) {
+    suelo(0, 70); suelo(74, 95); suelo(99, 150); suelo(155, COLS - 1);
+    // Tramo 1
+    put(14, 8, 'N'); put(19, 8, 'BNBNB'); put(21, 4, 'N');
+    put(23, 11, 'e e');
+    columna(29, 2); columna(37, 3); columna(45, 4);
+    put(33, 11, 'e'); put(41, 11, 'e'); put(48, 11, 'e e');
+    put(36, 6, 'ooo'); put(45, 6, 'o');
+    put(54, 8, 'BBN'); put(58, 5, 'BBBBBB'); put(59, 4, 'oooo');
+    put(57, 11, 'e'); put(62, 11, 'e e');
+    escalera(65, 4); put(71, 6, 'ooo');
+    escalera(74, 4, false);
+    // Tramo 2
+    put(80, 8, 'N'); put(84, 8, 'BBBB'); put(84, 7, 'oooo'); put(85, 7, 'e');
+    put(82, 11, 'e e'); put(90, 11, 'e');
+    put(96, 7, 'ooo');
+    // Tramo 3
+    put(104, 8, 'NBN'); put(108, 5, 'BBBBBBBB'); put(110, 4, 'oooo');
+    put(109, 11, 'e e e');
+    put(118, 8, 'N'); put(122, 8, 'N'); put(126, 8, 'N'); put(122, 4, 'N');
+    put(120, 11, 'e e');
+    columna(132, 3); put(135, 11, 'e e'); columna(140, 4);
+    put(144, 8, 'BNNB'); put(146, 11, 'e e');
+    put(151, 7, 'oooo');
+    // Final
+    put(156, 11, 'e e');
+    escalera(159, 8);
+  } else {
+    suelo(0, 28); suelo(33, 55); suelo(60, 62); suelo(67, 95); suelo(100, 124); suelo(129, 134); suelo(139, COLS - 1);
+    // Tramo 1: saltarinas y primer hueco
+    put(9, 8, 'BNB'); put(11, 4, 'N'); put(15, 11, 'e h');
+    columna(22, 3); put(25, 11, 'e');
+    put(29, 7, 'oooo');
+    put(36, 8, 'NN'); put(38, 11, 'h'); put(42, 11, 'e e e');
+    columna(48, 4); put(51, 11, 'h');
+    // Islas sobre huecos
+    put(56, 8, 'BBBB'); put(56, 7, 'o  o');
+    put(61, 11, 'h');
+    put(63, 8, 'BNB'); put(64, 4, 'oo');
+    // Tramo 2
+    put(70, 11, 'e h e'); put(75, 8, 'BBBBB'); put(76, 7, 'e'); put(77, 4, 'N');
+    escalera(83, 4); escalera(87, 4, false); put(91, 11, 'e');
+    put(92, 11, 'h'); put(96, 6, 'oooo');
+    // Tramo 3
+    put(104, 8, 'NBNBN'); put(106, 4, 'BBB'); put(107, 3, 'o');
+    put(107, 11, 'h e h');
+    columna(116, 4); put(119, 11, 'e h');
+    put(125, 7, 'oooo');
+    put(130, 8, 'BNB'); put(132, 11, 'h');
+    put(135, 7, 'oooo');
+    // Final
+    put(142, 11, 'e h e'); put(148, 8, 'BBNBB'); put(150, 11, 'h');
+    escalera(156, 8); put(166, 11, 'h');
+  }
+  mapa[11][POSTE] = 'S';
+}
+
+const SOLIDOS = '#BNUS';
+function solido(tx, ty) {
+  if (tx < 0 || tx >= COLS) return true;
+  if (ty < 0 || ty >= ROWS) return false;
+  return SOLIDOS.includes(mapa[ty][tx]);
+}
+
+// ================== Física ==================
+function moverX(o, dx) {
+  o.x += dx;
+  const y0 = Math.floor(o.y / T), y1 = Math.floor((o.y + o.h - 0.01) / T);
+  if (dx > 0) {
+    const tx = Math.floor((o.x + o.w - 0.01) / T);
+    for (let ty = y0; ty <= y1; ty++) if (solido(tx, ty)) { o.x = tx * T - o.w; return true; }
+  } else if (dx < 0) {
+    const tx = Math.floor(o.x / T);
+    for (let ty = y0; ty <= y1; ty++) if (solido(tx, ty)) { o.x = (tx + 1) * T; return true; }
+  }
+  return false;
+}
+function moverY(o, dy) {
+  o.y += dy; o.suelo = false;
+  const x0 = Math.floor(o.x / T), x1 = Math.floor((o.x + o.w - 0.01) / T);
+  if (dy > 0) {
+    const ty = Math.floor((o.y + o.h - 0.01) / T);
+    for (let tx = x0; tx <= x1; tx++) if (solido(tx, ty)) { o.y = ty * T - o.h; o.vy = 0; o.suelo = true; return null; }
+  } else if (dy < 0) {
+    const ty = Math.floor(o.y / T);
+    const centro = Math.floor((o.x + o.w / 2) / T);
+    const cand = [centro, x0, x1].find(tx => solido(tx, ty));
+    if (cand !== undefined) { o.y = (ty + 1) * T; o.vy = 0; return { tx: cand, ty }; }
+  }
+  return null;
+}
+const choque = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+// ================== Estado del juego ==================
+let estado = 'inicio', J, cam = 0, puntos = 0, conexiones = 0, vidas = 3, reloj = 0, tEstado = 0, banderaY = 2 * T + 4, inicioX = 2;
+let record = 0;
+try { record = +localStorage.getItem('conectiAventuraRecord') || 0; } catch (e) {}
+
+function nuevoJugador() {
+  J = { x: inicioX * T, y: 11 * T - 16, w: 12, h: 16, vx: 0, vy: 0, suelo: false, dir: 1, anim: 0, coyote: 0, buffer: 0, visible: true };
+}
+function nuevaPartida() {
+  puntos = 0; conexiones = 0; vidas = 3; nivel = 1; inicioX = 2;
+  presentarNivel();
+}
+// Pantalla "NIVEL x" y arranque (también tras perder una vida)
+function presentarNivel() {
+  construirNivel(nivel); nuevoJugador(); banderaY = 2 * T + 4;
+  cam = Math.max(0, J.x - VW * 0.42);
+  tiempo = NIVELES[nivel].tiempo;
+  estado = 'intro'; tEstado = 0;
+  document.getElementById('capaInicio').hidden = true;
+  document.getElementById('capaFin').hidden = true;
+}
+function sumar(p, x, y) { puntos += p; textos.push({ txt: '+' + p, x, y, t: 0.8 }); }
+
+function golpearBloque(tx, ty) {
+  const c = mapa[ty][tx];
+  golpes[tx + ',' + ty] = 0.15;
+  for (const e of enemigos) {
+    if (e.vivo && e.x + e.w > tx * T && e.x < (tx + 1) * T && Math.abs(e.y + e.h - ty * T) < 3) {
+      e.vivo = false; e.vy = -200; e.volteado = true; sumar(100, e.x, e.y - 8); SFX.aplasta();
+    }
+  }
+  if (c === 'N') {
+    mapa[ty][tx] = 'U';
+    const tipo = TIPOS[Math.floor(Math.random() * 4)];
+    pops.push({ tipo, x: tx * T + 3, y: ty * T - 10, t: 0 });
+    conexiones++; sumar(100, tx * T, ty * T - 12); SFX.icono();
+  } else {
+    SFX.bloque();
+  }
+}
+
+function perder() {
+  if (estado !== 'jugando') return;
+  estado = 'muriendo'; tEstado = 0;
+  J.vy = -300; J.vx = 0;
+  if (J.x > 100 * T) inicioX = 101;
+  SFX.dano();
+  if (navigator.vibrate) try { navigator.vibrate(150); } catch (e) {}
+}
+
+function mostrarFin(gano) {
+  estado = 'fin';
+  if (puntos > record) { record = puntos; try { localStorage.setItem('conectiAventuraRecord', record); } catch (e) {} }
+  document.getElementById('finTitulo').innerHTML = gano ? '¡GANASTE LOS<br><span>2 NIVELES!</span>' : 'FIN DEL<br><span>JUEGO</span>';
+  document.getElementById('finTexto').textContent = gano
+    ? `Conecti llegó a las dos tiendas y juntó ${conexiones} conexiones para el negocio.`
+    : `Las comisiones ganaron esta vez. Juntaste ${conexiones} conexiones.`;
+  document.getElementById('finPuntos').textContent = 'PUNTOS ' + String(puntos).padStart(6, '0');
+  document.getElementById('finRecord').textContent = 'RÉCORD ' + String(record).padStart(6, '0');
+  document.getElementById('capaFin').hidden = false;
+  document.getElementById('btnOtra').focus();
+}
+
+// ================== Controles ==================
+const tecla = { izq: false, der: false, saltar: false };
+function presionarSalto(v) {
+  if (v && !tecla.saltar && J) J.buffer = 0.12;
+  tecla.saltar = v;
+}
+const MAPA_TECLAS = { ArrowLeft:'izq', KeyA:'izq', ArrowRight:'der', KeyD:'der', Space:'saltar', ArrowUp:'saltar', KeyW:'saltar', KeyZ:'saltar' };
+addEventListener('keydown', e => {
+  const k = MAPA_TECLAS[e.code];
+  if (k) { e.preventDefault(); if (k === 'saltar') presionarSalto(true); else tecla[k] = true; }
+  if (e.code === 'Enter' && estado === 'inicio') empezar();
+});
+addEventListener('keyup', e => {
+  const k = MAPA_TECLAS[e.code];
+  if (k) { if (k === 'saltar') presionarSalto(false); else tecla[k] = false; }
+});
+document.querySelectorAll('.btn').forEach(b => {
+  const k = b.dataset.k;
+  const on = e => { e.preventDefault(); activarAudio(); b.classList.add('on'); if (k === 'saltar') presionarSalto(true); else tecla[k] = true; try { b.setPointerCapture(e.pointerId); } catch (_) {} };
+  const off = () => { b.classList.remove('on'); if (k === 'saltar') presionarSalto(false); else tecla[k] = false; };
+  b.addEventListener('pointerdown', on);
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => b.addEventListener(ev, off));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
+function empezar() { activarAudio(); nuevaPartida(); }
+document.getElementById('btnJugar').onclick = empezar;
+document.getElementById('btnOtra').onclick = empezar;
+
+// ================== Actualización ==================
+const ACC = 520, FRENO = 650, MAXV = 92, G = 950, SALTO = -395, CAIDA_MAX = 420;
+
+function actualizar(dt) {
+  reloj += dt; tEstado += dt;
+  for (const k in golpes) { golpes[k] -= dt; if (golpes[k] <= 0) delete golpes[k]; }
+  for (const p of pops) { p.t += dt; p.y -= 50 * dt * Math.max(0, 1 - p.t * 2.5); }
+  pops = pops.filter(p => p.t < 0.6);
+  for (const t of textos) { t.t -= dt; t.y -= 20 * dt; }
+  textos = textos.filter(t => t.t > 0);
+
+  if (estado === 'intro') { if (tEstado > 2.2) { estado = 'jugando'; tEstado = 0; } }
+  else if (estado === 'jugando') {
+    tiempo -= dt;
+    if (tiempo <= 0) { tiempo = 0; perder(); }
+    else actualizarJugador(dt);
+  }
+  else if (estado === 'muriendo') {
+    J.vy += G * dt; J.y += J.vy * dt;
+    if (tEstado > 1.6) {
+      vidas--;
+      if (vidas > 0) presentarNivel(); else { SFX.fin(); mostrarFin(false); }
+    }
+  } else if (estado === 'meta') actualizarMeta(dt);
+
+  if (estado === 'jugando' || estado === 'meta') actualizarEnemigos(dt);
+  if (J) cam = Math.max(0, Math.min(COLS * T - VW, Math.max(cam, J.x - VW * 0.42)));
+}
+
+function actualizarJugador(dt) {
+  if (tecla.der && !tecla.izq) { J.vx = Math.min(MAXV, J.vx + ACC * dt * (J.vx < 0 ? 2 : 1)); J.dir = 1; }
+  else if (tecla.izq && !tecla.der) { J.vx = Math.max(-MAXV, J.vx - ACC * dt * (J.vx > 0 ? 2 : 1)); J.dir = -1; }
+  else { const f = FRENO * dt; J.vx = Math.abs(J.vx) <= f ? 0 : J.vx - Math.sign(J.vx) * f; }
+
+  J.coyote = J.suelo ? 0.08 : J.coyote - dt;
+  J.buffer -= dt;
+  if (J.buffer > 0 && J.coyote > 0) { J.vy = SALTO; J.coyote = 0; J.buffer = 0; SFX.salto(); }
+  if (!tecla.saltar && J.vy < -130) J.vy = -130;
+  J.vy = Math.min(CAIDA_MAX, J.vy + G * dt);
+
+  if (moverX(J, J.vx * dt)) J.vx = 0;
+  if (J.x < cam) { J.x = cam; J.vx = Math.max(0, J.vx); }
+  const g = moverY(J, J.vy * dt);
+  if (g) golpearBloque(g.tx, g.ty);
+  J.anim += Math.abs(J.vx) * dt;
+
+  if (J.y > VH + 16) { perder(); return; }
+
+  for (const ic of iconos) {
+    if (!ic.tomado && choque(J, { x: ic.x, y: ic.y, w: 10, h: 10 })) {
+      ic.tomado = true; conexiones++; sumar(50, ic.x, ic.y - 6); SFX.icono();
+    }
+  }
+  iconos = iconos.filter(i => !i.tomado);
+
+  for (const e of enemigos) {
+    if (!e.vivo || !e.activo) continue;
+    if (choque(J, e)) {
+      if (J.vy > 0 && J.y + J.h - e.y < 9) {
+        e.vivo = false; e.aplastado = 0.5; J.vy = tecla.saltar ? -360 : -230;
+        sumar(100, e.x, e.y - 8); SFX.aplasta();
+      } else { perder(); return; }
+    }
+  }
+
+  if (J.x + J.w >= POSTE * T - 0.5) {
+    estado = 'meta'; tEstado = 0;
+    J.x = POSTE * T + 7 - J.w; J.vx = 0; J.vy = 0;
+    const bono = Math.max(100, Math.round((11 * T - J.y) / 8) * 100);
+    sumar(bono, J.x + 16, J.y);
+    const extra = Math.ceil(tiempo) * 10;
+    if (extra > 0) { puntos += extra; textos.push({ txt: 'TIEMPO +' + extra, x: J.x - 40, y: J.y - 14, t: 2 }); }
+    SFX.meta();
+  }
+}
+
+function actualizarMeta(dt) {
+  const piso = 11 * T - J.h;
+  if (tEstado < 1.4) {
+    J.y = Math.min(piso, J.y + 90 * dt);
+    banderaY = Math.min(10 * T - 2, banderaY + 90 * dt);
+  } else if (J.visible) {
+    J.dir = 1; J.vx = 80;
+    J.vy = Math.min(CAIDA_MAX, J.vy + G * dt);
+    moverX(J, J.vx * dt); moverY(J, J.vy * dt);
+    J.anim += J.vx * dt;
+    if (J.x + J.w / 2 >= PUERTA * T + 8) { J.visible = false; tEstado = 1.4; J.fueraEn = reloj; }
+  } else if (reloj - J.fueraEn > 1) {
+    if (nivel < 2) { nivel++; inicioX = 2; presentarNivel(); }
+    else mostrarFin(true);
+  }
+}
+
+function actualizarEnemigos(dt) {
+  for (const e of enemigos) {
+    if (!e.activo && e.x < cam + VW + 24) e.activo = true;
+    if (!e.activo) continue;
+    if (e.aplastado > 0) { e.aplastado -= dt; continue; }
+    if (!e.vivo) { e.vy += G * dt; e.y += e.vy * dt; continue; }
+    if (moverX(e, e.vx * dt)) e.vx = -e.vx;
+    if (e.salta && e.suelo) { e.tSalto -= dt; if (e.tSalto <= 0) { e.vy = -300; e.tSalto = 0.9 + Math.random() * 0.8; } }
+    e.vy = Math.min(CAIDA_MAX, e.vy + G * dt);
+    moverY(e, e.vy * dt);
+  }
+  enemigos = enemigos.filter(e => (e.vivo || e.aplastado > 0 || e.y < VH + 32) && e.y < VH + 32);
+}
+
+// ================== Dibujo ==================
+function fondo() {
+  const N = NIVELES[nivel];
+  ctx.fillStyle = N.cielo; ctx.fillRect(0, 0, VW, VH);
+  if (N.estrellas) {
+    ctx.fillStyle = '#FFFFFF';
+    for (let i = 0; i < 40; i++) { const sx = ((i * 97 - cam * 0.05) % (VW + 20) + VW + 20) % (VW + 20); ctx.fillRect(Math.round(sx), (i * 53) % 110 + 6, 1, 1); }
+    ctx.fillStyle = '#FFF3C4'; ctx.fillRect(VW - 60, 40, 12, 12); ctx.fillStyle = N.cielo; ctx.fillRect(VW - 56, 38, 10, 10);
+  }
+  // Ciudad lejana
+  const c0 = cam * 0.2;
+  ctx.fillStyle = N.ciudad;
+  for (let i = -1; i < VW / 24 + 2; i++) {
+    const n = Math.floor(c0 / 24) + i, x = Math.round(n * 24 - c0);
+    const h = 24 + ((n * 37) % 5) * 9;
+    ctx.fillRect(x, 192 - 30 - h, 20, h + 30);
+    ctx.fillStyle = N.ventana;
+    for (let wy = 192 - 30 - h + 5; wy < 170; wy += 8) { ctx.fillRect(x + 4, wy, 3, 3); ctx.fillRect(x + 13, wy, 3, 3); }
+    ctx.fillStyle = N.ciudad;
+  }
+  // Nubes
+  const c1 = cam * 0.35;
+  for (let i = -1; i < VW / 120 + 2; i++) {
+    const n = Math.floor(c1 / 120) + i, x = Math.round(n * 120 - c1 + 20), y = 24 + ((n * 53) % 3) * 14;
+    ctx.fillStyle = N.nube;
+    ctx.fillRect(x + 6, y, 20, 6); ctx.fillRect(x, y + 4, 36, 8); ctx.fillRect(x + 12, y - 4, 12, 6);
+    ctx.fillStyle = N.nubeSombra; ctx.fillRect(x + 2, y + 10, 32, 2);
+  }
+  // Colinas
+  const c2 = cam * 0.55;
+  for (let i = -1; i < VW / 160 + 2; i++) {
+    const n = Math.floor(c2 / 160) + i, x = n * 160 - c2 + 40, r = 34 + ((n * 29) % 3) * 10;
+    ctx.fillStyle = N.colina;
+    ctx.beginPath(); ctx.arc(Math.round(x), 192, r, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = N.colinaOsc;
+    ctx.fillRect(Math.round(x) - 6, 192 - r + 12, 3, 3); ctx.fillRect(Math.round(x) + 8, 192 - r + 20, 3, 3);
+  }
+}
+
+function bisel(x, y, base, claro, oscuro) {
+  ctx.fillStyle = base; ctx.fillRect(x, y, T, T);
+  ctx.fillStyle = claro; ctx.fillRect(x, y, T, 1); ctx.fillRect(x, y, 1, T);
+  ctx.fillStyle = oscuro; ctx.fillRect(x, y + T - 1, T, 1); ctx.fillRect(x + T - 1, y, 1, T);
+}
+function remaches(x, y, c) {
+  ctx.fillStyle = c; ctx.fillRect(x + 2, y + 2, 1, 1); ctx.fillRect(x + 13, y + 2, 1, 1); ctx.fillRect(x + 2, y + 13, 1, 1); ctx.fillRect(x + 13, y + 13, 1, 1);
+}
+function tile(c, x, y, tx, ty) {
+  switch (c) {
+    case '#': {
+      ctx.fillStyle = '#C9773A'; ctx.fillRect(x, y, T, T);
+      ctx.fillStyle = '#9E5527';
+      const s = (tx * 7 + ty * 13) % 5;
+      ctx.fillRect(x + 3 + s, y + 6, 2, 2); ctx.fillRect(x + 10 - s, y + 11, 2, 2); ctx.fillRect(x + 12, y + 3 + s, 1, 1);
+      if (!solido(tx, ty - 1)) {
+        ctx.fillStyle = '#3DBB4C'; ctx.fillRect(x, y, T, 4);
+        ctx.fillStyle = '#2A8F3A'; ctx.fillRect(x, y + 4, T, 1);
+        ctx.fillRect(x + 3, y + 5, 2, 1); ctx.fillRect(x + 10, y + 5, 2, 1);
+        ctx.fillStyle = '#7DE38A'; ctx.fillRect(x, y, T, 1);
+      }
+      break;
+    }
+    case 'B':
+      ctx.fillStyle = '#C0562B'; ctx.fillRect(x, y, T, T);
+      ctx.fillStyle = '#E07A48'; ctx.fillRect(x, y, T, 1);
+      ctx.fillStyle = '#6E2A10';
+      ctx.fillRect(x, y + 7, T, 1); ctx.fillRect(x, y + 15, T, 1);
+      ctx.fillRect(x + 7, y, 1, 7); ctx.fillRect(x + 3, y + 8, 1, 7); ctx.fillRect(x + 12, y + 8, 1, 7);
+      break;
+    case 'S':
+      bisel(x, y, '#7F93C2', '#B7C6EA', '#4A5C8C');
+      ctx.fillStyle = '#6A7EAE'; ctx.fillRect(x + 4, y + 4, 8, 8);
+      ctx.fillStyle = '#93A6D2'; ctx.fillRect(x + 4, y + 4, 8, 1);
+      break;
+    case 'N': {
+      bisel(x, y, '#1FA4F5', '#A6E0FF', '#1460C8');
+      remaches(x, y, '#1460C8');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(x + 3, y + 7, 2, 2);
+      ctx.fillRect(x + 7, y + 5, 1, 1); ctx.fillRect(x + 8, y + 6, 1, 4); ctx.fillRect(x + 7, y + 10, 1, 1);
+      ctx.fillRect(x + 10, y + 3, 1, 2); ctx.fillRect(x + 11, y + 5, 1, 6); ctx.fillRect(x + 10, y + 11, 1, 2);
+      const brillo = 0.5 + 0.5 * Math.sin(reloj * 5);
+      ctx.fillStyle = `rgba(255,255,255,${0.18 * brillo})`; ctx.fillRect(x + 1, y + 1, T - 2, T - 2);
+      break;
+    }
+    case 'U':
+      bisel(x, y, '#3A4A70', '#56689A', '#232F4F');
+      remaches(x, y, '#232F4F');
+      break;
+  }
+}
+
+function decoracion() {
+  // Cartel de 360 Connect al inicio
+  const bx = Math.round(3 * T - cam);
+  if (bx > -100 && bx < VW) {
+    ctx.fillStyle = '#6B4A2A'; ctx.fillRect(bx + 10, 150, 4, 42); ctx.fillRect(bx + 66, 150, 4, 42);
+    ctx.fillStyle = '#0F1B3D'; ctx.fillRect(bx - 2, 110, 84, 44);
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(bx, 112, 80, 40);
+    ctx.font = '8px "Press Start 2P", monospace'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#1FA4F5'; ctx.fillText('360', bx + 6, 118);
+    ctx.fillStyle = '#0F1B3D'; ctx.fillText('CONNECT', bx + 6, 129);
+    ctx.fillStyle = '#2F5BEA'; ctx.fillRect(bx + 6, 141, 68, 2);
+  }
+  // Arbustos
+  for (const tx of [9, 26, 52, 78, 93, 115, 129, 155]) {
+    const x = Math.round(tx * T - cam);
+    if (x < -40 || x > VW) continue;
+    ctx.fillStyle = '#2FA84F'; ctx.fillRect(x, 184, 32, 8); ctx.fillRect(x + 4, 179, 10, 6); ctx.fillRect(x + 16, 177, 12, 8);
+    ctx.fillStyle = '#5ED27A'; ctx.fillRect(x + 6, 180, 4, 2); ctx.fillRect(x + 19, 178, 4, 2);
+  }
+  // Poste de meta con bandera 360
+  const px = Math.round(POSTE * T - cam);
+  if (px > -40 && px < VW + 20) {
+    ctx.fillStyle = '#DDE7F7'; ctx.fillRect(px + 7, 2 * T, 2, 9 * T);
+    ctx.fillStyle = '#25D366'; ctx.fillRect(px + 5, 2 * T - 5, 6, 6);
+    const fy = Math.round(banderaY);
+    ctx.fillStyle = '#2F5BEA'; ctx.fillRect(px - 11, fy, 18, 12);
+    ctx.fillStyle = '#1FA4F5'; ctx.fillRect(px - 11, fy, 18, 4);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(px - 8, fy + 5, 2, 2); ctx.fillRect(px - 4, fy + 4, 1, 4); ctx.fillRect(px - 1, fy + 3, 1, 6);
+  }
+  // Tienda
+  const sx = Math.round(177 * T - cam);
+  if (sx > -200 && sx < VW) {
+    const w = 10 * T, top = 5 * T;
+    ctx.fillStyle = '#F4F8FF'; ctx.fillRect(sx, top + 24, w, 192 - top - 24);
+    ctx.fillStyle = '#0F1B3D'; ctx.fillRect(sx - 6, top, w + 12, 10);
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(sx + 20, top - 16, w - 40, 16);
+    ctx.fillStyle = '#0F1B3D'; ctx.fillRect(sx + 18, top - 18, w - 36, 2);
+    ctx.font = '8px "Press Start 2P", monospace'; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#2F5BEA'; ctx.fillText('TIENDA', sx + w / 2, top - 12);
+    for (let i = 0; i < w + 8; i += 8) {
+      ctx.fillStyle = (i / 8) % 2 ? '#FFFFFF' : '#1FA4F5';
+      ctx.fillRect(sx - 4 + i, top + 10, 8, 12);
+      ctx.fillRect(sx - 2 + i, top + 22, 4, 3);
+    }
+    const dx = Math.round(PUERTA * T - cam);
+    ctx.fillStyle = '#0F1B3D'; ctx.fillRect(dx, 192 - 34, 20, 34);
+    ctx.fillStyle = '#FFC928'; ctx.fillRect(dx + 15, 192 - 18, 2, 2);
+    for (const wx of [sx + 14, sx + w - 44]) {
+      ctx.fillStyle = '#8FD3FF'; ctx.fillRect(wx, top + 44, 30, 22);
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(wx + 14, top + 44, 2, 22); ctx.fillRect(wx + 3, top + 47, 4, 2);
+    }
+    // Placa WhatsApp junto a la puerta
+    const pl = dx + 26;
+    ctx.fillStyle = '#25D366'; ctx.fillRect(pl, 192 - 22, 12, 9);
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(pl, 192 - 13, 12, 7); ctx.fillRect(pl + 4, 192 - 20, 4, 4);
+    ctx.fillStyle = '#0F1B3D'; ctx.fillRect(pl + 3, 192 - 11, 6, 3);
+    ctx.fillStyle = '#9AA6C0'; ctx.fillRect(pl - 2, 192 - 6, 16, 6);
+  }
+}
+
+function texto(t, x, y, color = '#FFFFFF', alin = 'left') {
+  ctx.font = '8px "Press Start 2P", monospace'; ctx.textBaseline = 'top'; ctx.textAlign = alin;
+  ctx.fillStyle = '#0F1B3D'; ctx.fillText(t, x + 1, y + 1);
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+
+function hud() {
+  texto('PUNTOS', 6, 6); texto(String(puntos).padStart(6, '0'), 6, 16);
+  const cx = Math.round(VW * 0.56);
+  texto('NIVEL', cx, 6, '#FFFFFF', 'center'); texto(String(nivel) + '/2', cx, 16, '#FFFFFF', 'center');
+  const urgente = tiempo < 20 && Math.floor(reloj * 4) % 2;
+  texto('TIEMPO', VW - 6, 6, '#FFFFFF', 'right'); texto(String(Math.ceil(tiempo)).padStart(3, '0'), VW - 6, 16, urgente ? '#FF6B6B' : '#FFFFFF', 'right');
+  icono('google', 6, 28); texto('x' + String(conexiones).padStart(2, '0'), 18, 29);
+  sprite(CABEZA, VW - 36, 27); texto('x' + vidas, VW - 6, 29, '#FFFFFF', 'right');
+}
+
+function pantallaNivel() {
+  ctx.fillStyle = '#0F1B3D'; ctx.fillRect(0, 0, VW, VH);
+  texto('NIVEL ' + nivel, VW / 2, 70, '#1FA4F5', 'center');
+  texto(NIVELES[nivel].nombre, VW / 2, 88, '#FFFFFF', 'center');
+  sprite(CONECTI.quieto, Math.round(VW / 2) - 22, 116);
+  texto('x ' + vidas, VW / 2 + 14, 122, '#FFFFFF', 'center');
+  texto(nivel === 1 ? 'LLEGA A LA TIENDA' : 'CUIDADO: COMISIONES SALTARINAS', VW / 2, 160, '#FFE066', 'center');
+}
+
+function dibujar() {
+  if (estado === 'intro') { pantallaNivel(); return; }
+  fondo();
+  decoracion();
+  const c = Math.round(cam);
+  const x0 = Math.floor(c / T), x1 = Math.min(COLS - 1, x0 + Math.ceil(VW / T) + 1);
+  for (let ty = 0; ty < ROWS; ty++) for (let tx = x0; tx <= x1; tx++) {
+    const ch = mapa[ty][tx];
+    if (ch === '.') continue;
+    const g = golpes[tx + ',' + ty];
+    const off = g ? -Math.round(Math.sin((1 - g / 0.15) * Math.PI) * 4) : 0;
+    tile(ch, tx * T - c, ty * T + off, tx, ty);
+  }
+  for (const ic of iconos) icono(ic.tipo, ic.x - c, ic.y + Math.round(Math.sin(reloj * 4 + ic.x) * 1.5));
+  for (const p of pops) icono(p.tipo, p.x - c, p.y);
+  for (const e of enemigos) {
+    const ex = Math.round(e.x - c), ey = Math.round(e.y);
+    if (ex < -20 || ex > VW + 20) continue;
+    if (e.aplastado > 0) {
+      ctx.fillStyle = '#E53935'; ctx.fillRect(ex, ey + 8, 14, 5);
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(ex + 3, ey + 9, 2, 1); ctx.fillRect(ex + 9, ey + 9, 2, 1);
+    } else if (e.volteado) {
+      ctx.save(); ctx.translate(ex, ey + e.h); ctx.scale(1, -1); sprite(COMISION, 0, 0); ctx.restore();
+    } else {
+      PAL.R = e.salta ? '#FF8A1F' : '#E53935'; PAL.r = e.salta ? '#C25A00' : '#B71C1C';
+      sprite(Math.floor(reloj * 6) % 2 || !e.suelo ? COMISION : COMISION_B, ex, ey);
+      PAL.R = '#E53935'; PAL.r = '#B71C1C';
+    }
+  }
+  if (J && J.visible && estado !== 'inicio') {
+    const jx = Math.round(J.x - c), jy = Math.round(J.y);
+    let spr = CONECTI.quieto;
+    if (estado === 'muriendo' || estado === 'meta' && tEstado < 1.4) spr = CONECTI.salto;
+    else if (!J.suelo) spr = CONECTI.salto;
+    else if (Math.abs(J.vx) > 5) spr = Math.floor(J.anim / 10) % 2 ? CONECTI.paso : CONECTI.quieto;
+    sprite(spr, jx, jy, J.dir < 0);
+  }
+  for (const t of textos) texto(t.txt, Math.round(t.x - c), Math.round(t.y), '#FFE066');
+  if (estado !== 'inicio') hud();
+}
+
+// ================== Bucle ==================
+construirNivel(nivel); nuevoJugador();
+let antes = performance.now();
+function bucle(ahora) {
+  const dt = Math.min(1 / 30, (ahora - antes) / 1000); antes = ahora;
+  actualizar(dt);
+  dibujar();
+  requestAnimationFrame(bucle);
+}
+requestAnimationFrame(bucle);
+</script>
+</body>
+</html>

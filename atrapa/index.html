@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Atrapa con Conecti</title>
+<style>
+  :root { --celeste:#1FA4F5; --azul:#2F5BEA; --navy:#0F1B3D; --verde:#25D366; }
+  html, body { margin:0; height:100%; background:var(--navy); overflow:hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; touch-action:none; }
+  #wrap { position:relative; height:100%; max-width:540px; margin:0 auto; }
+  canvas { display:block; width:100%; height:100%; }
+  .pantalla { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; text-align:center; padding:24px; gap:14px;
+    background:linear-gradient(180deg, rgba(31,164,245,.92), rgba(47,91,234,.95)); color:#fff; }
+  .pantalla h1 { margin:0; font-size:40px; font-weight:900; line-height:1.05; }
+  .pantalla h1 span { color:var(--navy); }
+  .pantalla p { margin:0; font-size:17px; max-width:360px; line-height:1.4; }
+  .reglas { background:#fff; color:var(--navy); border-radius:16px; padding:12px 18px;
+    font-size:15px; text-align:left; line-height:1.7; }
+  button, .wa { border:0; border-radius:999px; padding:14px 34px; font-size:20px; font-weight:800;
+    cursor:pointer; background:var(--navy); color:#fff; text-decoration:none; }
+  .wa { background:var(--verde); font-size:16px; padding:12px 22px; }
+  .oculto { display:none; }
+  .lema { font-size:13px; opacity:.85; letter-spacing:.5px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+
+  <div class="pantalla" id="inicio">
+    <h1>Atrapa con<br><span>Conecti</span></h1>
+    <p>Ayuda a Conecti a conseguir seguidores, reseñas y mensajes para tu negocio.</p>
+    <div class="reglas">
+      ⭐ Reseña de Google: <b>+3</b><br>
+      📷 Instagram · 🎵 TikTok · 💬 WhatsApp: <b>+1</b><br>
+      🚫 Comisiones de apps: <b>¡pierdes una vida!</b>
+    </div>
+    <p style="font-size:14px">Muévete arrastrando el dedo o con las flechas ← →</p>
+    <button id="btnJugar">¡Jugar!</button>
+    <div class="lema">Conecta · Promociona · Crece</div>
+  </div>
+
+  <div class="pantalla oculto" id="fin">
+    <h1>¡Fin del<br><span>juego!</span></h1>
+    <p id="resumen"></p>
+    <p id="record" style="font-weight:700"></p>
+    <button id="btnOtra">Jugar otra vez</button>
+    <p style="font-size:15px">Haz que tu negocio crezca de verdad con una placa NFC + QR.</p>
+    <a class="wa" href="https://wa.me/51974337299?text=Hola%2C%20jugu%C3%A9%20Atrapa%20con%20Conecti%20y%20quiero%20una%20placa" target="_blank" rel="noopener">WhatsApp 974 337 299</a>
+    <div class="lema">@360connectpe · @360_connect_pe</div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, DPR;
+function ajustar() {
+  DPR = window.devicePixelRatio || 1;
+  W = cv.clientWidth; H = cv.clientHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', ajustar); ajustar();
+
+// ---------- Estado ----------
+const TIPOS = [
+  { id:'google',    pts:3, peso:2 },
+  { id:'instagram', pts:1, peso:3 },
+  { id:'tiktok',    pts:1, peso:3 },
+  { id:'whatsapp',  pts:1, peso:3 },
+  { id:'comision',  pts:0, peso:3, malo:true },
+];
+let jugando = false, puntos, vidas, objetos, particulas, tiempo, proxima, conecti, teclas = {}, golpe = 0;
+let record = 0;
+try { record = +localStorage.getItem('conectiRecord') || 0; } catch (e) {}
+
+function iniciar() {
+  puntos = 0; vidas = 3; objetos = []; particulas = []; tiempo = 0; proxima = 0.6; golpe = 0;
+  conecti = { x: W / 2, destino: W / 2, salto: 0 };
+  jugando = true;
+  document.getElementById('inicio').classList.add('oculto');
+  document.getElementById('fin').classList.add('oculto');
+}
+function terminar() {
+  jugando = false;
+  if (puntos > record) { record = puntos; try { localStorage.setItem('conectiRecord', record); } catch (e) {} }
+  document.getElementById('resumen').textContent = `Conseguiste ${puntos} puntos para tu negocio.`;
+  document.getElementById('record').textContent = `Tu récord: ${record}`;
+  document.getElementById('fin').classList.remove('oculto');
+}
+document.getElementById('btnJugar').onclick = iniciar;
+document.getElementById('btnOtra').onclick = iniciar;
+
+// ---------- Controles ----------
+addEventListener('keydown', e => { teclas[e.key] = true; });
+addEventListener('keyup',   e => { teclas[e.key] = false; });
+cv.addEventListener('pointerdown', e => { if (conecti) conecti.destino = e.offsetX; });
+cv.addEventListener('pointermove', e => { if (conecti && (e.buttons || e.pointerType === 'touch')) conecti.destino = e.offsetX; });
+
+// ---------- Lógica ----------
+function elegirTipo() {
+  const total = TIPOS.reduce((s, t) => s + t.peso, 0);
+  let r = Math.random() * total;
+  for (const t of TIPOS) { if ((r -= t.peso) < 0) return t; }
+  return TIPOS[0];
+}
+function explotar(x, y, color, n = 12) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = 80 + Math.random() * 160;
+    particulas.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, vida: 0.7, color });
+  }
+}
+
+function actualizar(dt) {
+  tiempo += dt;
+  const nivel = 1 + tiempo / 25;                // se acelera con el tiempo
+  const vel = 420 * Math.min(W / 400, 1.3);
+
+  if (teclas.ArrowLeft  || teclas.a) conecti.destino = conecti.x - vel * dt * 3;
+  if (teclas.ArrowRight || teclas.d) conecti.destino = conecti.x + vel * dt * 3;
+  conecti.destino = Math.max(40, Math.min(W - 40, conecti.destino));
+  const dx = conecti.destino - conecti.x;
+  conecti.x += Math.sign(dx) * Math.min(Math.abs(dx), vel * dt * 1.6);
+  conecti.salto = Math.max(0, conecti.salto - dt * 4);
+  golpe = Math.max(0, golpe - dt);
+
+  proxima -= dt;
+  if (proxima <= 0) {
+    const t = elegirTipo();
+    objetos.push({ t, x: 30 + Math.random() * (W - 60), y: -30, v: (120 + Math.random() * 80) * nivel, giro: Math.random() * 6 });
+    proxima = Math.max(0.28, 0.9 / nivel);
+  }
+
+  const cy = H - 110;
+  for (const o of objetos) {
+    o.y += o.v * dt; o.giro += dt * 2;
+    if (!o.fuera && Math.abs(o.x - conecti.x) < 48 && Math.abs(o.y - cy) < 46) {
+      o.fuera = true;
+      if (o.t.malo) {
+        vidas--; golpe = 0.5; explotar(o.x, o.y, '#E53935', 18);
+        if (navigator.vibrate) navigator.vibrate(120);
+        if (vidas <= 0) terminar();
+      } else {
+        puntos += o.t.pts; conecti.salto = 1;
+        explotar(o.x, o.y, o.t.id === 'google' ? '#FBBC05' : '#1FA4F5');
+      }
+    }
+    if (o.y > H + 40) o.fuera = true;
+  }
+  objetos = objetos.filter(o => !o.fuera);
+
+  for (const p of particulas) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500 * dt; p.vida -= dt; }
+  particulas = particulas.filter(p => p.vida > 0);
+}
+
+// ---------- Dibujo ----------
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+function dibujarFondo() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#DDEEFF'); g.addColorStop(1, '#8FC4FA');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // piso
+  ctx.fillStyle = '#fff'; rr(-20, H - 50, W + 40, 80, 30); ctx.fill();
+  ctx.fillStyle = '#1FA4F5'; ctx.fillRect(0, H - 50, W, 4);
+}
+
+function dibujarConecti(x, base) {
+  const s = Math.sin(conecti.salto * Math.PI) * 18;
+  const y = base - s;
+  ctx.save(); ctx.translate(x, y);
+  if (golpe > 0 && Math.floor(golpe * 20) % 2) ctx.globalAlpha = 0.4;
+  // sombra
+  ctx.fillStyle = 'rgba(15,27,61,.18)';
+  ctx.beginPath(); ctx.ellipse(0, 62 + s, 34, 7, 0, 0, Math.PI * 2); ctx.fill();
+  // piernas
+  ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-16, 30, 8, 26); ctx.fillRect(8, 30, 8, 26);
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(-12, 58, 10, 6, 0, 0, 7); ctx.ellipse(12, 58, 10, 6, 0, 0, 7); ctx.fill();
+  // brazos (saludan al atrapar)
+  ctx.strokeStyle = '#2F7BF0'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  const brazo = conecti.salto > 0 ? -40 : -10;
+  ctx.beginPath(); ctx.moveTo(-34, -6); ctx.lineTo(-52, brazo); ctx.moveTo(34, -6); ctx.lineTo(52, brazo); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-52, brazo, 7, 0, 7); ctx.arc(52, brazo, 7, 0, 7); ctx.fill();
+  // cuerpo
+  const g = ctx.createLinearGradient(0, -50, 0, 40);
+  g.addColorStop(0, '#2E9BF5'); g.addColorStop(1, '#1F7FE6');
+  ctx.fillStyle = g; rr(-36, -50, 72, 86, 12); ctx.fill();
+  // pantalla / cara
+  ctx.fillStyle = '#F2F7FF'; rr(-28, -42, 56, 48, 6); ctx.fill();
+  ctx.fillStyle = '#0F1B3D';
+  ctx.beginPath(); ctx.arc(-11, -22, 6, 0, 7); ctx.arc(11, -22, 6, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(-9, -24, 2, 0, 7); ctx.arc(13, -24, 2, 0, 7); ctx.fill();
+  ctx.fillStyle = '#F7A1B0';
+  ctx.beginPath(); ctx.ellipse(-19, -12, 5, 3, 0, 0, 7); ctx.ellipse(19, -12, 5, 3, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#0F1B3D'; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  if (golpe > 0) ctx.arc(0, -4, 7, Math.PI * 1.15, Math.PI * 1.85);
+  else ctx.arc(0, -14, 8, Math.PI * 0.15, Math.PI * 0.85);
+  ctx.stroke();
+  // QR
+  ctx.fillStyle = '#fff'; ctx.fillRect(-11, 12, 22, 20);
+  ctx.fillStyle = '#0F1B3D';
+  [[0,0],[2,0],[3,1],[1,2],[3,2],[0,3],[2,3],[1,1]].forEach(([i, j]) => ctx.fillRect(-9 + i * 4.5, 14 + j * 4, 4, 3.5));
+  // ondas NFC
+  ctx.strokeStyle = '#1FA4F5'; ctx.lineWidth = 3;
+  for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.arc(38, -46, i * 6, -0.9, 0.5); ctx.stroke(); }
+  ctx.restore();
+}
+
+function circulo(color) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(0, 0, 22, 0, 7); ctx.fill(); }
+
+function dibujarObjeto(o) {
+  ctx.save(); ctx.translate(o.x, o.y);
+  switch (o.t.id) {
+    case 'google': {
+      ctx.rotate(Math.sin(o.giro) * 0.3);
+      ctx.fillStyle = '#FBBC05'; ctx.strokeStyle = '#E09A00'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 ? 10 : 24, a = -Math.PI / 2 + i * Math.PI / 5;
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      break;
+    }
+    case 'instagram': {
+      const g = ctx.createLinearGradient(-22, 22, 22, -22);
+      g.addColorStop(0, '#FEDA75'); g.addColorStop(0.4, '#FA7E1E'); g.addColorStop(0.7, '#D62976'); g.addColorStop(1, '#962FBF');
+      ctx.fillStyle = g; rr(-21, -21, 42, 42, 12); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3.5;
+      rr(-12, -12, 24, 24, 7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, 6, 0, 7); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(7.5, -7.5, 2, 0, 7); ctx.fill();
+      break;
+    }
+    case 'tiktok': {
+      circulo('#111');
+      ctx.font = 'bold 24px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#25F4EE'; ctx.fillText('♪', -1.5, 1.5);
+      ctx.fillStyle = '#FE2C55'; ctx.fillText('♪', 1.5, -0.5);
+      ctx.fillStyle = '#fff'; ctx.fillText('♪', 0, 0.5);
+      break;
+    }
+    case 'whatsapp': {
+      circulo('#25D366');
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, -1, 11, 0.6, Math.PI * 2 + 0.2); ctx.lineTo(-10, 12); ctx.closePath(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-4, -1, 1.8, 0, 7); ctx.arc(0, -1, 1.8, 0, 7); ctx.arc(4, -1, 1.8, 0, 7); ctx.fill();
+      break;
+    }
+    case 'comision': {
+      ctx.rotate(o.giro * 0.5);
+      circulo('#E53935');
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, 17, 0, 7); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = '900 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('%', 0, 1);
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+function dibujarHUD() {
+  ctx.fillStyle = '#0F1B3D'; rr(12, 12, 130, 44, 22); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = '800 22px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('⭐ ' + puntos, 28, 35);
+  ctx.textAlign = 'right'; ctx.font = '24px sans-serif';
+  ctx.fillText('💙'.repeat(Math.max(0, vidas)) + '🤍'.repeat(3 - Math.max(0, vidas)), W - 14, 35);
+}
+
+function dibujar() {
+  dibujarFondo();
+  if (!conecti) { conecti = { x: W / 2, destino: W / 2, salto: 0 }; }
+  objetos && objetos.forEach(dibujarObjeto);
+  dibujarConecti(conecti.x, H - 110);
+  if (particulas) for (const p of particulas) {
+    ctx.globalAlpha = Math.max(0, p.vida / 0.7); ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  if (puntos !== undefined) dibujarHUD();
+}
+
+let antes = performance.now();
+function bucle(ahora) {
+  const dt = Math.min(0.05, (ahora - antes) / 1000); antes = ahora;
+  if (jugando) actualizar(dt);
+  dibujar();
+  requestAnimationFrame(bucle);
+}
+requestAnimationFrame(bucle);
+</script>
+</body>
+</html>
