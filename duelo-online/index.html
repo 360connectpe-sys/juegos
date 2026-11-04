@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Conecti Duelo Online</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+<style>
+  /* Duelo por turnos 8 bits: arena pixelada arriba, panel de movimientos abajo, capas a pantalla completa. */
+  :root {
+    --navy:#0F1B3D; --navy2:#1D2D5C; --borde:#3A5BB0; --celeste:#1FA4F5; --azul:#2F5BEA; --verde:#25D366; --blanco:#FFFFFF; --oro:#FFD84A;
+    --pixel:"Press Start 2P", ui-monospace, "Courier New", monospace;
+    color-scheme: dark;
+  }
+  html, body { margin:0; height:100%; background:var(--navy); color:var(--blanco); overflow:hidden;
+    touch-action:manipulation; user-select:none; -webkit-user-select:none; font-family:var(--pixel); }
+  #app { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
+  canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+  #panel { width:100%; max-width:560px; box-sizing:border-box; display:flex; flex-direction:column; gap:10px;
+    padding-block:0 12px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  #msg { margin:0; min-height:2.6em; font-size:10px; line-height:1.6; text-align:center; color:var(--oro); }
+  #acciones { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .mov { font:inherit; color:var(--blanco); border:3px solid var(--borde); background:var(--navy2); padding:12px 8px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:6px; box-shadow:0 5px 0 #070D20; min-height:64px; justify-content:center; }
+  .mov b { font-size:11px; font-weight:400; }
+  .mov small { font-size:7px; opacity:.8; }
+  .mov:active:not(:disabled) { transform:translateY(4px); box-shadow:0 1px 0 #070D20; }
+  .mov:disabled { opacity:.35; cursor:default; }
+  .mov:focus-visible, .capa button:focus-visible, .capa a:focus-visible, .carta:focus-visible { outline:3px solid var(--oro); outline-offset:3px; }
+  .mov[data-a="nfc"] { border-color:#1FA4F5; }
+  .mov[data-a="qr"] { border-color:#E8EEF8; }
+  .mov[data-a="escudo"] { border-color:#7F93C2; }
+  .mov[data-a="especial"] { border-color:var(--oro); }
+  .mov[data-a="especial"]:not(:disabled) { background:#3B2F0A; animation:brilla 0.9s steps(2) infinite; }
+  @keyframes brilla { 50% { border-color:#FFFFFF; } }
+  .triangulo { font-size:7px; text-align:center; opacity:.75; margin:0; line-height:1.8; }
+
+  .capa { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center;
+    padding-block:16px; padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px));
+    background:rgba(15,27,61,.94); line-height:1.8; overflow-y:auto; box-sizing:border-box; }
+  .capa h1 { margin:0; font-size:clamp(20px, 6vw, 32px); line-height:1.4; text-shadow:3px 3px 0 var(--azul); text-wrap:balance; }
+  .capa h1 span { color:var(--celeste); text-shadow:3px 3px 0 var(--navy2); }
+  .capa h2 { margin:0; font-size:clamp(11px, 3.4vw, 15px); line-height:1.6; color:var(--oro); text-wrap:balance; }
+  .capa p { margin:0; font-size:clamp(8px, 2.4vw, 11px); max-width:440px; }
+  .capa button { font:inherit; font-size:12px; padding:14px 20px; background:var(--celeste); color:var(--navy); border:0; box-shadow:0 5px 0 var(--azul); cursor:pointer; }
+  .capa button.sec { background:var(--navy2); color:var(--blanco); box-shadow:0 5px 0 #070D20; border:2px solid var(--borde); }
+  .capa button:active { transform:translateY(4px); box-shadow:0 1px 0 var(--azul); }
+  .capa a.wa { font-size:9px; padding:12px 14px; background:var(--verde); color:#06351A; text-decoration:none; box-shadow:0 4px 0 #128C4A; }
+  .fila { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
+  .reglas { font-size:8px; line-height:2; background:rgba(255,255,255,.07); padding:10px 14px; text-align:left; max-width:420px; }
+  .reglas b { color:var(--celeste); font-weight:400; }
+  .cartas { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; width:100%; max-width:520px; }
+  .capa button.carta { font:inherit; box-shadow:0 5px 0 #070D20; color:var(--blanco); background:var(--navy2); border:3px solid var(--borde); padding:10px 6px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:8px; min-width:0; }
+  .carta canvas { width:72px; height:96px; }
+  .carta .nom { font-size:10px; }
+  .carta .apodo { font-size:6px; opacity:.8; line-height:1.6; }
+  .barra { width:100%; display:grid; grid-template-columns:auto 1fr; gap:4px; align-items:center; font-size:6px; text-align:left; }
+  .barra i { display:block; height:6px; background:#0A1230; position:relative; }
+  .barra i::after { content:""; position:absolute; inset:0; width:var(--v); background:var(--c); }
+  .carta .esp { font-size:6px; line-height:1.6; color:var(--oro); }
+  .capa button.carta:disabled { opacity:.25; cursor:default; }
+  .capa button.carta:active:not(:disabled) { transform:translateY(4px); box-shadow:0 1px 0 #070D20; }
+  .codigo { font-size:clamp(34px, 12vw, 56px); letter-spacing:.2em; color:var(--blanco); background:var(--navy2); border:3px solid var(--celeste);
+    padding:14px 10px 14px 24px; text-shadow:3px 3px 0 var(--azul); user-select:text; -webkit-user-select:text; }
+  .capa input { font:inherit; font-size:28px; letter-spacing:.3em; text-align:center; text-transform:uppercase; width:7.5em; max-width:100%;
+    padding:12px 6px; background:var(--navy2); color:var(--blanco); border:3px solid var(--celeste); box-sizing:border-box; }
+  .capa input:focus-visible { outline:3px solid var(--oro); outline-offset:3px; }
+  .error { color:#FF7A7A; min-height:1.6em; }
+  .puntos::after { content:""; animation:puntos 1.2s steps(4) infinite; }
+  @keyframes puntos { 0% { content:""; } 25% { content:"."; } 50% { content:".."; } 75% { content:"..."; } }
+  #btnSalir { font:inherit; font-size:7px; align-self:center; background:none; border:0; color:var(--blanco); opacity:.6; padding:6px 10px; cursor:pointer; text-decoration:underline; }
+  [hidden] { display:none !important; }
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+</head>
+<body>
+<div id="app">
+  <canvas id="c" width="256" height="144" aria-label="Arena del duelo"></canvas>
+  <div id="panel">
+    <p id="msg"></p>
+    <div id="acciones">
+      <button class="mov" data-a="nfc"><b>TOQUE NFC</b><small>ATAQUE · 1</small></button>
+      <button class="mov" data-a="qr"><b>ESCANEO QR</b><small>AGARRE · 2</small></button>
+      <button class="mov" data-a="escudo"><b>ESCUDO</b><small>BLOQUEO · 3</small></button>
+      <button class="mov" data-a="especial"><b id="nomEsp">ESPECIAL</b><small id="cargaEsp">CARGA 0/3 · 4</small></button>
+    </div>
+    <p class="triangulo">NFC GANA A QR · QR GANA A ESCUDO · ESCUDO GANA A NFC</p>
+    <button id="btnSalir">SALIR DE LA SALA</button>
+  </div>
+
+  <div class="capa" id="capaMenu">
+    <h1>CONECTI<br><span>DUELO ONLINE</span></h1>
+    <p>Pelea contra un amigo, cada uno desde su celular. Crea una sala y mándale el código.</p>
+    <div class="reglas">
+      Cada ronda los dos eligen en secreto:<br>
+      <b>TOQUE NFC</b> gana a <b>ESCANEO QR</b><br>
+      <b>ESCANEO QR</b> gana a <b>ESCUDO</b><br>
+      <b>ESCUDO</b> gana a <b>TOQUE NFC</b><br>
+      Ganar rondas carga tu <b>ESPECIAL</b> (3 cargas).<br>
+      Gana quien se lleva 2 asaltos.
+    </div>
+    <div class="fila">
+      <button id="btnCrear">CREAR SALA</button>
+      <button id="btnIrUnirse">UNIRSE</button>
+    </div>
+    <p class="error" id="errMenu"></p>
+  </div>
+
+  <div class="capa" id="capaSala" hidden>
+    <h2>TU SALA</h2>
+    <div class="codigo" id="codigoSala">----</div>
+    <p>Mándale este código a tu amigo. Él toca UNIRSE y lo escribe.</p>
+    <div class="fila">
+      <a class="wa" id="waSala" href="#" target="_blank" rel="noopener">ENVIAR POR WHATSAPP</a>
+      <button class="sec" id="btnCopiar">COPIAR CÓDIGO</button>
+    </div>
+    <p class="puntos" style="color:var(--oro)">ESPERANDO A TU RIVAL</p>
+    <button class="sec" id="btnCancelarSala">CANCELAR</button>
+  </div>
+
+  <div class="capa" id="capaUnirse" hidden>
+    <h2>ESCRIBE EL CÓDIGO DE LA SALA</h2>
+    <form id="formUnirse" class="fila" style="flex-direction:column;align-items:center">
+      <input id="inputCodigo" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="ABCD" aria-label="Código de la sala">
+      <button type="submit" id="btnEntrar">ENTRAR</button>
+    </form>
+    <p class="error" id="errUnirse"></p>
+    <button class="sec" id="btnVolverUnirse">VOLVER</button>
+  </div>
+
+  <div class="capa" id="capaElegir" hidden>
+    <h2 id="tituloElegir">ELIGE TU CONECTI</h2>
+    <div class="cartas" id="cartas"></div>
+    <p class="puntos" id="esperaElegir" style="color:var(--oro)" hidden>ESPERANDO QUE TU RIVAL ELIJA</p>
+  </div>
+
+  <div class="capa" id="capaAviso" hidden>
+    <h2 id="avisoTitulo">AVISO</h2>
+    <p id="avisoTexto"></p>
+    <button id="btnAvisoMenu">IR AL MENÚ</button>
+  </div>
+
+  <div class="capa" id="capaFin" hidden>
+    <h1 id="finTitulo"></h1>
+    <canvas id="finCv" width="12" height="16" style="width:96px;height:128px"></canvas>
+    <p id="finTexto"></p>
+    <p id="finEspera" style="color:var(--oro)"></p>
+    <div class="fila">
+      <button id="btnRevancha">REVANCHA</button>
+      <button class="sec" id="btnMenu">SALIR</button>
+    </div>
+    <p>¿Quieres que tus clientes te conecten así de rápido? Placas NFC + QR para tu negocio.</p>
+    <a class="wa" href="https://wa.me/51974337299?text=Hola%2C%20jugu%C3%A9%20Conecti%20Duelo%20y%20quiero%20una%20placa" target="_blank" rel="noopener">WHATSAPP 974 337 299</a>
+    <p style="font-size:8px;opacity:.75">@360connectpe · @360_connect_pe</p>
+  </div>
+</div>
+
+<script>
+// ================== Lienzo ==================
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const AW = 256, AH = 144;
+ctx.imageSmoothingEnabled = false;
+function ajustar() {
+  const panelH = document.getElementById('panel').offsetHeight + 20;
+  const w = Math.min(innerWidth, 640, (innerHeight - panelH) * AW / AH);
+  cv.style.width = Math.floor(w) + 'px';
+  cv.style.height = Math.floor(w * AH / AW) + 'px';
+}
+addEventListener('resize', ajustar);
+
+// ================== Sonido ==================
+let ac = null;
+function activarAudio() { try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) {} }
+function tono(f0, f1, dur, tipo = 'square', vol = 0.07, retraso = 0) {
+  if (!ac) return;
+  const t = ac.currentTime + retraso, o = ac.createOscillator(), g = ac.createGain();
+  o.type = tipo; o.frequency.setValueAtTime(f0, t);
+  if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+const SFX = {
+  blip:     () => tono(660, 0, 0.06),
+  revela:   () => { tono(440, 0, 0.08); tono(660, 0, 0.1, 'square', 0.06, 0.09); },
+  golpe:    () => { tono(180, 60, 0.15, 'square', 0.12); tono(90, 40, 0.18, 'triangle', 0.15); },
+  bloqueo:  () => tono(1200, 900, 0.12, 'triangle', 0.1),
+  cura:     () => [523, 659, 784].forEach((f, i) => tono(f, 0, 0.12, 'triangle', 0.1, i * 0.08)),
+  especial: () => [392, 523, 659, 784, 1047].forEach((f, i) => tono(f, 0, 0.1, 'square', 0.06, i * 0.05)),
+  ko:       () => [523, 392, 262, 131].forEach((f, i) => tono(f, 0, 0.25, 'square', 0.08, i * 0.15)),
+  victoria: () => [523, 659, 784, 659, 1047].forEach((f, i) => tono(f, 0, 0.18, 'square', 0.07, i * 0.14)),
+};
+
+// ================== Personajes ==================
+const PJ = {
+  azul:   { nombre:'AZUL',   apodo:'EL EQUILIBRADO', color:'#2E8FF0', vida:100, atk:1.00, esp:'ONDA 360',        espDesc:'30 DE DAÑO' },
+  verde:  { nombre:'VERDE',  apodo:'EL RESISTENTE',  color:'#22B35A', vida:125, atk:0.85, esp:'MENSAJE DIRECTO', espDesc:'RECUPERA 30 DE VIDA' },
+  morado: { nombre:'MORADO', apodo:'EL VELOZ',       color:'#8E44D9', vida:85,  atk:1.25, esp:'RACHA VIRAL',     espDesc:'GOLPE DOBLE 2 × 18' },
+};
+const ORDEN = ['azul', 'verde', 'morado'];
+
+const PAL = { W:'#F2F7FF', K:'#0F1B3D', P:'#F7A1B0', Q:'#FFFFFF', H:'#FFFFFF', L:'#1B1B1B' };
+const CUERPO = [
+  '..BBBBBBBB..',
+  '.BBBBBBBBBB.',
+  '.BWWWWWWWWB.',
+  '.BWKWWWWKWB.',
+  '.BWKKWWKKWB.',
+  '.BPWWWWWWPB.',
+  '.BWWKWWKWWB.',
+  '.BWWWKKWWWB.',
+  '.BBBBBBBBBB.',
+];
+const SPR = {
+  quieto: [...CUERPO, 'HBBBQQQQBBBH', '.BBBQKQKBBB.', '.BBBKQKQBBB.', '..BBBBBBBB..', '...L....L...', '...L....L...', '..HH....HH..'],
+  golpe:  [...CUERPO.slice(0, 8), '.BBBBBBBBBBB', '.BBBQQQQBBBH', '.BBBQKQKBBB.', '.BBBKQKQBBB.', '..BBBBBBBB..', '..L......L..', '.HH......HH.'],
+  dolor:  ['..BBBBBBBB..', '.BBBBBBBBBB.', '.BWWWWWWWWB.', '.BWKWWWWKWB.', '.BWWKWWKWWB.', '.BPWWWWWWPB.', '.BWWWKKWWWB.', '.BWWKWWKWWB.', '.BBBBBBBBBB.',
+           'HBBBQQQQBBBH', '.BBBQKQKBBB.', '.BBBKQKQBBB.', '..BBBBBBBB..', '...L....L...', '...L....L...', '..HH....HH..'],
+  gana:   ['H.BBBBBBBB.H', 'HBBBBBBBBBBH', ...CUERPO.slice(2), '.BBBQQQQBBB.', '.BBBQKQKBBB.', '.BBBKQKQBBB.', '..BBBBBBBB..', '...L....L...', '..HH....HH..', '............'],
+};
+
+function sprite(c, mapa, x, y, voltear, s, colorB) {
+  const w = mapa[0].length;
+  for (let j = 0; j < mapa.length; j++) for (let i = 0; i < w; i++) {
+    const ch = mapa[j][i];
+    if (ch === '.') continue;
+    c.fillStyle = ch === 'B' ? colorB : PAL[ch];
+    c.fillRect(x + (voltear ? w - 1 - i : i) * s, y + j * s, s, s);
+  }
+}
+function retrato(canvas, pj, mapa = SPR.quieto) {
+  const c = canvas.getContext('2d');
+  c.clearRect(0, 0, canvas.width, canvas.height);
+  sprite(c, mapa, 0, 0, false, 1, PJ[pj].color);
+}
+
+// ================== Conexión (Firebase Realtime Database) ==================
+const FIREBASE = {
+  apiKey: "AIzaSyDoilyRBvsKCh3alD0nEJsMuitR89Q2Anc",
+  authDomain: "connect-juegos-4be1b.firebaseapp.com",
+  databaseURL: "https://connect-juegos-4be1b-default-rtdb.firebaseio.com",
+  projectId: "connect-juegos-4be1b",
+  storageBucket: "connect-juegos-4be1b.firebasestorage.app",
+  messagingSenderId: "23629421007",
+  appId: "1:23629421007:web:e3b200ebf1beaa710adaba"
+};
+let db = null;
+try { firebase.initializeApp(FIREBASE); db = firebase.database(); } catch (e) { console.error(e); }
+
+// ================== Estado ==================
+let sel = [null, null], hp = [0, 0], carga = [0, 0], victorias = [0, 0], asalto = 1;
+let movs = [null, null], estado = 'menu', reloj = 0;
+let cola = [], anim = null, burbujas = false, numeros = [], flash = [0, 0], temblor = 0, banner = null, tKo = 0, perdedorKo = -1, chispas = [];
+let recibido = false, codigo = null, yo = 0, salaRef = null, datos = null, partida = 0, ronda = 0, rivalVisto = false;
+const $ = id => document.getElementById(id);
+const nombreJ = j => j === yo ? 'TÚ' : 'RIVAL';
+const rival = () => 1 - yo;
+
+function mostrarCapa(id) { ['capaMenu', 'capaSala', 'capaUnirse', 'capaElegir', 'capaAviso', 'capaFin'].forEach(c => $(c).hidden = c !== id); }
+
+// ================== Salas ==================
+const LETRAS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const genCodigo = () => Array.from({ length: 4 }, () => LETRAS[Math.floor(Math.random() * LETRAS.length)]).join('');
+const sinConexion = 'No se pudo conectar con el servidor del juego. Revisa tu internet e intenta otra vez.';
+
+async function crearSala() {
+  if (!db) { $('errMenu').textContent = sinConexion; return; }
+  $('errMenu').textContent = 'CREANDO SALA...';
+  try {
+    for (let i = 0; i < 6; i++) {
+      const c = genCodigo();
+      const r = await db.ref('salas/' + c).transaction(act => act === null ? { creado: firebase.database.ServerValue.TIMESTAMP, j0: { on: true } } : undefined);
+      if (r.committed) { $('errMenu').textContent = ''; entrar(c, 0); return; }
+    }
+    $('errMenu').textContent = 'No se pudo crear la sala. Intenta otra vez.';
+  } catch (e) { console.error(e); $('errMenu').textContent = sinConexion; }
+}
+
+async function unirse(c) {
+  c = (c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const err = $('errUnirse');
+  if (c.length !== 4) { err.textContent = 'El código tiene 4 letras o números.'; return; }
+  if (!db) { err.textContent = sinConexion; return; }
+  err.textContent = 'ENTRANDO...';
+  try {
+    const ref = db.ref('salas/' + c);
+    const snap = await ref.once('value');
+    if (!snap.exists()) { err.textContent = 'Esa sala no existe. Revisa el código.'; return; }
+    const r = await ref.child('j1').transaction(act => act === null ? { on: true } : undefined);
+    if (!r.committed) { err.textContent = 'Esa sala ya está llena.'; return; }
+    err.textContent = '';
+    entrar(c, 1);
+  } catch (e) { console.error(e); err.textContent = sinConexion; }
+}
+
+function entrar(c, n) {
+  codigo = c; yo = n; partida = 0; rivalVisto = n === 1; datos = null; recibido = false;
+  salaRef = db.ref('salas/' + c);
+  const presencia = salaRef.child('j' + n + '/on');
+  db.ref('.info/connected').on('value', s => {
+    if (s.val() === true && salaRef) { presencia.onDisconnect().set(false); presencia.set(true); }
+  });
+  salaRef.on('value', s => { datos = s.val(); recibido = true; procesar(); });
+  if (n === 0) {
+    estado = 'sala';
+    $('codigoSala').textContent = c;
+    const enlace = location.href.split(/[?#]/)[0] + '?sala=' + c;
+    $('waSala').href = 'https://wa.me/?text=' + encodeURIComponent(`¡Te reto a un duelo de Conecti! Entra aquí: ${enlace} o escribe el código ${c}`);
+    mostrarCapa('capaSala');
+  } else abrirElegir();
+}
+
+function salir() {
+  if (salaRef) {
+    salaRef.off();
+    db.ref('.info/connected').off();
+    salaRef.child('j' + yo + '/on').onDisconnect().cancel();
+    salaRef.child('j' + yo + '/on').set(false);
+  }
+  salaRef = null; codigo = null; datos = null; sel = [null, null];
+  estado = 'menu'; bloquear(); $('msg').textContent = '';
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  mostrarCapa('capaMenu');
+}
+
+function aviso(titulo, texto) {
+  estado = 'aviso'; bloquear();
+  $('avisoTitulo').textContent = titulo; $('avisoTexto').textContent = texto;
+  mostrarCapa('capaAviso');
+}
+
+const jug = n => (datos && datos['j' + n]) || {};
+const movRonda = () => (((datos && datos.mov) || {})['p' + partida] || {})['r' + ronda] || {};
+
+// Se llama cada vez que cambia la sala en el servidor
+function procesar() {
+  if (!salaRef || !recibido) return;
+  if (!datos) { if (estado !== 'menu') aviso('SALA CERRADA', 'La sala ya no existe.'); return; }
+  const r = jug(rival());
+  if (r.on !== undefined) rivalVisto = true;
+
+  if (estado === 'sala' && datos.j1) abrirElegir();
+  if (estado === 'elegir') {
+    const suyo = r.pj;
+    document.querySelectorAll('.carta').forEach(b => b.disabled = b.dataset.pj === suyo);
+    if (jug(0).pj && jug(1).pj) iniciarPartida();
+  }
+  if (estado === 'turno' || estado === 'esperando') revisarRonda();
+  if (estado === 'fin') revisarRevancha();
+
+  const enPelea = ['turno', 'esperando', 'revelar', 'ko', 'pausa', 'fin', 'elegir'].includes(estado);
+  if (enPelea && rivalVisto && r.on === false) $('msg').textContent = 'TU RIVAL SE DESCONECTÓ. ESPERANDO A QUE VUELVA...';
+  else if (estado === 'esperando') $('msg').textContent = 'ESPERANDO EL MOVIMIENTO DE TU RIVAL...';
+  else if (estado === 'turno') ponerMsgTurno();
+}
+
+// ================== Elegir personaje ==================
+function abrirElegir() {
+  estado = 'elegir';
+  mostrarCapa('capaElegir');
+  $('esperaElegir').hidden = true;
+  const cont = $('cartas'); cont.innerHTML = '';
+  for (const k of ORDEN) {
+    const p = PJ[k];
+    const b = document.createElement('button');
+    b.className = 'carta'; b.id = 'carta-' + k; b.dataset.pj = k;
+    b.innerHTML = `<canvas width="12" height="16"></canvas><span class="nom" style="color:${p.color}">${p.nombre}</span><span class="apodo">${p.apodo}</span>
+      <span class="barra">VIDA<i style="--v:${p.vida / 125 * 100}%;--c:${p.color}"></i></span>
+      <span class="barra">ATAQUE<i style="--v:${p.atk / 1.25 * 100}%;--c:${p.color}"></i></span>
+      <span class="esp">${p.esp}<br>${p.espDesc}</span>`;
+    retrato(b.querySelector('canvas'), k);
+    b.onclick = () => {
+      if (b.disabled) return;
+      activarAudio(); SFX.blip();
+      salaRef.child('j' + yo + '/pj').set(k);
+      document.querySelectorAll('.carta').forEach(x => { x.style.borderColor = x === b ? PJ[k].color : ''; });
+      $('esperaElegir').hidden = false;
+    };
+    cont.appendChild(b);
+  }
+  procesar();
+}
+
+// ================== Pelea ==================
+function iniciarPartida() {
+  sel = [jug(0).pj, jug(1).pj];
+  victorias = [0, 0]; asalto = 1; ronda = 0;
+  $('finEspera').textContent = '';
+  nuevoAsalto();
+}
+function nuevoAsalto() {
+  hp = [PJ[sel[0]].vida, PJ[sel[1]].vida]; carga = [0, 0]; perdedorKo = -1;
+  banner = { txt: 'ASALTO ' + asalto, sub: '¡A PELEAR!', t: 1.4 };
+  mostrarCapa(null);
+  siguienteTurno();
+}
+function siguienteTurno() {
+  movs = [null, null]; burbujas = false;
+  if (movRonda()['j' + yo]) { estado = 'esperando'; bloquear(); }
+  else habilitar();
+  procesar();
+}
+function ponerMsgTurno() {
+  $('msg').textContent = carga[yo] >= 3 ? 'ELIGE TU MOVIMIENTO · ¡ESPECIAL LISTO!' : 'ELIGE TU MOVIMIENTO';
+}
+function habilitar() {
+  estado = 'turno';
+  const p = PJ[sel[yo]];
+  ponerMsgTurno();
+  document.querySelectorAll('.mov').forEach(b => b.disabled = b.dataset.a === 'especial' && carga[yo] < 3);
+  $('nomEsp').textContent = p.esp;
+  $('cargaEsp').textContent = carga[yo] >= 3 ? '¡LISTO! · 4' : `CARGA ${carga[yo]}/3 · 4`;
+}
+function bloquear() { document.querySelectorAll('.mov').forEach(b => b.disabled = true); }
+
+function elegir(a) {
+  if (estado !== 'turno') return;
+  const btn = document.querySelector(`.mov[data-a="${a}"]`);
+  if (!btn || btn.disabled) return;
+  activarAudio(); SFX.blip();
+  estado = 'esperando'; bloquear();
+  $('msg').textContent = 'ESPERANDO EL MOVIMIENTO DE TU RIVAL...';
+  salaRef.child(`mov/p${partida}/r${ronda}/j${yo}`).set(a);
+}
+document.querySelectorAll('.mov').forEach(b => b.onclick = () => elegir(b.dataset.a));
+addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  const k = { Digit1:'nfc', Digit2:'qr', Digit3:'escudo', Digit4:'especial', Numpad1:'nfc', Numpad2:'qr', Numpad3:'escudo', Numpad4:'especial' }[e.code];
+  if (k) elegir(k);
+});
+
+function revisarRonda() {
+  const m = movRonda();
+  if (m.j0 && m.j1 && (estado === 'turno' || estado === 'esperando')) {
+    movs = [m.j0, m.j1];
+    // El especial solo vale con 3 cargas (las dos pantallas calculan igual)
+    for (const j of [0, 1]) if (movs[j] === 'especial' && carga[j] < 3) movs[j] = 'nfc';
+    revelar();
+  }
+}
+
+// ================== Reglas ==================
+const GANA = { nfc:'qr', qr:'escudo', escudo:'nfc' };
+const BASE = { nfc:16, qr:13, escudo:10 };
+const NOMBRE_MOV = { nfc:'TOQUE NFC', qr:'ESCANEO QR', escudo:'CONTRAGOLPE' };
+const dano = (j, base) => Math.round(base * PJ[sel[j]].atk);
+
+function especial(i) {
+  const k = sel[i], o = 1 - i;
+  if (k === 'azul')  return [{ tipo:'golpe', de:i, a:o, dmg:30, esp:true, titulo:'¡ONDA 360!', reset:i }];
+  if (k === 'verde') return [{ tipo:'cura', quien:i, cant:30, titulo:'¡MENSAJE DIRECTO!', reset:i }];
+  return [{ tipo:'golpe', de:i, a:o, dmg:18, esp:true, titulo:'¡RACHA VIRAL!', reset:i }, { tipo:'golpe', de:i, a:o, dmg:18, esp:true, titulo:'¡RACHA VIRAL!' }];
+}
+function resolver(m) {
+  const esp = [m[0] === 'especial', m[1] === 'especial'];
+  if (esp[0] || esp[1]) {
+    const ev = [];
+    for (const i of [0, 1]) if (esp[i]) ev.push(...especial(i));
+    return ev;
+  }
+  if (m[0] === m[1]) {
+    if (m[0] === 'nfc') return [{ tipo:'golpe', de:0, a:1, dmg:dano(0, 8), titulo:'¡CHOQUE!' }, { tipo:'golpe', de:1, a:0, dmg:dano(1, 8), titulo:'¡CHOQUE!' }];
+    return [{ tipo:'nada', titulo: m[0] === 'qr' ? '¡AGARRES CRUZADOS!' : '¡LOS DOS SE CUBREN!' }];
+  }
+  const g = GANA[m[0]] === m[1] ? 0 : 1, p = 1 - g;
+  return [{ tipo:'golpe', de:g, a:p, dmg:dano(g, BASE[m[g]]), gana:g, titulo:NOMBRE_MOV[m[g]], bloqueo: m[g] === 'escudo' }];
+}
+
+function revelar() {
+  estado = 'revelar'; bloquear(); burbujas = true;
+  $('msg').textContent = '...';
+  SFX.revela();
+  cola = [{ tipo:'burbujas', dur:0.9 }, ...resolver(movs).map(e => ({ ...e, dur: e.tipo === 'nada' ? 0.9 : 0.8 })), { tipo:'cierre', dur:0.35 }];
+  anim = null;
+}
+
+function aplicar(e) {
+  if (e.reset !== undefined) carga[e.reset] = 0;
+  if (e.tipo === 'golpe') {
+    hp[e.a] = Math.max(0, hp[e.a] - e.dmg);
+    flash[e.a] = 0.3; temblor = e.esp ? 0.35 : 0.2;
+    numeros.push({ txt:'-' + e.dmg, x: X[e.a] + 18, y: 64, t: 1, color:'#FF5A5A' });
+    if (e.gana !== undefined) carga[e.gana] = Math.min(3, carga[e.gana] + 1);
+    if (e.bloqueo) SFX.bloqueo();
+    SFX.golpe();
+    if (e.esp) for (let i = 0; i < 14; i++) chispas.push({ x: X[e.a] + 18, y: 96, vx:(Math.random() - .5) * 160, vy:-Math.random() * 140, t:0.6, color: PJ[sel[e.de]].color });
+  } else if (e.tipo === 'cura') {
+    const max = PJ[sel[e.quien]].vida;
+    const real = Math.min(e.cant, max - hp[e.quien]);
+    hp[e.quien] += real;
+    numeros.push({ txt:'+' + real, x: X[e.quien] + 18, y: 64, t: 1, color:'#5CFF8F' });
+    for (let i = 0; i < 12; i++) chispas.push({ x: X[e.quien] + 6 + Math.random() * 24, y: 120, vx:0, vy:-40 - Math.random() * 50, t:0.9, color:'#5CFF8F', cruz:true });
+    SFX.cura();
+  }
+}
+
+function despuesDeRonda() {
+  burbujas = false;
+  ronda++;
+  const ko = [hp[0] <= 0, hp[1] <= 0];
+  if (ko[0] && ko[1]) {
+    banner = { txt:'¡DOBLE K.O.!', sub:'SE REPITE EL ASALTO', t:1.8 };
+    estado = 'pausa'; setTimeout(() => { if (estado === 'pausa') nuevoAsalto(); }, 1800); return;
+  }
+  if (ko[0] || ko[1]) {
+    perdedorKo = ko[0] ? 0 : 1;
+    const g = 1 - perdedorKo;
+    victorias[g]++;
+    estado = 'ko'; tKo = 0; SFX.ko();
+    banner = { txt:'K.O.', sub: g === yo ? '¡GANASTE EL ASALTO!' : 'TU RIVAL GANA EL ASALTO', t:2.2 };
+    return;
+  }
+  siguienteTurno();
+}
+
+function trasKo() {
+  const g = 1 - perdedorKo;
+  if (victorias[g] >= 2) { terminar(g); return; }
+  asalto++; nuevoAsalto();
+}
+
+function terminar(g) {
+  estado = 'fin'; SFX.victoria(); bloquear();
+  $('msg').textContent = '';
+  $('finTitulo').innerHTML = g === yo ? '¡GANASTE<br><span>EL DUELO!</span>' : 'GANA TU<br><span>RIVAL</span>';
+  $('finTexto').textContent = `Conecti ${PJ[sel[g]].nombre} ganó ${victorias[g]} a ${victorias[1 - g]}.`;
+  $('finEspera').textContent = '';
+  $('btnRevancha').disabled = false;
+  retrato($('finCv'), sel[g], SPR.gana);
+  mostrarCapa('capaFin');
+  revisarRevancha();
+}
+
+function revisarRevancha() {
+  const rv = (((datos && datos.revancha) || {})['p' + partida]) || {};
+  if (rv.j0 && rv.j1) { partida++; iniciarPartida(); return; }
+  if (rv['j' + yo]) $('finEspera').textContent = 'ESPERANDO QUE TU RIVAL ACEPTE...';
+  else if (rv['j' + rival()]) $('finEspera').textContent = '¡TU RIVAL QUIERE LA REVANCHA!';
+}
+
+$('btnCrear').onclick = () => { activarAudio(); crearSala(); };
+$('btnIrUnirse').onclick = () => { activarAudio(); $('errUnirse').textContent = ''; mostrarCapa('capaUnirse'); $('inputCodigo').focus(); };
+$('formUnirse').onsubmit = e => { e.preventDefault(); activarAudio(); unirse($('inputCodigo').value); };
+$('inputCodigo').oninput = e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+$('btnVolverUnirse').onclick = () => mostrarCapa('capaMenu');
+$('btnCancelarSala').onclick = () => { if (salaRef) salaRef.remove(); salir(); };
+$('btnCopiar').onclick = async () => {
+  try { await navigator.clipboard.writeText(codigo); $('btnCopiar').textContent = '¡COPIADO!'; }
+  catch (e) { const r = document.createRange(); r.selectNodeContents($('codigoSala')); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(r); }
+  setTimeout(() => $('btnCopiar').textContent = 'COPIAR CÓDIGO', 1500);
+};
+$('btnRevancha').onclick = () => { activarAudio(); $('btnRevancha').disabled = true; salaRef.child(`revancha/p${partida}/j${yo}`).set(true); };
+$('btnMenu').onclick = salir;
+$('btnSalir').onclick = salir;
+$('btnAvisoMenu').onclick = salir;
+
+// ================== Animación ==================
+const X = [58, 162], PISO = 124;
+
+function actualizar(dt) {
+  reloj += dt;
+  flash = flash.map(f => Math.max(0, f - dt));
+  temblor = Math.max(0, temblor - dt);
+  if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
+  for (const n of numeros) { n.t -= dt; n.y -= 22 * dt; }
+  numeros = numeros.filter(n => n.t > 0);
+  for (const c of chispas) { c.t -= dt; c.x += c.vx * dt; c.y += c.vy * dt; if (!c.cruz) c.vy += 300 * dt; }
+  chispas = chispas.filter(c => c.t > 0);
+
+  if (estado === 'revelar') {
+    if (!anim) {
+      anim = cola.shift();
+      if (!anim) return;
+      anim.t = 0; anim.hecho = false;
+      if (anim.esp || anim.tipo === 'cura') SFX.especial();
+    }
+    anim.t += dt;
+    if (!anim.hecho && anim.t >= anim.dur * 0.45) { anim.hecho = true; aplicar(anim); }
+    if (anim.t >= anim.dur) {
+      const fue = anim.tipo; anim = null;
+      if (fue === 'cierre') despuesDeRonda();
+    }
+  } else if (estado === 'ko') {
+    tKo += dt;
+    if (tKo > 2.2) trasKo();
+  }
+}
+
+// ---- Dibujo de la arena: Plaza de Armas de Trujillo ----
+function fondo() {
+  const g = ctx.createLinearGradient(0, 0, 0, 90);
+  g.addColorStop(0, '#5DB4F5'); g.addColorStop(1, '#A9DBFF');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, AW, AH);
+  // Cerros al fondo
+  ctx.fillStyle = '#C9B48A';
+  ctx.beginPath(); ctx.moveTo(0, 70); ctx.lineTo(40, 52); ctx.lineTo(80, 64); ctx.lineTo(130, 46); ctx.lineTo(180, 62); ctx.lineTo(230, 50); ctx.lineTo(256, 58); ctx.lineTo(256, 90); ctx.lineTo(0, 90); ctx.fill();
+  // Casonas amarillas con ventanas blancas y balcones de madera
+  const casas = [[0, 58, 70], [70, 50, 60], [130, 54, 66], [196, 60, 60]];
+  for (const [x, y, w] of casas) {
+    ctx.fillStyle = '#F2C230'; ctx.fillRect(x, y, w, PISO - y);
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, y, w, 3); ctx.fillRect(x, y + 30, w, 2);
+    for (let wx = x + 7; wx < x + w - 10; wx += 16) {
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(wx - 1, y + 8, 10, 18);
+      ctx.fillStyle = '#3B5F8A'; ctx.fillRect(wx + 1, y + 10, 6, 15);
+      ctx.fillStyle = '#7A4A23'; ctx.fillRect(wx - 3, y + 22, 14, 4);
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(wx - 1, y + 38, 10, 20);
+      ctx.fillStyle = '#5A3A1C'; ctx.fillRect(wx + 1, y + 40, 6, 18);
+    }
+  }
+  // Cartel 360 CONNECT
+  ctx.fillStyle = '#0F1B3D'; ctx.fillRect(100, 34, 56, 18);
+  ctx.fillStyle = '#FFFFFF'; ctx.fillRect(101, 35, 54, 16);
+  ctx.font = '5px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillStyle = '#1FA4F5'; ctx.fillText('360', 128, 37);
+  ctx.fillStyle = '#0F1B3D'; ctx.fillText('CONNECT', 128, 44);
+  // Piso de la plaza
+  for (let y = PISO; y < AH; y += 5) for (let x = 0; x < AW; x += 10) {
+    ctx.fillStyle = ((x / 10 + (y - PISO) / 5) % 2) ? '#B8653A' : '#C97A48';
+    ctx.fillRect(x, y, 10, 5);
+  }
+  ctx.fillStyle = '#7F4223'; ctx.fillRect(0, PISO, AW, 1);
+}
+
+function barraVida(j) {
+  const w = 100, x = j === 0 ? 6 : AW - 6 - w, y = 13;
+  const max = PJ[sel[j]].vida, v = Math.max(0, hp[j]) / max;
+  ctx.fillStyle = '#0F1B3D'; ctx.fillRect(x - 1, y - 1, w + 2, 9);
+  ctx.fillStyle = '#5A1020'; ctx.fillRect(x, y, w, 7);
+  const ancho = Math.round(w * v);
+  ctx.fillStyle = v > 0.5 ? '#3BD16F' : v > 0.25 ? '#FFC928' : '#FF4D4D';
+  if (j === 0) ctx.fillRect(x, y, ancho, 7); else ctx.fillRect(x + w - ancho, y, ancho, 7);
+  ctx.fillStyle = 'rgba(255,255,255,.35)';
+  if (j === 0) ctx.fillRect(x, y, ancho, 2); else ctx.fillRect(x + w - ancho, y, ancho, 2);
+  // Nombre
+  texto(nombreJ(j) + ' ' + PJ[sel[j]].nombre, j === 0 ? x : x + w, 3, PJ[sel[j]].color, j === 0 ? 'left' : 'right', 6);
+  // Victorias (círculos) y carga del especial
+  for (let i = 0; i < 2; i++) {
+    const cx = j === 0 ? x + i * 8 : x + w - 6 - i * 8;
+    ctx.fillStyle = '#0F1B3D'; ctx.fillRect(cx, 24, 6, 6);
+    ctx.fillStyle = victorias[j] > i ? '#FFD84A' : '#3A4A70'; ctx.fillRect(cx + 1, 25, 4, 4);
+  }
+  for (let i = 0; i < 3; i++) {
+    const cx = j === 0 ? x + 24 + i * 8 : x + w - 30 - i * 8;
+    const lleno = carga[j] > i;
+    ctx.fillStyle = '#0F1B3D'; ctx.fillRect(cx, 24, 6, 6);
+    ctx.fillStyle = lleno ? (carga[j] >= 3 && Math.floor(reloj * 6) % 2 ? '#FFFFFF' : PJ[sel[j]].color) : '#3A4A70';
+    ctx.fillRect(cx + 1, 25, 4, 4);
+  }
+}
+
+function texto(t, x, y, color = '#FFFFFF', alin = 'left', tam = 8) {
+  ctx.font = `${tam}px "Press Start 2P", monospace`; ctx.textBaseline = 'top'; ctx.textAlign = alin;
+  ctx.fillStyle = '#0F1B3D'; ctx.fillText(t, x + 1, y + 1);
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+
+// Íconos de 10×10 para las burbujas
+function iconoMov(m, x, y, j) {
+  const f = (c, a, b, w, h) => { ctx.fillStyle = c; ctx.fillRect(x + a, y + b, w, h); };
+  if (m === 'nfc') {
+    f('#1FA4F5', 0, 3, 3, 3);
+    f('#1FA4F5', 4, 1, 1, 1); f('#1FA4F5', 5, 2, 1, 5); f('#1FA4F5', 4, 7, 1, 1);
+    f('#1FA4F5', 7, 0, 1, 1); f('#1FA4F5', 8, 1, 1, 7); f('#1FA4F5', 7, 8, 1, 1);
+  } else if (m === 'qr') {
+    f('#0F1B3D', 0, 0, 4, 4); f('#FFFFFF', 1, 1, 2, 2); f('#0F1B3D', 6, 0, 4, 4); f('#FFFFFF', 7, 1, 2, 2);
+    f('#0F1B3D', 0, 6, 4, 4); f('#FFFFFF', 1, 7, 2, 2); f('#0F1B3D', 6, 6, 2, 2); f('#0F1B3D', 8, 8, 2, 2); f('#0F1B3D', 5, 4, 1, 2);
+  } else if (m === 'escudo') {
+    f('#7F93C2', 1, 0, 8, 6); f('#7F93C2', 2, 6, 6, 2); f('#7F93C2', 3, 8, 4, 1); f('#7F93C2', 4, 9, 2, 1);
+    f('#FFFFFF', 4, 2, 2, 5); f('#FFFFFF', 2, 3, 6, 2);
+  } else {
+    const c = PJ[sel[j]].color;
+    f(c, 4, 0, 2, 2); f(c, 3, 2, 4, 1); f(c, 0, 3, 10, 2); f(c, 1, 5, 8, 1); f(c, 2, 6, 6, 1); f(c, 1, 7, 3, 2); f(c, 6, 7, 3, 2); f(c, 0, 9, 2, 1); f(c, 8, 9, 2, 1);
+  }
+}
+
+function luchador(j) {
+  if (!sel[j]) return;
+  const voltear = j === 1, s = 3, color = PJ[sel[j]].color;
+  let x = X[j], y = PISO - 48 + Math.round(Math.sin(reloj * 3 + j * 2) * 1);
+  let mapa = SPR.quieto;
+  if (anim && anim.t !== undefined) {
+    const p = Math.min(1, anim.t / anim.dur);
+    if (anim.tipo === 'golpe' && anim.de === j) {
+      const dir = j === 0 ? 1 : -1, avance = anim.bloqueo ? 26 : 50;
+      x += Math.round(Math.sin(p * Math.PI) * avance * dir); mapa = SPR.golpe;
+    }
+    if (anim.tipo === 'golpe' && anim.a === j && anim.hecho) { mapa = SPR.dolor; x += (j === 0 ? -1 : 1) * Math.round(Math.sin(p * Math.PI) * 8); }
+    if (anim.tipo === 'cura' && anim.quien === j) mapa = SPR.gana;
+  }
+  if (estado === 'ko' || estado === 'fin') mapa = perdedorKo === j ? SPR.dolor : SPR.gana;
+  // sombra
+  ctx.fillStyle = 'rgba(15,27,61,.3)'; ctx.fillRect(X[j] + 4, PISO - 2, 28, 3);
+  if (perdedorKo === j && (estado === 'ko' || estado === 'fin')) {
+    const caida = Math.min(1, tKo * 2);
+    ctx.save(); ctx.translate(x + 18, PISO);
+    ctx.rotate((j === 0 ? -1 : 1) * caida * Math.PI / 2);
+    sprite(ctx, mapa, -18, -48, voltear, s, color);
+    ctx.restore();
+    return;
+  }
+  if (flash[j] > 0 && Math.floor(flash[j] * 30) % 2) ctx.globalAlpha = 0.35;
+  sprite(ctx, mapa, x, y, voltear, s, color);
+  ctx.globalAlpha = 1;
+}
+
+function dibujar() {
+  ctx.save();
+  if (temblor > 0) ctx.translate(Math.round((Math.random() - .5) * 4), Math.round((Math.random() - .5) * 3));
+  fondo();
+  if (!sel[0] || !sel[1]) { ctx.restore(); return; }
+  luchador(0); luchador(1);
+
+  // Onda 360: anillos
+  if (anim && anim.tipo === 'golpe' && anim.esp && sel[anim.de] === 'azul') {
+    const r = anim.t * 120;
+    ctx.strokeStyle = 'rgba(31,164,245,.8)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(X[anim.de] + 18, PISO - 24, r, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(X[anim.de] + 18, PISO - 24, r * 0.6, 0, 7); ctx.stroke();
+  }
+  for (const c of chispas) {
+    ctx.fillStyle = c.color;
+    if (c.cruz) { ctx.fillRect(Math.round(c.x) - 1, Math.round(c.y), 3, 1); ctx.fillRect(Math.round(c.x), Math.round(c.y) - 1, 1, 3); }
+    else ctx.fillRect(Math.round(c.x), Math.round(c.y), 2, 2);
+  }
+
+  // Burbujas con el movimiento elegido
+  if (burbujas) for (const j of [0, 1]) {
+    const bx = X[j] + 8, by = PISO - 74;
+    ctx.fillStyle = '#0F1B3D'; ctx.fillRect(bx - 1, by - 1, 22, 20);
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(bx, by, 20, 18);
+    ctx.fillRect(bx + 8, by + 18, 4, 3);
+    iconoMov(movs[j], bx + 5, by + 4, j);
+  }
+
+  barraVida(0); barraVida(1);
+  texto('VS', AW / 2, 8, '#FFD84A', 'center', 8);
+  for (const n of numeros) texto(n.txt, Math.round(n.x), Math.round(n.y), n.color, 'center', 8);
+  if (anim && anim.titulo && anim.t !== undefined) {
+    const col = anim.de !== undefined ? PJ[sel[anim.de]].color : anim.quien !== undefined ? PJ[sel[anim.quien]].color : '#FFFFFF';
+    ctx.fillStyle = 'rgba(15,27,61,.72)'; ctx.fillRect(0, 36, AW, 26);
+    texto(anim.titulo, AW / 2, 40, anim.esp || anim.tipo === 'cura' ? '#FFD84A' : '#FFFFFF', 'center', 8);
+    if (anim.tipo !== 'nada') texto(nombreJ(anim.de ?? anim.quien), AW / 2, 52, col, 'center', 6);
+  }
+  if (banner) {
+    ctx.fillStyle = 'rgba(15,27,61,.75)'; ctx.fillRect(0, 50, AW, 34);
+    texto(banner.txt, AW / 2, 56, '#FFFFFF', 'center', 12);
+    texto(banner.sub, AW / 2, 72, '#FFD84A', 'center', 6);
+  }
+  ctx.restore();
+}
+
+// ================== Bucle ==================
+let antes = performance.now();
+function bucle(ahora) {
+  const dt = Math.min(1 / 30, (ahora - antes) / 1000); antes = ahora;
+  actualizar(dt); dibujar();
+  requestAnimationFrame(bucle);
+}
+bloquear(); ajustar();
+$('msg').textContent = '';
+sel = ['azul', 'morado']; hp = [100, 85];
+if (!db) $('errMenu').textContent = sinConexion;
+const salaURL = new URLSearchParams(location.search).get('sala');
+if (salaURL && db) { $('inputCodigo').value = salaURL.toUpperCase().slice(0, 4); mostrarCapa('capaUnirse'); unirse(salaURL); }
+requestAnimationFrame(bucle);
+</script>
+</body>
+</html>
