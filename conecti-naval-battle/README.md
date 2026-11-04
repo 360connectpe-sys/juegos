@@ -4,11 +4,13 @@
 Batalla naval de artillería 1 contra 1, online y por turnos, en pixel art de 8 bits, con **Conecti** (la mascota de 360 Connect) como capitán.
 
 - Dos barcos enfrentados en vista lateral, sobre el mar de la costa de Trujillo (cerros, muelle de Huanchaco y caballitos de totora al fondo).
-- **Turnos simultáneos:** en cada ronda los dos **mueven** su barco a la vez (máx. 24 px, 15 s), luego los dos **apuntan en secreto** ángulo (15°–80°) y potencia (20 %–100 %) y **disparan** (20 s). Los dos proyectiles salen juntos y el daño se aplica a la vez; si los dos barcos se hunden en la misma ronda, es **empate**.
-- Proyectiles pixelados de **TikTok** e **Instagram** (misma física y daño; solo cambia el dibujo y la estela).
+- **Plan secreto y simultáneo (20 s):** cada uno mueve su barco (máx. 24 px) y apunta (ángulo 15°–80°, potencia 20 %–100 %) sin que el rival vea nada. Cuando los dos tocan **¡DISPARAR!**, se revela todo: los barcos se deslizan a su nueva posición (0,7 s) y enseguida vuelan las dos bombas. Si se hunden los dos en la misma ronda, es **empate**.
+- **Viento** distinto en cada ronda, **rocas** en el centro del mar y la **Caja 360** colgada de un globo cada 3 rondas (da ESCUDO, DOBLE DAÑO o REPARACIÓN +15).
+- Proyectiles con efecto: **TikTok rebota** una vez en el agua; **Instagram se divide en 3** en lo más alto (cada fragmento hace la mitad del daño).
 - Daño por zona del casco: **proa y popa −20 HP**, **centro blindado −8 HP**. Cada barco tiene 100 HP.
-- Conecti en **morado #8A2BE2**, **azul #00BFFF** o **verde #32CD32**; el color del barco se elige aparte.
-- Salas privadas con código `CNX-XXXX`, enlace para compartir, reconexión de 30 s, revancha.
+- Conecti en **morado #8A2BE2**, **azul #00BFFF** o **verde #32CD32** (barco aparte): saluda al empezar, señala el cañón, celebra, se lamenta y **baila** al ganar.
+- Salas privadas `CNX-XXXX` con **código QR** para unirse, enlace y WhatsApp; reconexión de 30 s; revancha.
+- **Ranking semanal**, **modo torneo** (4 u 8 capitanes con llaves), **versión para negocios** (cartel con el nombre del negocio en el mar y premio para el ganador) y **compartir resultado** (imagen para historias).
 - Funciona en computadora (teclado) y celular (botones táctiles).
 
 ---
@@ -48,8 +50,8 @@ Abre **http://localhost:3000**. El servidor usa `process.env.PORT` si existe.
 | Variable | Por defecto | Uso |
 |---|---|---|
 | `PORT` | `3000` | Puerto HTTP (Render/Railway lo ponen solos). |
-| `MOVE_MS` | `15000` | Tiempo de movimiento por turno. |
-| `AIM_MS` | `20000` | Tiempo para apuntar y disparar. |
+| `PLAN_MS` | `20000` | Tiempo para moverse y apuntar (en secreto). |
+| `REVEAL_MOVE_MS` | `700` | Lo que tardan los barcos en deslizarse antes de que salgan las bombas. |
 | `RESOLUTION_MS` | `1800` | Pausa para mostrar el resultado del disparo. |
 | `START_DELAY_MS` | `2500` | Cuenta de inicio de cada partida. |
 | `RECONNECT_MS` | `30000` | Tiempo para volver tras una desconexión. |
@@ -74,8 +76,7 @@ El servidor lee `process.env` directamente (no hace falta instalar `dotenv`).
 
 | Fase | Computadora | Celular |
 |---|---|---|
-| Movimiento | `A`/`←` izquierda · `D`/`→` derecha · `Espacio` confirmar | ◀ ▶ (mantener) · CONFIRMAR |
-| Ataque | `↑`/`↓` ángulo · `←`/`→` potencia · `1` TikTok · `2` Instagram · `Espacio` disparar | Barras y botones − + · TikTok/Instagram · ¡DISPARAR! |
+| Plan (todo a la vez) | `A`/`D` mover · `↑`/`↓` ángulo · `←`/`→` potencia · `1` TikTok · `2` Instagram · `Espacio` disparar | ◀ ▶ (mantener) · barras y botones − + · TikTok/Instagram · ¡DISPARAR! |
 
 ---
 
@@ -123,7 +124,7 @@ conecti-naval-battle/
 └── tests/                    physics · collisions · rooms · multiplayer (servidor real + 2 clientes)
 ```
 
-**Máquina de estados (turnos simultáneos):** `LOBBY → WAITING → MOVEMENT → AIMING → PROJECTILE → RESOLUTION → NEXT_TURN → … → GAME_OVER` (más `PAUSED` si alguien se desconecta). `MOVEMENT` termina cuando los dos confirman o a los 15 s; `AIMING` cuando los dos disparan o a los 20 s (quien no disparó pierde ese tiro). Mientras apuntan, el rival solo ve que ya disparaste (`locked`), nunca tu ángulo ni tu potencia: el servidor guarda los disparos en secreto y los lanza juntos (evento `shots`).
+**Máquina de estados:** `LOBBY → WAITING → PLANNING (20 s, secreto) → REVEAL (barcos se deslizan + vuelan las bombas) → RESOLUTION → NEXT_TURN → … → GAME_OVER` (más `PAUSED` si alguien se desconecta). El servidor guarda los planes en secreto (`pending`) y solo publica `locked` (quién ya disparó). Al revelar envía `reveal` con los movimientos y las trayectorias ya calculadas.
 
 **El servidor es la única autoridad** sobre posición, turnos, tiempos, física, colisiones, daño, vida, victoria y desconexiones. El cliente envía solo intenciones (`move {dx}`, `endMove`, `aim`, `fire {angle, power, projectile}`); si manda valores de daño o vida, se ignoran. El disparo se simula completo en el servidor y se envía la trayectoria ya calculada (`shot`), así los dos teléfonos ven exactamente lo mismo.
 
@@ -135,7 +136,10 @@ conecti-naval-battle/
 
 ## 5. Pruebas realizadas
 
-### Automáticas (`npm test`) — 32 de 32 pasan
+### Automáticas (`npm test`) — 41 de 41 pasan
+Física (con viento, rebote de TikTok, división de Instagram, rocas y Caja 360), colisiones, salas, plan secreto y revelación, poderes, empate, desconexión y recuperación de sala, ranking, torneo y una partida completa por red con dos clientes Socket.io.
+
+#### Detalle de la versión anterior
 - **Física (10):** sale de la boca del cañón, es determinista, la caída al agua coincide con la fórmula de la parábola (±1,5 px), más potencia llega más lejos, el ángulo cambia la altura, se puede dar en proa/popa/centro con su daño, autoimpacto, tiro al agua sin daño, salida del mapa, duración del vuelo.
 - **Colisiones (5):** tamaño del casco, zonas para cada orientación, zonas que se mueven con el barco, bordes del casco.
 - **Salas y turnos (15):** formato y unicidad de códigos, tercer jugador rechazado, una conexión no ocupa dos lugares, validación de entradas, límite de frecuencia, reconexión solo con token, sorteo del primer turno, movimiento solo del jugador activo, presupuesto de 24 px sin recuperarse yendo y viniendo, límites de zona, tiempo agotado en movimiento y en ataque, disparo solo en fase y una vez, −20 en proa, −8 en centro, vida nunca bajo 0, pausa/reanudación/abandono, borrado de sala vacía, revancha.

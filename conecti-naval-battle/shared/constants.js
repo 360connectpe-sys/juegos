@@ -14,7 +14,7 @@
     HULL_TOP: 194,           // cubierta (borde superior del casco)
     HULL_BOTTOM: 210,        // quilla visible (un poco bajo el agua)
     START_X: [92, 388],      // centro inicial de cada barco
-    ZONES: [[40, 200], [280, 440]], // límites del CENTRO de cada barco (nunca se tocan: 232 < 248)
+    ZONES: [[40, 190], [290, 440]], // límites del CENTRO de cada barco (dejan el centro del mar libre para las rocas)
     FACING: [1, -1],         // jugador 0 mira a la derecha, jugador 1 a la izquierda
     MAX_HP: 100,
 
@@ -23,9 +23,9 @@
     CANNON_PIVOT_Y: 186,
     CANNON_LEN: 14,
 
-    // Movimiento
-    MOVE_BUDGET: 24,         // píxeles lógicos por turno (distancia absoluta)
-    MOVE_STEP_MAX: 4,        // máximo por mensaje
+    // Movimiento (se planea en secreto y se revela junto con el disparo)
+    MOVE_BUDGET: 24,         // desplazamiento máximo por ronda, en píxeles lógicos
+    MOVE_STEP_MAX: 4,        // (compatibilidad) paso máximo de un movimiento suelto
 
     // Disparo
     ANGLE_MIN: 15, ANGLE_MAX: 80,
@@ -42,9 +42,32 @@
     DAMAGE_CRIT: 20,
     DAMAGE_ARMOR: 8,
 
+    // Viento: aceleración horizontal (px/s²) que cambia cada ronda y desvía todos los disparos
+    WIND_MAX: 26,
+
+    // Rocas en el centro del mar (bloquean los tiros bajos). Se sortean al empezar cada partida.
+    ROCKS_X: [222, 258],     // rango donde puede estar el centro de una roca
+    ROCK_W: [10, 16],
+    ROCK_H: [14, 30],
+
+    // Caja 360: cuelga de un globo cada 3 rondas; quien le acierta gana un poder
+    CRATE_EVERY: 3,
+    CRATE_X: [200, 280],
+    CRATE_Y: [70, 120],
+    CRATE_SIZE: 12,
+    POWERS: ['escudo', 'doble', 'reparar'],
+    REPAIR_HP: 15,
+
+    // Efectos de los proyectiles (ya no son iguales)
+    TIKTOK_BOUNCE: { vy: 0.55, vx: 0.85 },   // rebota una vez en el agua
+    INSTAGRAM_SPLIT: [0.72, 1, 1.28],        // se divide en 3 en el punto más alto
+    FRAGMENT_FACTOR: 0.5,                    // cada fragmento hace la mitad del daño de la zona
+
     // Tiempos (ms) — el servidor los puede sobrescribir con variables de entorno
-    MOVE_MS: 15000,
-    AIM_MS: 20000,
+    PLAN_MS: 20000,          // moverse y apuntar, en secreto y al mismo tiempo
+    REVEAL_MOVE_MS: 700,     // los barcos se deslizan a su nueva posición antes de que salgan las bombas
+    MOVE_MS: 15000,          // (compatibilidad)
+    AIM_MS: 20000,           // (compatibilidad)
     RESOLUTION_MS: 1800,
     START_DELAY_MS: 2500,
     RECONNECT_MS: 30000,
@@ -58,7 +81,11 @@
     PROJECTILES: ['tiktok', 'instagram'],
     NAME_MAX: 14,
 
-    PHASES: ['WAITING', 'MOVEMENT', 'AIMING', 'PROJECTILE', 'RESOLUTION', 'NEXT_TURN', 'GAME_OVER', 'PAUSED'],
+    PHASES: ['LOBBY', 'WAITING', 'PLANNING', 'REVEAL', 'RESOLUTION', 'NEXT_TURN', 'GAME_OVER', 'PAUSED'],
+
+    // Ranking semanal
+    POINTS: { win: 3, draw: 1, loss: 0 },
+    NEGOCIO_MAX: 24, PREMIO_MAX: 40,
   };
   C.COLOR_KEYS = Object.keys(C.COLORS);
   if (typeof module !== 'undefined' && module.exports) module.exports = C;

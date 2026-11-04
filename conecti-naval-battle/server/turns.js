@@ -1,27 +1,32 @@
 'use strict';
 /*
- * Máquina de estados con TURNOS SIMULTÁNEOS (el servidor es la única autoridad).
+ * Máquina de estados: PLAN SECRETO SIMULTÁNEO (el servidor es la única autoridad).
  *
- *   LOBBY → WAITING → MOVEMENT → AIMING → PROJECTILE → RESOLUTION → NEXT_TURN → MOVEMENT …
- *                                                                  ↘ GAME_OVER
- *   MOVEMENT (15 s): los dos mueven su barco a la vez. Termina cuando ambos confirman o se acaba el tiempo.
- *   AIMING   (20 s): los dos apuntan EN SECRETO y fijan su disparo. Termina cuando ambos disparan o se acaba
- *                    el tiempo (quien no disparó pierde ese tiro).
- *   PROJECTILE:      los dos proyectiles salen juntos; el servidor ya calculó ambas trayectorias.
- *   RESOLUTION:      se aplica el daño de los dos impactos a la vez. Si los dos llegan a 0 HP: empate.
- *   Cualquier fase con tiempo → PAUSED si alguien se desconecta → la misma fase al volver.
+ *   LOBBY → WAITING → PLANNING → REVEAL → RESOLUTION → NEXT_TURN → PLANNING …
+ *                                                     ↘ GAME_OVER
+ *
+ *   PLANNING (20 s): cada uno mueve su barco Y apunta, en secreto. El rival no ve ni el movimiento
+ *                    ni la mira: solo sabe si ya tocaste DISPARAR. Termina cuando disparan los dos o
+ *                    se acaba el tiempo (quien no disparó no se mueve ni dispara esa ronda).
+ *   REVEAL:          se revela todo de una vez: los barcos se deslizan a su nueva posición
+ *                    (REVEAL_MOVE_MS) y enseguida salen las bombas, ya calculadas por el servidor.
+ *   RESOLUTION:      se aplica el daño de ambos impactos a la vez (con poderes). Si los dos llegan
+ *                    a 0 HP: empate.
+ *   Cada ronda cambia el viento; cada 3 rondas aparece la Caja 360 colgada de un globo.
+ *   PLANNING → PAUSED si alguien se desconecta → PLANNING al volver.
  */
 const C = require('../shared/constants');
 const { simulateShot } = require('./physics');
 const { resetForMatch } = require('./gameState');
 
-function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now() }) {
+function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now(), random = Math.random }) {
   const T = {
-    MOVE_MS: timings.MOVE_MS ?? C.MOVE_MS,
-    AIM_MS: timings.AIM_MS ?? C.AIM_MS,
+    PLAN_MS: timings.PLAN_MS ?? C.PLAN_MS,
+    REVEAL_MOVE_MS: timings.REVEAL_MOVE_MS ?? C.REVEAL_MOVE_MS,
     RESOLUTION_MS: timings.RESOLUTION_MS ?? C.RESOLUTION_MS,
     START_DELAY_MS: timings.START_DELAY_MS ?? C.START_DELAY_MS,
   };
+  const entre = ([a, b]) => a + random() * (b - a);
 
   function clearPhaseTimer(room) { if (room.phaseTimer) { clearTimeout(room.phaseTimer); room.phaseTimer = null; } }
   function setPhase(room, phase, ms, next) {
@@ -32,125 +37,118 @@ function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now() }) 
     if (ms && next) room.phaseTimer = setTimeout(() => { room.phaseTimer = null; next(); }, ms);
   }
   const anyoneAway = room => room.players.some(p => !p || !p.connected);
-  const alTerminar = (room, fase) => (fase === 'MOVEMENT' ? () => endMovement(room) : () => launch(room));
 
-  /** Ambos listos: reinicia la partida. */
+  /** Ambos listos: reinicia la partida, sortea rocas y empieza. */
   function startMatch(room) {
     resetForMatch(room.state);
     room.players.forEach(p => { p.ready = false; p.rematch = false; });
+    const s = room.state;
+    const n = random() < 0.5 ? 1 : 2;
+    s.rocks = Array.from({ length: n }, (_, i) => ({
+      x: Math.round(n === 1 ? entre(C.ROCKS_X) : i === 0 ? entre([C.ROCKS_X[0], 236]) : entre([244, C.ROCKS_X[1]])),
+      w: Math.round(entre(C.ROCK_W)), h: Math.round(entre(C.ROCK_H)),
+    }));
     setPhase(room, 'WAITING', T.START_DELAY_MS, () => beginRound(room));
-    emit(room, 'matchStart', { match: room.state.match });
+    emit(room, 'matchStart', { match: s.match });
     sync(room);
   }
 
   function beginRound(room) {
     const s = room.state;
     s.round += 1;
-    s.moved = [false, false];
     s.locked = [false, false];
     s.pending = [null, null];
     s.lastResult = null;
-    s.ships.forEach(sh => { sh.moveLeft = C.MOVE_BUDGET; });
-    enterTimed(room, 'MOVEMENT', T.MOVE_MS);
+    s.wind = Math.round(entre([-C.WIND_MAX, C.WIND_MAX]));
+    if (!s.crate && s.round % C.CRATE_EVERY === 0) s.crate = { x: Math.round(entre(C.CRATE_X)), y: Math.round(entre(C.CRATE_Y)) };
+    enterPlanning(room, T.PLAN_MS);
   }
 
-  /** Entra a una fase con tiempo; si falta alguien, la deja en pausa con el tiempo completo. */
-  function enterTimed(room, phase, ms) {
+  function enterPlanning(room, ms) {
     const s = room.state;
     if (anyoneAway(room)) {
       clearPhaseTimer(room);
-      s.phase = 'PAUSED'; s.pausedPhase = phase; s.pausedRemaining = ms; s.phaseEndsAt = 0;
+      s.phase = 'PAUSED'; s.pausedPhase = 'PLANNING'; s.pausedRemaining = ms; s.phaseEndsAt = 0;
       sync(room);
       return;
     }
-    setPhase(room, phase, ms, alTerminar(room, phase));
+    setPhase(room, 'PLANNING', ms, () => reveal(room));
     sync(room);
   }
 
-  function endMovement(room) {
-    const s = room.state;
-    if (s.phase !== 'MOVEMENT') return;
-    s.ships.forEach(sh => { sh.moveLeft = 0; });
-    s.moved = [true, true];
-    enterTimed(room, 'AIMING', T.AIM_MS);
-  }
+  // ---------------- Acción del jugador (ya validada en tipo y rango) ----------------
 
-  // ---------------- Acciones del jugador (ya validadas en tipo y rango) ----------------
-
-  /** Mueve el barco del jugador. Devuelve los píxeles realmente recorridos. */
-  function move(room, slot, dx) {
+  /** Plan secreto: desplazamiento + mira. Uno por ronda. Cuando están los dos, se revela todo. */
+  function submitPlan(room, slot, plan) {
     const s = room.state;
-    if (s.phase !== 'MOVEMENT' || s.moved[slot]) return 0;
-    const ship = s.ships[slot];
-    if (ship.moveLeft <= 0) return 0;
-    const pedido = Math.sign(dx) * Math.min(Math.abs(dx), ship.moveLeft);
-    const [min, max] = C.ZONES[slot];
-    const nuevo = Math.max(min, Math.min(max, ship.x + pedido));
-    const recorrido = Math.abs(nuevo - ship.x);
-    ship.x = nuevo;
-    ship.moveLeft -= recorrido;           // distancia absoluta: ir y volver también gasta
-    if (ship.moveLeft <= 0) confirmMove(room, slot);
-    else sync(room);
-    return recorrido;
-  }
-
-  function confirmMove(room, slot) {
-    const s = room.state;
-    if (s.phase !== 'MOVEMENT' || s.moved[slot]) return false;
-    s.moved[slot] = true;
-    s.ships[slot].moveLeft = 0;
-    if (s.moved[0] && s.moved[1]) endMovement(room);
-    else sync(room);
-    return true;
-  }
-
-  /** Mira privada: se guarda, pero NO se envía al rival (el disparo es secreto hasta que salen los dos). */
-  function setAim(room, slot, aim) {
-    const s = room.state;
-    if ((s.phase !== 'AIMING' && s.phase !== 'MOVEMENT') || s.locked[slot]) return false;
-    s.aim[slot] = aim;
-    return true;
-  }
-
-  /** Fija el disparo del jugador (uno por ronda). Cuando los dos dispararon, salen juntos. */
-  function fire(room, slot, aim) {
-    const s = room.state;
-    if (s.phase !== 'AIMING' || s.locked[slot]) return false;
+    if (s.phase !== 'PLANNING' || s.locked[slot]) return false;
     s.locked[slot] = true;
-    s.aim[slot] = aim;
-    s.pending[slot] = aim;
-    if (s.locked[0] && s.locked[1]) launch(room);
+    s.pending[slot] = plan;
+    if (s.locked[0] && s.locked[1]) reveal(room);
     else sync(room);
     return true;
   }
 
-  /** Calcula las dos trayectorias con las posiciones finales y las lanza a la vez. */
-  function launch(room) {
+  /** Aplica los movimientos y calcula los disparos con las posiciones nuevas. */
+  function reveal(room) {
     const s = room.state;
-    if (s.phase !== 'AIMING') return;
+    if (s.phase !== 'PLANNING') return;
+    const moves = [0, 1].map(i => {
+      const from = s.ships[i].x, p = s.pending[i];
+      if (!p) return { from, to: from };
+      const [min, max] = C.ZONES[i];
+      const to = Math.max(min, Math.min(max, from + Math.max(-C.MOVE_BUDGET, Math.min(C.MOVE_BUDGET, p.dx))));
+      s.ships[i].x = to;
+      return { from, to };
+    });
     const shots = [0, 1].filter(i => s.pending[i]).map(i => {
-      const a = s.pending[i];
-      const sim = simulateShot({ shooter: i, ships: s.ships, angle: a.angle, power: a.power });
-      s.shownAim[i] = { ...a };
-      return { shooter: i, angle: a.angle, power: a.power, projectile: a.projectile, path: sim.path, impact: sim.impact, flightMs: sim.flightMs };
+      const p = s.pending[i];
+      const sim = simulateShot({ shooter: i, ships: s.ships, angle: p.angle, power: p.power, projectile: p.projectile, wind: s.wind, rocks: s.rocks, crate: s.crate });
+      s.shownAim[i] = { angle: p.angle, power: p.power, projectile: p.projectile };
+      return { shooter: i, angle: p.angle, power: p.power, projectile: p.projectile, trayectorias: sim.trayectorias, flightMs: sim.flightMs, crateHit: sim.crateHit };
     });
     const missed = [0, 1].filter(i => !s.pending[i]);
-    const dur = Math.max(700, ...shots.map(x => x.flightMs));
-    s.lastResult = { shots: shots.map(x => ({ shooter: x.shooter, ...x.impact })), missed };
-    emit(room, 'shots', { shots, missed });
-    setPhase(room, 'PROJECTILE', dur, () => resolve(room, shots, missed));
+    const vuelo = Math.max(500, ...shots.map(x => x.flightMs));
+    s.lastResult = { moves, missed };
+    emit(room, 'reveal', { moves, shots, missed, wind: s.wind, moveMs: T.REVEAL_MOVE_MS });
+    setPhase(room, 'REVEAL', T.REVEAL_MOVE_MS + vuelo, () => resolve(room, shots));
     sync(room);
   }
 
-  function resolve(room, shots, missed) {
+  function resolve(room, shots) {
     const s = room.state;
-    const impacts = shots.map(x => ({ shooter: x.shooter, ...x.impact }));
-    for (const imp of impacts) {
-      if (imp.type !== 'hull') continue;
-      const t = s.ships[imp.target];
-      t.hp = Math.max(0, t.hp - imp.damage);   // nunca bajo cero
+    const impacts = [];
+    let caja = null;
+    // 1) Daño (con DOBLE del tirador y ESCUDO del que recibe)
+    const escudoUsado = [false, false];
+    for (const sh of shots) {
+      const doble = s.powers[sh.shooter].doble;
+      let pego = false;
+      for (const tr of sh.trayectorias) {
+        const imp = { ...tr.impact, shooter: sh.shooter };
+        if (imp.type === 'hull') {
+          let d = imp.damage * (doble ? 2 : 1);
+          if (s.powers[imp.target].escudo) { d = 0; escudoUsado[imp.target] = true; imp.blocked = true; }
+          imp.damage = d;
+          s.ships[imp.target].hp = Math.max(0, s.ships[imp.target].hp - d);   // nunca bajo cero
+          if (imp.target !== sh.shooter) pego = true;
+        }
+        impacts.push(imp);
+      }
+      if (doble && pego) s.powers[sh.shooter].doble = false;
     }
-    emit(room, 'resolution', { impacts, missed, hp: s.ships.map(x => x.hp) });
+    escudoUsado.forEach((u, i) => { if (u) s.powers[i].escudo = false; });
+    // 2) Caja 360: si la tocaron los dos en la misma ronda, se la lleva el que la tocó con más vida restante
+    const tocaron = shots.filter(x => x.crateHit).map(x => x.shooter);
+    if (s.crate && tocaron.length) {
+      const by = tocaron.length === 1 ? tocaron[0] : (s.ships[0].hp <= s.ships[1].hp ? 0 : 1);
+      const power = C.POWERS[Math.floor(random() * C.POWERS.length)];
+      if (power === 'reparar') s.ships[by].hp = Math.min(C.MAX_HP, s.ships[by].hp + C.REPAIR_HP);
+      else s.powers[by][power] = true;
+      caja = { by, power };
+      s.crate = null;
+    }
+    emit(room, 'resolution', { impacts, hp: s.ships.map(x => x.hp), powers: s.powers.map(p => ({ ...p })), crate: caja });
     setPhase(room, 'RESOLUTION', T.RESOLUTION_MS, () => nextRound(room));
     sync(room);
   }
@@ -170,33 +168,41 @@ function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now() }) 
     s.phase = 'GAME_OVER'; s.phaseEndsAt = 0; s.pausedPhase = null;
     s.winner = winner; s.reason = reason;
     room.players.forEach(p => { if (p) p.rematch = false; });
-    emit(room, 'gameOver', { winner, reason, hp: s.ships.map(x => x.hp) });
+    emit(room, 'gameOver', { winner, reason, hp: s.ships.map(x => x.hp), round: s.round, names: room.players.map(p => p && p.name) });
     sync(room);
   }
 
   // ---------------- Desconexiones ----------------
-  const ACTIVE = ['MOVEMENT', 'AIMING'];
 
-  /** Un jugador se fue: si estaba corriendo el tiempo de una fase, se pausa. */
+  /** Un jugador se fue: si corría el tiempo del plan, se pausa (los planes ya enviados se conservan). */
   function pause(room) {
     const s = room.state;
-    if (!ACTIVE.includes(s.phase)) return;            // PROJECTILE/RESOLUTION terminan y la siguiente fase entra en pausa
-    const restante = Math.max(1000, s.phaseEndsAt - now());
-    const fase = s.phase;
+    if (s.phase !== 'PLANNING') return;
+    const restante = Math.max(3000, s.phaseEndsAt - now());
     clearPhaseTimer(room);
-    s.phase = 'PAUSED'; s.pausedPhase = fase; s.pausedRemaining = restante; s.phaseEndsAt = 0;
+    s.phase = 'PAUSED'; s.pausedPhase = 'PLANNING'; s.pausedRemaining = restante; s.phaseEndsAt = 0;
     sync(room);
   }
 
-  /** Volvieron todos: se reanuda la fase con el tiempo que le quedaba. */
+  /** Volvieron todos: se reanuda el plan con el tiempo que le quedaba. */
   function resume(room) {
     const s = room.state;
     if (s.phase !== 'PAUSED' || anyoneAway(room)) return false;
-    const fase = s.pausedPhase, ms = s.pausedRemaining;
+    const ms = s.pausedRemaining;
     s.pausedPhase = null; s.pausedRemaining = 0;
-    setPhase(room, fase, ms, alTerminar(room, fase));
+    setPhase(room, 'PLANNING', ms, () => reveal(room));
     sync(room);
     return true;
+  }
+
+  /** Reconstruye los temporizadores después de recuperar una sala guardada (anfitrión que recargó). */
+  function restore(room) {
+    const s = room.state;
+    clearPhaseTimer(room);
+    if (['PLANNING', 'PAUSED'].includes(s.phase)) { s.locked = [false, false]; s.pending = [null, null]; s.pausedPhase = null; enterPlanning(room, T.PLAN_MS); }
+    else if (['REVEAL', 'RESOLUTION', 'NEXT_TURN'].includes(s.phase)) nextRound(room);
+    else if (s.phase === 'WAITING') beginRound(room);
+    else sync(room);
   }
 
   function forfeit(room, loserSlot) {
@@ -217,7 +223,7 @@ function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now() }) 
     return true;
   }
 
-  return { startMatch, move, confirmMove, setAim, fire, pause, resume, forfeit, requestRematch, clearPhaseTimer, timings: T };
+  return { startMatch, submitPlan, pause, resume, restore, forfeit, requestRematch, clearPhaseTimer, timings: T };
 }
 
 module.exports = { createTurnEngine };

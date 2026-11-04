@@ -52,6 +52,33 @@ function aim(p) {
   return { angle: Math.round(p.angle * 10) / 10, power: Math.round(p.power * 10) / 10, projectile };
 }
 
+/** Plan secreto de la ronda: desplazamiento total (entero, ±MOVE_BUDGET) + mira. */
+function plan(p) {
+  const a = aim(p);
+  if (!a || !isNum(p.dx) || !Number.isInteger(p.dx) || Math.abs(p.dx) > C.MOVE_BUDGET) return null;
+  return { dx: p.dx, ...a };
+}
+
+/** Texto libre corto (nombre de negocio, premio): sin etiquetas ni saltos de línea. */
+function textoCorto(v, max) {
+  if (typeof v !== 'string') return '';
+  return v.normalize('NFC').replace(/[<>{}\[\]\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+const TORNEO_RE = /^T[A-HJ-NP-Z2-9]{4}$/;
+/** Datos opcionales de la sala: versión para negocios y vínculo con un torneo. */
+function meta(p) {
+  const m = {};
+  if (p && typeof p === 'object') {
+    const nombre = textoCorto(p.negocio, C.NEGOCIO_MAX), premio = textoCorto(p.premio, C.PREMIO_MAX);
+    if (nombre) m.negocio = nombre;
+    if (premio) m.premio = premio;
+    if (p.torneo && typeof p.torneo === 'object' && TORNEO_RE.test(p.torneo.id) && Number.isInteger(p.torneo.r) && Number.isInteger(p.torneo.m)
+        && p.torneo.r >= 0 && p.torneo.r < 3 && p.torneo.m >= 0 && p.torneo.m < 4) m.torneo = { id: p.torneo.id, r: p.torneo.r, m: p.torneo.m };
+  }
+  return m;
+}
+
 /**
  * Límite de frecuencia por conexión: cubeta de fichas (ráfaga) + intervalo mínimo por tipo de evento.
  */
@@ -71,4 +98,4 @@ function createRateLimiter({ capacity = 25, refillPerSec = 20, minIntervals = {}
   };
 }
 
-module.exports = { sanitizeName, profile, roomCode, token, moveStep, aim, createRateLimiter, CODE_RE };
+module.exports = { sanitizeName, profile, roomCode, token, moveStep, aim, plan, meta, textoCorto, createRateLimiter, CODE_RE, TORNEO_RE };

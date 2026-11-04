@@ -31,6 +31,12 @@
         <div><span class="rot">CONECTI</span><div class="muestras" id="m-conecti" role="radiogroup" aria-label="Color de Conecti"></div></div>
         <div><span class="rot">BARCO</span><div class="muestras" id="m-barco" role="radiogroup" aria-label="Color del barco"></div></div>
       </div>
+      <details class="negocio" id="d-negocio">
+        <summary>PARA TU NEGOCIO (OPCIONAL)</summary>
+        <p class="ayuda">Tu marca aparece en el mar y el ganador ve su premio en la pantalla final.</p>
+        <label class="campo" for="i-negocio"><span>NOMBRE DEL NEGOCIO</span><input id="i-negocio" maxlength="24" placeholder="Ej. Café Aroma"></label>
+        <label class="campo" for="i-premio"><span>PREMIO PARA EL GANADOR</span><input id="i-premio" maxlength="40" placeholder="Ej. 10% de descuento"></label>
+      </details>
     </div>
 
     <div class="botones">
@@ -45,14 +51,18 @@
       </div>
     </form>
     <p class="error" id="e-inicio" role="alert"></p>
+    <div class="botones">
+      <button class="btn sec" id="b-ranking">🏆 RANKING SEMANAL</button>
+      <button class="btn sec" id="b-torneo">⚔ MODO TORNEO</button>
+    </div>
 
     <div class="panel instrucciones">
       <h2>CÓMO SE JUEGA</h2>
       <ol>
-        <li><b>Los dos juegan a la vez.</b> Muévete hasta 24 pasos con ◀ ▶ (15 s).</li>
-        <li><b>Apunta en secreto</b>: ángulo, potencia y proyectil (20 s). Los dos disparos salen juntos.</li>
-        <li><b>¡Fuego!</b> Proa y popa son puntos débiles: <b class="r">−20</b>. El centro está blindado: <b class="a">−8</b>.</li>
-        <li>Hunde el barco rival antes de que hunda el tuyo.</li>
+        <li><b>En secreto y a la vez</b>: mueve tu barco (◀ ▶) y apunta. Tienes 20 s.</li>
+        <li>Toca <b>¡DISPARAR!</b> Cuando los dos disparan, se revela todo y vuelan las bombas.</li>
+        <li>Proa y popa: <b class="r">−20</b>. Centro blindado: <b class="a">−8</b>. Ojo con el <b>viento</b> y las <b>rocas</b>.</li>
+        <li><b>TikTok</b> rebota en el agua. <b>Instagram</b> se divide en 3. Acierta a la <b>Caja 360</b> para ganar un poder.</li>
       </ol>
     </div>
     <p class="pie">Un juego de <b>360 Connect</b> · Placas NFC + QR · WhatsApp 974 337 299</p>
@@ -61,8 +71,10 @@
   <!-- ================= SALA DE ESPERA ================= -->
   <section class="pantalla" id="s-sala" hidden>
     <div class="conecti-panel" id="cp-sala"><canvas class="cp-avatar" width="12" height="16"></canvas><p class="cp-texto"></p></div>
+    <p class="negocio-sala" id="t-negocio-sala" hidden></p>
     <h2>CÓDIGO DE TU SALA</h2>
     <div class="codigo" id="t-codigo">CNX-····</div>
+    <div class="qr-caja"><div id="qr" aria-label="Código QR para unirse"></div><p>Tu rival escanea este QR con la cámara para entrar</p></div>
     <div class="fila wrap">
       <button class="btn sec" id="b-copiar-codigo">COPIAR CÓDIGO</button>
       <button class="btn sec" id="b-copiar-enlace">COPIAR ENLACE</button>
@@ -80,6 +92,7 @@
       <div class="hud-centro">
         <div class="hud-turno" id="hud-turno">—</div>
         <div class="hud-reloj" id="hud-reloj">--</div>
+        <div class="hud-viento" id="hud-viento"></div>
       </div>
       <div class="hud-j der" id="hud-1"></div>
     </div>
@@ -90,33 +103,17 @@
         <p class="capa-t">PARTIDA EN PAUSA</p>
         <p id="ov-pausa-txt"></p>
       </div>
-      <div class="capa fin" id="ov-fin" hidden>
-        <canvas id="c-fin" width="12" height="16"></canvas>
-        <p class="capa-t" id="fin-titulo"></p>
-        <p id="fin-texto"></p>
-        <div class="fila wrap">
-          <button class="btn" id="b-revancha">SOLICITAR REVANCHA</button>
-          <button class="btn sec" id="b-menu">VOLVER AL MENÚ</button>
-          <button class="btn sec" id="b-invitar">COPIAR ENLACE PARA INVITAR</button>
-        </div>
-        <p class="nota" id="fin-nota"></p>
-      </div>
     </div>
 
     <div class="conecti-panel" id="cp-juego"><canvas class="cp-avatar" width="12" height="16"></canvas><p class="cp-texto"></p></div>
 
-    <!-- Controles: solo se muestra el bloque de la fase actual -->
-    <div class="controles" id="ctl-mover" hidden>
-      <div class="medidor"><span>MOTOR</span><div class="barra"><i id="motor-barra"></i></div><span id="motor-txt">24/24</span></div>
-      <div class="fila">
+    <!-- Plan secreto: moverse + apuntar + disparar, todo en la misma fase -->
+    <div class="controles" id="ctl-plan" hidden>
+      <div class="mover">
         <button class="btn tactil" id="b-izq" aria-label="Mover a la izquierda">◀</button>
-        <button class="btn" id="b-confirmar">CONFIRMAR</button>
+        <div class="medidor"><span>MOTOR</span><div class="barra"><i id="motor-barra"></i></div><span id="motor-txt">24</span></div>
         <button class="btn tactil" id="b-der" aria-label="Mover a la derecha">▶</button>
       </div>
-      <p class="ayuda">Teclado: A/← y D/→ para moverte · Espacio para confirmar</p>
-    </div>
-
-    <div class="controles" id="ctl-apuntar" hidden>
       <div class="ajuste">
         <span class="rot">ÁNGULO</span>
         <button class="btn mini" id="b-ang-menos" aria-label="Bajar ángulo">−</button>
@@ -133,18 +130,69 @@
       </div>
       <div class="fila">
         <div class="proyectiles" role="radiogroup" aria-label="Proyectil">
-          <button class="proy" data-p="tiktok" role="radio"><canvas width="12" height="12"></canvas>TIKTOK</button>
-          <button class="proy" data-p="instagram" role="radio"><canvas width="12" height="12"></canvas>INSTAGRAM</button>
+          <button class="proy" data-p="tiktok" role="radio"><canvas width="12" height="12"></canvas>TIKTOK<small>rebota</small></button>
+          <button class="proy" data-p="instagram" role="radio"><canvas width="12" height="12"></canvas>INSTAGRAM<small>se divide</small></button>
         </div>
         <button class="btn grande fuego" id="b-disparar">¡DISPARAR!</button>
       </div>
-      <p class="ayuda">Teclado: ↑/↓ ángulo · ←/→ potencia · 1/2 proyectil · Espacio dispara</p>
+      <p class="ayuda">Teclado: A/D mover · ↑/↓ ángulo · ←/→ potencia · 1/2 proyectil · Espacio dispara</p>
     </div>
 
     <div class="controles espera" id="ctl-espera"><p id="t-espera">Observa el mar...</p></div>
     <button class="btn chico sec" id="b-abandonar">ABANDONAR PARTIDA</button>
   </section>
+
+  <!-- ================= RANKING ================= -->
+  <section class="pantalla" id="s-ranking" hidden>
+    <h2>🏆 RANKING SEMANAL</h2>
+    <p class="ayuda" id="t-semana"></p>
+    <ol class="ranking" id="l-ranking"></ol>
+    <p class="ayuda">Victoria: 3 puntos · Empate: 1 punto. Se reinicia cada lunes.</p>
+    <button class="btn sec" id="b-volver-ranking">VOLVER</button>
+  </section>
+
+  <!-- ================= TORNEO ================= -->
+  <section class="pantalla" id="s-torneo" hidden>
+    <h2>⚔ MODO TORNEO</h2>
+    <form class="panel" id="f-torneo">
+      <label class="campo" for="i-t-nombre"><span>NOMBRE DEL TORNEO</span><input id="i-t-nombre" maxlength="30" placeholder="Ej. Copa Conecti"></label>
+      <div class="fila wrap">
+        <label class="opcion"><input type="radio" name="t-tam" value="4" checked> 4 capitanes</label>
+        <label class="opcion"><input type="radio" name="t-tam" value="8"> 8 capitanes</label>
+      </div>
+      <div class="t-jugadores" id="t-jugadores"></div>
+      <label class="campo" for="i-t-negocio"><span>NEGOCIO (OPCIONAL)</span><input id="i-t-negocio" maxlength="24" placeholder="Ej. Café Aroma"></label>
+      <label class="campo" for="i-t-premio"><span>PREMIO PARA EL CAMPEÓN (OPCIONAL)</span><input id="i-t-premio" maxlength="40" placeholder="Ej. Un desayuno gratis"></label>
+      <button class="btn grande" type="submit">CREAR TORNEO</button>
+      <p class="error" id="e-torneo" role="alert"></p>
+    </form>
+    <div id="v-torneo" hidden>
+      <p class="torneo-nombre" id="t-t-nombre"></p>
+      <p class="ayuda" id="t-t-premio"></p>
+      <div class="llaves" id="t-llaves"></div>
+      <div class="qr-caja"><div id="qr-torneo"></div><p>Comparte el torneo: todos ven las llaves en vivo</p></div>
+      <div class="fila wrap"><button class="btn sec" id="b-t-enlace">COPIAR ENLACE DEL TORNEO</button></div>
+      <p class="ayuda" id="t-t-ayuda"></p>
+    </div>
+    <button class="btn sec" id="b-volver-torneo">VOLVER</button>
+  </section>
 </main>
+
+<!-- Fin de partida (pantalla completa) -->
+<div class="capa fin" id="ov-fin" hidden>
+  <canvas id="c-fin" width="12" height="16"></canvas>
+  <p class="capa-t" id="fin-titulo"></p>
+  <p id="fin-texto"></p>
+  <div class="premio" id="fin-premio" hidden></div>
+  <div class="fila wrap">
+    <button class="btn" id="b-revancha">SOLICITAR REVANCHA</button>
+    <button class="btn wa" id="b-compartir">COMPARTIR RESULTADO</button>
+    <button class="btn sec" id="b-volver-torneo-fin" hidden>VOLVER AL TORNEO</button>
+    <button class="btn sec" id="b-menu">VOLVER AL MENÚ</button>
+    <button class="btn sec" id="b-invitar">COPIAR ENLACE PARA INVITAR</button>
+  </div>
+  <p class="nota" id="fin-nota"></p>
+</div>
 
 <div class="sonido">
   <button class="btn mini" id="b-sonido" aria-label="Sonido">♪</button>
@@ -152,9 +200,11 @@
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<script src="js/vendor/qrcode.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="shared/constants.js"></script>
+<script src="shared/extras.js"></script>
 <script src="js/engine-bundle.js"></script>
 <script src="assets/sprites/sprites.js"></script>
 <script src="js/audio.js"></script>
@@ -162,6 +212,7 @@
 <script src="js/renderer.js"></script>
 <script src="js/controls.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/share.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

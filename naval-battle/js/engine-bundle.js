@@ -33,7 +33,7 @@
     HULL_TOP: 194,           // cubierta (borde superior del casco)
     HULL_BOTTOM: 210,        // quilla visible (un poco bajo el agua)
     START_X: [92, 388],      // centro inicial de cada barco
-    ZONES: [[40, 200], [280, 440]], // límites del CENTRO de cada barco (nunca se tocan: 232 < 248)
+    ZONES: [[40, 190], [290, 440]], // límites del CENTRO de cada barco (dejan el centro del mar libre para las rocas)
     FACING: [1, -1],         // jugador 0 mira a la derecha, jugador 1 a la izquierda
     MAX_HP: 100,
 
@@ -42,9 +42,9 @@
     CANNON_PIVOT_Y: 186,
     CANNON_LEN: 14,
 
-    // Movimiento
-    MOVE_BUDGET: 24,         // píxeles lógicos por turno (distancia absoluta)
-    MOVE_STEP_MAX: 4,        // máximo por mensaje
+    // Movimiento (se planea en secreto y se revela junto con el disparo)
+    MOVE_BUDGET: 24,         // desplazamiento máximo por ronda, en píxeles lógicos
+    MOVE_STEP_MAX: 4,        // (compatibilidad) paso máximo de un movimiento suelto
 
     // Disparo
     ANGLE_MIN: 15, ANGLE_MAX: 80,
@@ -61,9 +61,32 @@
     DAMAGE_CRIT: 20,
     DAMAGE_ARMOR: 8,
 
+    // Viento: aceleración horizontal (px/s²) que cambia cada ronda y desvía todos los disparos
+    WIND_MAX: 26,
+
+    // Rocas en el centro del mar (bloquean los tiros bajos). Se sortean al empezar cada partida.
+    ROCKS_X: [222, 258],     // rango donde puede estar el centro de una roca
+    ROCK_W: [10, 16],
+    ROCK_H: [14, 30],
+
+    // Caja 360: cuelga de un globo cada 3 rondas; quien le acierta gana un poder
+    CRATE_EVERY: 3,
+    CRATE_X: [200, 280],
+    CRATE_Y: [70, 120],
+    CRATE_SIZE: 12,
+    POWERS: ['escudo', 'doble', 'reparar'],
+    REPAIR_HP: 15,
+
+    // Efectos de los proyectiles (ya no son iguales)
+    TIKTOK_BOUNCE: { vy: 0.55, vx: 0.85 },   // rebota una vez en el agua
+    INSTAGRAM_SPLIT: [0.72, 1, 1.28],        // se divide en 3 en el punto más alto
+    FRAGMENT_FACTOR: 0.5,                    // cada fragmento hace la mitad del daño de la zona
+
     // Tiempos (ms) — el servidor los puede sobrescribir con variables de entorno
-    MOVE_MS: 15000,
-    AIM_MS: 20000,
+    PLAN_MS: 20000,          // moverse y apuntar, en secreto y al mismo tiempo
+    REVEAL_MOVE_MS: 700,     // los barcos se deslizan a su nueva posición antes de que salgan las bombas
+    MOVE_MS: 15000,          // (compatibilidad)
+    AIM_MS: 20000,           // (compatibilidad)
     RESOLUTION_MS: 1800,
     START_DELAY_MS: 2500,
     RECONNECT_MS: 30000,
@@ -77,7 +100,11 @@
     PROJECTILES: ['tiktok', 'instagram'],
     NAME_MAX: 14,
 
-    PHASES: ['WAITING', 'MOVEMENT', 'AIMING', 'PROJECTILE', 'RESOLUTION', 'NEXT_TURN', 'GAME_OVER', 'PAUSED'],
+    PHASES: ['LOBBY', 'WAITING', 'PLANNING', 'REVEAL', 'RESOLUTION', 'NEXT_TURN', 'GAME_OVER', 'PAUSED'],
+
+    // Ranking semanal
+    POINTS: { win: 3, draw: 1, loss: 0 },
+    NEGOCIO_MAX: 24, PREMIO_MAX: 40,
   };
   C.COLOR_KEYS = Object.keys(C.COLORS);
   if (typeof module !== 'undefined' && module.exports) module.exports = C;
@@ -105,6 +132,14 @@ function hitsHull(shipX, px, py, r = C.PROJECTILE_R) {
   return dx * dx + dy * dy <= r * r;
 }
 
+/** ¿El círculo (px, py, r) toca un rectángulo {left, right, top, bottom}? (rocas y Caja 360) */
+function hitsRect(rect, px, py, r = C.PROJECTILE_R) {
+  const cx = Math.max(rect.left, Math.min(px, rect.right));
+  const cy = Math.max(rect.top, Math.min(py, rect.bottom));
+  const dx = px - cx, dy = py - cy;
+  return dx * dx + dy * dy <= r * r;
+}
+
 /**
  * Zona del casco según coordenadas LOCALES del barco.
  * u = 0 en la popa (atrás) y u = 1 en la proa (adelante), según hacia dónde mira el barco.
@@ -118,23 +153,29 @@ function zoneAt(shipX, facing, hitX) {
   return { zone: 'centro', damage: C.DAMAGE_ARMOR, u };
 }
 
-module.exports = { hullRect, hitsHull, zoneAt };
+module.exports = { hullRect, hitsHull, zoneAt, hitsRect };
 
   };
 
   defs["physics"] = function (module, exports, require, Buffer) {
 'use strict';
 /*
- * Física determinista del disparo (paso fijo).
- *   vx = v · cos(θ) · facing      vy = v · sin(θ)
- *   x(t) = x0 + vx·t              y(t) = y0 − vy·t + ½·g·t²   (y crece hacia abajo)
- * Se integra con paso fijo dt = 1/PHYS_HZ usando la fórmula cerrada en cada paso
- * (sin error acumulado) y se revisan colisiones entre pasos con sub-muestreo.
+ * Física determinista del disparo (paso fijo de 1/60 s, 3 sub-pasos de colisión).
+ *
+ *   x(t) = x0 + vx·t + ½·viento·t²       y(t) = y0 + vy·t + ½·g·t²     (y crece hacia abajo, vy < 0 sube)
+ *   vx = v·cos(θ)·facing                 vy = −v·sin(θ)
+ *
+ * Efectos de cada proyectil:
+ *   TikTok    → rebota UNA vez en el agua (pierde fuerza) y sigue volando.
+ *   Instagram → en el punto más alto se divide en 3 fragmentos; cada uno hace la mitad del daño.
+ * Obstáculos: rocas en el centro del mar (bloquean) y la Caja 360 en el aire (da un poder).
  */
 const C = require('../shared/constants');
-const { hitsHull, zoneAt } = require('./collisions');
+const { hitsHull, zoneAt, hitsRect } = require('./collisions');
 
 const toRad = d => (d * Math.PI) / 180;
+const r1 = n => Math.round(n * 10) / 10;
+const DT = 1 / C.PHYS_HZ, SUB = 3;
 
 /** Boca del cañón en el mundo, según la posición del barco, su orientación y el ángulo. */
 function muzzle(shipX, facing, angleDeg) {
@@ -143,61 +184,109 @@ function muzzle(shipX, facing, angleDeg) {
   return { x: px + facing * Math.cos(a) * C.CANNON_LEN, y: py - Math.sin(a) * C.CANNON_LEN };
 }
 
+/** Rectángulos de las rocas (en el mundo). */
+const rockRect = rk => ({ left: rk.x - rk.w / 2, right: rk.x + rk.w / 2, top: C.SEA_Y - rk.h, bottom: C.SEA_Y + 4 });
+const crateRect = cr => ({ left: cr.x - C.CRATE_SIZE / 2, right: cr.x + C.CRATE_SIZE / 2, top: cr.y - C.CRATE_SIZE / 2, bottom: cr.y + C.CRATE_SIZE / 2 });
+
 /**
- * Simula un disparo.
- * @param {object} p  { shooter, ships:[{x},{x}], angle, power }
- * @returns {object}  { path:[[x,y]...], impact:{type,x,y,target?,zone?,damage}, flightMs }
+ * Simula un tramo de vuelo con fórmula cerrada hasta que choca con algo (o llega a su punto más alto).
+ * Devuelve los puntos del recorrido y cómo terminó.
  */
-function simulateShot({ shooter, ships, angle, power }) {
-  const facing = C.FACING[shooter];
-  const start = muzzle(ships[shooter].x, facing, angle);
-  const v = (power / 100) * C.V_MAX;
-  const a = toRad(angle);
-  const vx = v * Math.cos(a) * facing, vy = v * Math.sin(a);
-  const dt = 1 / C.PHYS_HZ, g = C.GRAVITY;
+function tramo({ x0, y0, vx, vy, shooter, ships, wind, rocks, crate, grace, alCima }) {
+  const g = C.GRAVITY;
+  const path = [[r1(x0), r1(y0)]];
   const maxSteps = Math.ceil(C.MAX_FLIGHT_S * C.PHYS_HZ);
-  const SUB = 3;
-
-  const path = [[round1(start.x), round1(start.y)]];
-  let prev = { x: start.x, y: start.y };
-  let impact = null;
-
-  for (let step = 1; step <= maxSteps && !impact; step++) {
-    for (let s = 1; s <= SUB && !impact; s++) {
-      const t = (step - 1 + s / SUB) * dt;
-      const x = start.x + vx * t;
-      const y = start.y - vy * t + 0.5 * g * t * t;
-      // Cascos: primero el rival, luego el propio (después del período de gracia)
-      const order = [1 - shooter, shooter];
-      for (const target of order) {
-        if (target === shooter && step <= C.SELF_HIT_GRACE) continue;
+  let prev = { x: x0, y: y0 };
+  for (let step = 1; step <= maxSteps; step++) {
+    for (let s = 1; s <= SUB; s++) {
+      const t = (step - 1 + s / SUB) * DT;
+      const x = x0 + vx * t + 0.5 * wind * t * t;
+      const y = y0 + vy * t + 0.5 * g * t * t;
+      const vxT = vx + wind * t, vyT = vy + g * t;
+      const fin = (type, extra = {}) => {
+        path.push([r1(x), r1(y)]);
+        return { path, steps: step, end: { type, x: r1(x), y: r1(y), vx: vxT, vy: vyT, ...extra } };
+      };
+      if (alCima && vy < 0 && vyT >= 0) return fin('apex');
+      for (const target of [1 - shooter, shooter]) {
+        if (target === shooter && step <= grace) continue;
         if (hitsHull(ships[target].x, x, y)) {
           const z = zoneAt(ships[target].x, C.FACING[target], x);
-          impact = { type: 'hull', x: round1(x), y: round1(y), target, zone: z.zone, damage: z.damage, self: target === shooter };
-          break;
+          return fin('hull', { target, zone: z.zone, base: z.damage, self: target === shooter });
         }
       }
-      if (impact) break;
+      for (const rk of rocks) if (hitsRect(rockRect(rk), x, y)) return fin('rock');
+      if (crate && hitsRect(crateRect(crate), x, y)) return fin('crate');
       if (y >= C.SEA_Y) {
-        // Punto exacto donde cruza el nivel del mar (interpolación lineal)
         const k = (C.SEA_Y - prev.y) / (y - prev.y || 1);
-        impact = { type: 'water', x: round1(prev.x + (x - prev.x) * k), y: C.SEA_Y, damage: 0 };
-        break;
+        const xa = prev.x + (x - prev.x) * k;
+        path.push([r1(xa), C.SEA_Y]);
+        return { path, steps: step, end: { type: 'water', x: r1(xa), y: C.SEA_Y, vx: vxT, vy: vyT } };
       }
-      if (x < -40 || x > C.WIDTH + 40) { impact = { type: 'out', x: round1(x), y: round1(y), damage: 0 }; break; }
+      if (x < -40 || x > C.WIDTH + 40) return fin('out');
       prev = { x, y };
     }
-    if (step % C.PATH_EVERY === 0 || impact) path.push([round1(prev.x), round1(prev.y)]);
-    if (impact) { path.push([impact.x, impact.y]); }
-    else if (step === maxSteps) impact = { type: 'out', x: round1(prev.x), y: round1(prev.y), damage: 0 };
+    if (step % C.PATH_EVERY === 0) path.push([r1(prev.x), r1(prev.y)]);
   }
-  const flightMs = Math.round(((path.length - 1) * C.PATH_EVERY * 1000) / C.PHYS_HZ);
-  return { start, path, impact, flightMs: Math.max(300, flightMs) };
+  return { path, steps: maxSteps, end: { type: 'out', x: r1(prev.x), y: r1(prev.y), vx, vy } };
 }
 
-const round1 = n => Math.round(n * 10) / 10;
+const msDe = steps => Math.round((steps * 1000) / C.PHYS_HZ);
 
-module.exports = { simulateShot, muzzle };
+/** Convierte el final de un tramo en un impacto con daño (sin aplicar poderes). */
+function impacto(end, factor = 1) {
+  if (end.type === 'hull') {
+    return { type: 'hull', x: end.x, y: end.y, target: end.target, zone: end.zone, self: end.self, damage: Math.round(end.base * factor) };
+  }
+  return { type: end.type, x: end.x, y: end.y, damage: 0 };
+}
+
+/**
+ * Simula un disparo completo.
+ * @returns {{ trayectorias: Array<{path, startMs, durMs, impact, bounces?, fragment?}>, flightMs: number, start: object,
+ *            path: number[][], impact: object }}   (path/impact = trayectoria principal, por compatibilidad)
+ */
+function simulateShot({ shooter, ships, angle, power, projectile = 'tiktok', wind = 0, rocks = [], crate = null }) {
+  const facing = C.FACING[shooter];
+  const start = muzzle(ships[shooter].x, facing, angle);
+  const v = (power / 100) * C.V_MAX, a = toRad(angle);
+  const base = { shooter, ships, wind, rocks, crate };
+  const trayectorias = [];
+  let caja = false;
+
+  let seg = tramo({ ...base, x0: start.x, y0: start.y, vx: v * Math.cos(a) * facing, vy: -v * Math.sin(a), grace: C.SELF_HIT_GRACE, alCima: projectile === 'instagram' });
+  const principal = { path: seg.path, startMs: 0, durMs: msDe(seg.steps), bounces: [] };
+
+  if (projectile === 'tiktok' && seg.end.type === 'water') {
+    // Rebote: sale hacia arriba con menos fuerza y sigue el mismo vuelo
+    principal.bounces.push({ x: seg.end.x });
+    const b = tramo({ ...base, x0: seg.end.x, y0: C.SEA_Y - 1, vx: seg.end.vx * C.TIKTOK_BOUNCE.vx, vy: -Math.abs(seg.end.vy) * C.TIKTOK_BOUNCE.vy, grace: 0, alCima: false });
+    principal.path = principal.path.concat(b.path.slice(1));
+    principal.durMs += msDe(b.steps);
+    seg = b;
+  }
+
+  if (projectile === 'instagram' && seg.end.type === 'apex') {
+    // Se divide en 3 fragmentos en el punto más alto
+    principal.impact = { type: 'split', x: seg.end.x, y: seg.end.y, damage: 0 };
+    trayectorias.push(principal);
+    for (const k of C.INSTAGRAM_SPLIT) {
+      const f = tramo({ ...base, x0: seg.end.x, y0: seg.end.y, vx: seg.end.vx * k, vy: 0, grace: 0, alCima: false });
+      const imp = impacto(f.end, C.FRAGMENT_FACTOR);
+      if (imp.type === 'crate') caja = true;
+      trayectorias.push({ path: f.path, startMs: principal.durMs, durMs: msDe(f.steps), impact: imp, fragment: true });
+    }
+  } else {
+    principal.impact = impacto(seg.end);
+    if (principal.impact.type === 'crate') caja = true;
+    trayectorias.push(principal);
+  }
+
+  const flightMs = Math.max(300, ...trayectorias.map(t => t.startMs + t.durMs));
+  return { start, trayectorias, flightMs, crateHit: caja, path: principal.path, impact: trayectorias[trayectorias.length - 1].impact };
+}
+
+module.exports = { simulateShot, muzzle, rockRect, crateRect };
 
   };
 
@@ -208,17 +297,19 @@ const C = require('../shared/constants');
 
 function newMatchState() {
   return {
-    phase: 'LOBBY',          // LOBBY → WAITING → MOVEMENT → AIMING → PROJECTILE → RESOLUTION → NEXT_TURN … → GAME_OVER
+    phase: 'LOBBY',          // LOBBY → WAITING → PLANNING → REVEAL → RESOLUTION → NEXT_TURN … → GAME_OVER
     round: 0,
     phaseEndsAt: 0,
     pausedPhase: null,
     pausedRemaining: 0,
-    ships: [0, 1].map(i => ({ x: C.START_X[i], hp: C.MAX_HP, moveLeft: 0 })),
-    moved: [false, false],   // ya confirmó su movimiento en esta ronda
-    locked: [false, false],  // ya fijó su disparo en esta ronda
-    aim: [0, 1].map(() => ({ angle: 45, power: 60, projectile: 'tiktok' })),        // PRIVADO: mira actual de cada uno
-    pending: [null, null],                                                          // PRIVADO: disparos fijados, aún secretos
+    ships: [0, 1].map(i => ({ x: C.START_X[i], hp: C.MAX_HP })),
+    locked: [false, false],  // ya tocó DISPARAR en esta ronda (lo único que sabe el rival)
+    pending: [null, null],   // PRIVADO: planes secretos { dx, angle, power, projectile }
     shownAim: [0, 1].map(() => ({ angle: 45, power: 60, projectile: 'tiktok' })),   // PÚBLICO: último disparo ya lanzado
+    wind: 0,
+    rocks: [],
+    crate: null,
+    powers: [0, 1].map(() => ({ escudo: false, doble: false })),
     lastResult: null,
     winner: null,            // 0, 1 o null (empate)
     reason: null,            // 'hp' | 'abandono' | 'empate'
@@ -231,7 +322,7 @@ function resetForMatch(state) {
   Object.assign(state, newMatchState(), { match });
 }
 
-/** Snapshot público: sin tokens, sin ids de socket y sin los disparos secretos. */
+/** Snapshot público: sin tokens, sin ids de socket y sin los planes secretos. */
 function publicState(room, now = Date.now()) {
   const s = room.state;
   return {
@@ -243,12 +334,16 @@ function publicState(room, now = Date.now()) {
     match: s.match,
     phaseEndsAt: s.phaseEndsAt,
     pausedRemaining: s.pausedRemaining,
-    ships: s.ships.map(sh => ({ x: sh.x, hp: sh.hp, moveLeft: sh.moveLeft })),
-    moved: [...s.moved],
+    ships: s.ships.map(sh => ({ x: sh.x, hp: sh.hp })),
     locked: [...s.locked],
     aim: s.shownAim.map(a => ({ ...a })),
+    wind: s.wind,
+    rocks: s.rocks.map(r => ({ ...r })),
+    crate: s.crate ? { ...s.crate } : null,
+    powers: s.powers.map(p => ({ ...p })),
     winner: s.winner,
     reason: s.reason,
+    meta: room.meta || {},
     players: room.players.map(p => p && {
       name: p.name, conecti: p.conecti, ship: p.ship,
       connected: p.connected, ready: p.ready, rematch: p.rematch,
@@ -264,28 +359,33 @@ module.exports = { newMatchState, resetForMatch, publicState };
   defs["turns"] = function (module, exports, require, Buffer) {
 'use strict';
 /*
- * Máquina de estados con TURNOS SIMULTÁNEOS (el servidor es la única autoridad).
+ * Máquina de estados: PLAN SECRETO SIMULTÁNEO (el servidor es la única autoridad).
  *
- *   LOBBY → WAITING → MOVEMENT → AIMING → PROJECTILE → RESOLUTION → NEXT_TURN → MOVEMENT …
- *                                                                  ↘ GAME_OVER
- *   MOVEMENT (15 s): los dos mueven su barco a la vez. Termina cuando ambos confirman o se acaba el tiempo.
- *   AIMING   (20 s): los dos apuntan EN SECRETO y fijan su disparo. Termina cuando ambos disparan o se acaba
- *                    el tiempo (quien no disparó pierde ese tiro).
- *   PROJECTILE:      los dos proyectiles salen juntos; el servidor ya calculó ambas trayectorias.
- *   RESOLUTION:      se aplica el daño de los dos impactos a la vez. Si los dos llegan a 0 HP: empate.
- *   Cualquier fase con tiempo → PAUSED si alguien se desconecta → la misma fase al volver.
+ *   LOBBY → WAITING → PLANNING → REVEAL → RESOLUTION → NEXT_TURN → PLANNING …
+ *                                                     ↘ GAME_OVER
+ *
+ *   PLANNING (20 s): cada uno mueve su barco Y apunta, en secreto. El rival no ve ni el movimiento
+ *                    ni la mira: solo sabe si ya tocaste DISPARAR. Termina cuando disparan los dos o
+ *                    se acaba el tiempo (quien no disparó no se mueve ni dispara esa ronda).
+ *   REVEAL:          se revela todo de una vez: los barcos se deslizan a su nueva posición
+ *                    (REVEAL_MOVE_MS) y enseguida salen las bombas, ya calculadas por el servidor.
+ *   RESOLUTION:      se aplica el daño de ambos impactos a la vez (con poderes). Si los dos llegan
+ *                    a 0 HP: empate.
+ *   Cada ronda cambia el viento; cada 3 rondas aparece la Caja 360 colgada de un globo.
+ *   PLANNING → PAUSED si alguien se desconecta → PLANNING al volver.
  */
 const C = require('../shared/constants');
 const { simulateShot } = require('./physics');
 const { resetForMatch } = require('./gameState');
 
-function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now() }) {
+function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now(), random = Math.random }) {
   const T = {
-    MOVE_MS: timings.MOVE_MS ?? C.MOVE_MS,
-    AIM_MS: timings.AIM_MS ?? C.AIM_MS,
+    PLAN_MS: timings.PLAN_MS ?? C.PLAN_MS,
+    REVEAL_MOVE_MS: timings.REVEAL_MOVE_MS ?? C.REVEAL_MOVE_MS,
     RESOLUTION_MS: timings.RESOLUTION_MS ?? C.RESOLUTION_MS,
     START_DELAY_MS: timings.START_DELAY_MS ?? C.START_DELAY_MS,
   };
+  const entre = ([a, b]) => a + random() * (b - a);
 
   function clearPhaseTimer(room) { if (room.phaseTimer) { clearTimeout(room.phaseTimer); room.phaseTimer = null; } }
   function setPhase(room, phase, ms, next) {
@@ -296,125 +396,118 @@ function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now() }) 
     if (ms && next) room.phaseTimer = setTimeout(() => { room.phaseTimer = null; next(); }, ms);
   }
   const anyoneAway = room => room.players.some(p => !p || !p.connected);
-  const alTerminar = (room, fase) => (fase === 'MOVEMENT' ? () => endMovement(room) : () => launch(room));
 
-  /** Ambos listos: reinicia la partida. */
+  /** Ambos listos: reinicia la partida, sortea rocas y empieza. */
   function startMatch(room) {
     resetForMatch(room.state);
     room.players.forEach(p => { p.ready = false; p.rematch = false; });
+    const s = room.state;
+    const n = random() < 0.5 ? 1 : 2;
+    s.rocks = Array.from({ length: n }, (_, i) => ({
+      x: Math.round(n === 1 ? entre(C.ROCKS_X) : i === 0 ? entre([C.ROCKS_X[0], 236]) : entre([244, C.ROCKS_X[1]])),
+      w: Math.round(entre(C.ROCK_W)), h: Math.round(entre(C.ROCK_H)),
+    }));
     setPhase(room, 'WAITING', T.START_DELAY_MS, () => beginRound(room));
-    emit(room, 'matchStart', { match: room.state.match });
+    emit(room, 'matchStart', { match: s.match });
     sync(room);
   }
 
   function beginRound(room) {
     const s = room.state;
     s.round += 1;
-    s.moved = [false, false];
     s.locked = [false, false];
     s.pending = [null, null];
     s.lastResult = null;
-    s.ships.forEach(sh => { sh.moveLeft = C.MOVE_BUDGET; });
-    enterTimed(room, 'MOVEMENT', T.MOVE_MS);
+    s.wind = Math.round(entre([-C.WIND_MAX, C.WIND_MAX]));
+    if (!s.crate && s.round % C.CRATE_EVERY === 0) s.crate = { x: Math.round(entre(C.CRATE_X)), y: Math.round(entre(C.CRATE_Y)) };
+    enterPlanning(room, T.PLAN_MS);
   }
 
-  /** Entra a una fase con tiempo; si falta alguien, la deja en pausa con el tiempo completo. */
-  function enterTimed(room, phase, ms) {
+  function enterPlanning(room, ms) {
     const s = room.state;
     if (anyoneAway(room)) {
       clearPhaseTimer(room);
-      s.phase = 'PAUSED'; s.pausedPhase = phase; s.pausedRemaining = ms; s.phaseEndsAt = 0;
+      s.phase = 'PAUSED'; s.pausedPhase = 'PLANNING'; s.pausedRemaining = ms; s.phaseEndsAt = 0;
       sync(room);
       return;
     }
-    setPhase(room, phase, ms, alTerminar(room, phase));
+    setPhase(room, 'PLANNING', ms, () => reveal(room));
     sync(room);
   }
 
-  function endMovement(room) {
-    const s = room.state;
-    if (s.phase !== 'MOVEMENT') return;
-    s.ships.forEach(sh => { sh.moveLeft = 0; });
-    s.moved = [true, true];
-    enterTimed(room, 'AIMING', T.AIM_MS);
-  }
+  // ---------------- Acción del jugador (ya validada en tipo y rango) ----------------
 
-  // ---------------- Acciones del jugador (ya validadas en tipo y rango) ----------------
-
-  /** Mueve el barco del jugador. Devuelve los píxeles realmente recorridos. */
-  function move(room, slot, dx) {
+  /** Plan secreto: desplazamiento + mira. Uno por ronda. Cuando están los dos, se revela todo. */
+  function submitPlan(room, slot, plan) {
     const s = room.state;
-    if (s.phase !== 'MOVEMENT' || s.moved[slot]) return 0;
-    const ship = s.ships[slot];
-    if (ship.moveLeft <= 0) return 0;
-    const pedido = Math.sign(dx) * Math.min(Math.abs(dx), ship.moveLeft);
-    const [min, max] = C.ZONES[slot];
-    const nuevo = Math.max(min, Math.min(max, ship.x + pedido));
-    const recorrido = Math.abs(nuevo - ship.x);
-    ship.x = nuevo;
-    ship.moveLeft -= recorrido;           // distancia absoluta: ir y volver también gasta
-    if (ship.moveLeft <= 0) confirmMove(room, slot);
-    else sync(room);
-    return recorrido;
-  }
-
-  function confirmMove(room, slot) {
-    const s = room.state;
-    if (s.phase !== 'MOVEMENT' || s.moved[slot]) return false;
-    s.moved[slot] = true;
-    s.ships[slot].moveLeft = 0;
-    if (s.moved[0] && s.moved[1]) endMovement(room);
-    else sync(room);
-    return true;
-  }
-
-  /** Mira privada: se guarda, pero NO se envía al rival (el disparo es secreto hasta que salen los dos). */
-  function setAim(room, slot, aim) {
-    const s = room.state;
-    if ((s.phase !== 'AIMING' && s.phase !== 'MOVEMENT') || s.locked[slot]) return false;
-    s.aim[slot] = aim;
-    return true;
-  }
-
-  /** Fija el disparo del jugador (uno por ronda). Cuando los dos dispararon, salen juntos. */
-  function fire(room, slot, aim) {
-    const s = room.state;
-    if (s.phase !== 'AIMING' || s.locked[slot]) return false;
+    if (s.phase !== 'PLANNING' || s.locked[slot]) return false;
     s.locked[slot] = true;
-    s.aim[slot] = aim;
-    s.pending[slot] = aim;
-    if (s.locked[0] && s.locked[1]) launch(room);
+    s.pending[slot] = plan;
+    if (s.locked[0] && s.locked[1]) reveal(room);
     else sync(room);
     return true;
   }
 
-  /** Calcula las dos trayectorias con las posiciones finales y las lanza a la vez. */
-  function launch(room) {
+  /** Aplica los movimientos y calcula los disparos con las posiciones nuevas. */
+  function reveal(room) {
     const s = room.state;
-    if (s.phase !== 'AIMING') return;
+    if (s.phase !== 'PLANNING') return;
+    const moves = [0, 1].map(i => {
+      const from = s.ships[i].x, p = s.pending[i];
+      if (!p) return { from, to: from };
+      const [min, max] = C.ZONES[i];
+      const to = Math.max(min, Math.min(max, from + Math.max(-C.MOVE_BUDGET, Math.min(C.MOVE_BUDGET, p.dx))));
+      s.ships[i].x = to;
+      return { from, to };
+    });
     const shots = [0, 1].filter(i => s.pending[i]).map(i => {
-      const a = s.pending[i];
-      const sim = simulateShot({ shooter: i, ships: s.ships, angle: a.angle, power: a.power });
-      s.shownAim[i] = { ...a };
-      return { shooter: i, angle: a.angle, power: a.power, projectile: a.projectile, path: sim.path, impact: sim.impact, flightMs: sim.flightMs };
+      const p = s.pending[i];
+      const sim = simulateShot({ shooter: i, ships: s.ships, angle: p.angle, power: p.power, projectile: p.projectile, wind: s.wind, rocks: s.rocks, crate: s.crate });
+      s.shownAim[i] = { angle: p.angle, power: p.power, projectile: p.projectile };
+      return { shooter: i, angle: p.angle, power: p.power, projectile: p.projectile, trayectorias: sim.trayectorias, flightMs: sim.flightMs, crateHit: sim.crateHit };
     });
     const missed = [0, 1].filter(i => !s.pending[i]);
-    const dur = Math.max(700, ...shots.map(x => x.flightMs));
-    s.lastResult = { shots: shots.map(x => ({ shooter: x.shooter, ...x.impact })), missed };
-    emit(room, 'shots', { shots, missed });
-    setPhase(room, 'PROJECTILE', dur, () => resolve(room, shots, missed));
+    const vuelo = Math.max(500, ...shots.map(x => x.flightMs));
+    s.lastResult = { moves, missed };
+    emit(room, 'reveal', { moves, shots, missed, wind: s.wind, moveMs: T.REVEAL_MOVE_MS });
+    setPhase(room, 'REVEAL', T.REVEAL_MOVE_MS + vuelo, () => resolve(room, shots));
     sync(room);
   }
 
-  function resolve(room, shots, missed) {
+  function resolve(room, shots) {
     const s = room.state;
-    const impacts = shots.map(x => ({ shooter: x.shooter, ...x.impact }));
-    for (const imp of impacts) {
-      if (imp.type !== 'hull') continue;
-      const t = s.ships[imp.target];
-      t.hp = Math.max(0, t.hp - imp.damage);   // nunca bajo cero
+    const impacts = [];
+    let caja = null;
+    // 1) Daño (con DOBLE del tirador y ESCUDO del que recibe)
+    const escudoUsado = [false, false];
+    for (const sh of shots) {
+      const doble = s.powers[sh.shooter].doble;
+      let pego = false;
+      for (const tr of sh.trayectorias) {
+        const imp = { ...tr.impact, shooter: sh.shooter };
+        if (imp.type === 'hull') {
+          let d = imp.damage * (doble ? 2 : 1);
+          if (s.powers[imp.target].escudo) { d = 0; escudoUsado[imp.target] = true; imp.blocked = true; }
+          imp.damage = d;
+          s.ships[imp.target].hp = Math.max(0, s.ships[imp.target].hp - d);   // nunca bajo cero
+          if (imp.target !== sh.shooter) pego = true;
+        }
+        impacts.push(imp);
+      }
+      if (doble && pego) s.powers[sh.shooter].doble = false;
     }
-    emit(room, 'resolution', { impacts, missed, hp: s.ships.map(x => x.hp) });
+    escudoUsado.forEach((u, i) => { if (u) s.powers[i].escudo = false; });
+    // 2) Caja 360: si la tocaron los dos en la misma ronda, se la lleva el que la tocó con más vida restante
+    const tocaron = shots.filter(x => x.crateHit).map(x => x.shooter);
+    if (s.crate && tocaron.length) {
+      const by = tocaron.length === 1 ? tocaron[0] : (s.ships[0].hp <= s.ships[1].hp ? 0 : 1);
+      const power = C.POWERS[Math.floor(random() * C.POWERS.length)];
+      if (power === 'reparar') s.ships[by].hp = Math.min(C.MAX_HP, s.ships[by].hp + C.REPAIR_HP);
+      else s.powers[by][power] = true;
+      caja = { by, power };
+      s.crate = null;
+    }
+    emit(room, 'resolution', { impacts, hp: s.ships.map(x => x.hp), powers: s.powers.map(p => ({ ...p })), crate: caja });
     setPhase(room, 'RESOLUTION', T.RESOLUTION_MS, () => nextRound(room));
     sync(room);
   }
@@ -434,33 +527,41 @@ function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now() }) 
     s.phase = 'GAME_OVER'; s.phaseEndsAt = 0; s.pausedPhase = null;
     s.winner = winner; s.reason = reason;
     room.players.forEach(p => { if (p) p.rematch = false; });
-    emit(room, 'gameOver', { winner, reason, hp: s.ships.map(x => x.hp) });
+    emit(room, 'gameOver', { winner, reason, hp: s.ships.map(x => x.hp), round: s.round, names: room.players.map(p => p && p.name) });
     sync(room);
   }
 
   // ---------------- Desconexiones ----------------
-  const ACTIVE = ['MOVEMENT', 'AIMING'];
 
-  /** Un jugador se fue: si estaba corriendo el tiempo de una fase, se pausa. */
+  /** Un jugador se fue: si corría el tiempo del plan, se pausa (los planes ya enviados se conservan). */
   function pause(room) {
     const s = room.state;
-    if (!ACTIVE.includes(s.phase)) return;            // PROJECTILE/RESOLUTION terminan y la siguiente fase entra en pausa
-    const restante = Math.max(1000, s.phaseEndsAt - now());
-    const fase = s.phase;
+    if (s.phase !== 'PLANNING') return;
+    const restante = Math.max(3000, s.phaseEndsAt - now());
     clearPhaseTimer(room);
-    s.phase = 'PAUSED'; s.pausedPhase = fase; s.pausedRemaining = restante; s.phaseEndsAt = 0;
+    s.phase = 'PAUSED'; s.pausedPhase = 'PLANNING'; s.pausedRemaining = restante; s.phaseEndsAt = 0;
     sync(room);
   }
 
-  /** Volvieron todos: se reanuda la fase con el tiempo que le quedaba. */
+  /** Volvieron todos: se reanuda el plan con el tiempo que le quedaba. */
   function resume(room) {
     const s = room.state;
     if (s.phase !== 'PAUSED' || anyoneAway(room)) return false;
-    const fase = s.pausedPhase, ms = s.pausedRemaining;
+    const ms = s.pausedRemaining;
     s.pausedPhase = null; s.pausedRemaining = 0;
-    setPhase(room, fase, ms, alTerminar(room, fase));
+    setPhase(room, 'PLANNING', ms, () => reveal(room));
     sync(room);
     return true;
+  }
+
+  /** Reconstruye los temporizadores después de recuperar una sala guardada (anfitrión que recargó). */
+  function restore(room) {
+    const s = room.state;
+    clearPhaseTimer(room);
+    if (['PLANNING', 'PAUSED'].includes(s.phase)) { s.locked = [false, false]; s.pending = [null, null]; s.pausedPhase = null; enterPlanning(room, T.PLAN_MS); }
+    else if (['REVEAL', 'RESOLUTION', 'NEXT_TURN'].includes(s.phase)) nextRound(room);
+    else if (s.phase === 'WAITING') beginRound(room);
+    else sync(room);
   }
 
   function forfeit(room, loserSlot) {
@@ -481,7 +582,7 @@ function createTurnEngine({ emit, sync, timings = {}, now = () => Date.now() }) 
     return true;
   }
 
-  return { startMatch, move, confirmMove, setAim, fire, pause, resume, forfeit, requestRematch, clearPhaseTimer, timings: T };
+  return { startMatch, submitPlan, pause, resume, restore, forfeit, requestRematch, clearPhaseTimer, timings: T };
 }
 
 module.exports = { createTurnEngine };
@@ -543,6 +644,33 @@ function aim(p) {
   return { angle: Math.round(p.angle * 10) / 10, power: Math.round(p.power * 10) / 10, projectile };
 }
 
+/** Plan secreto de la ronda: desplazamiento total (entero, ±MOVE_BUDGET) + mira. */
+function plan(p) {
+  const a = aim(p);
+  if (!a || !isNum(p.dx) || !Number.isInteger(p.dx) || Math.abs(p.dx) > C.MOVE_BUDGET) return null;
+  return { dx: p.dx, ...a };
+}
+
+/** Texto libre corto (nombre de negocio, premio): sin etiquetas ni saltos de línea. */
+function textoCorto(v, max) {
+  if (typeof v !== 'string') return '';
+  return v.normalize('NFC').replace(/[<>{}\[\]\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+const TORNEO_RE = /^T[A-HJ-NP-Z2-9]{4}$/;
+/** Datos opcionales de la sala: versión para negocios y vínculo con un torneo. */
+function meta(p) {
+  const m = {};
+  if (p && typeof p === 'object') {
+    const nombre = textoCorto(p.negocio, C.NEGOCIO_MAX), premio = textoCorto(p.premio, C.PREMIO_MAX);
+    if (nombre) m.negocio = nombre;
+    if (premio) m.premio = premio;
+    if (p.torneo && typeof p.torneo === 'object' && TORNEO_RE.test(p.torneo.id) && Number.isInteger(p.torneo.r) && Number.isInteger(p.torneo.m)
+        && p.torneo.r >= 0 && p.torneo.r < 3 && p.torneo.m >= 0 && p.torneo.m < 4) m.torneo = { id: p.torneo.id, r: p.torneo.r, m: p.torneo.m };
+  }
+  return m;
+}
+
 /**
  * Límite de frecuencia por conexión: cubeta de fichas (ráfaga) + intervalo mínimo por tipo de evento.
  */
@@ -562,7 +690,7 @@ function createRateLimiter({ capacity = 25, refillPerSec = 20, minIntervals = {}
   };
 }
 
-module.exports = { sanitizeName, profile, roomCode, token, moveStep, aim, createRateLimiter, CODE_RE };
+module.exports = { sanitizeName, profile, roomCode, token, moveStep, aim, plan, meta, textoCorto, createRateLimiter, CODE_RE, TORNEO_RE };
 
   };
 
@@ -604,11 +732,11 @@ function createRoomManager({ emit = () => {}, sync = () => {}, timings = {}, ran
     return { ...profile, socketId, token: genToken(), connected: true, ready: false, rematch: false, left: false, reconnectEndsAt: 0, timer: null };
   }
 
-  function createRoom(profile, socketId) {
+  function createRoom(profile, socketId, meta = {}) {
     if (bySocket.has(socketId)) return { error: 'Ya estás en una sala.' };
     let code;
     do { code = genCode(); } while (rooms.has(code));
-    const room = { code, createdAt: Date.now(), players: [newPlayer(profile, socketId), null], state: newMatchState(), phaseTimer: null, emptyTimer: null, onResume: null };
+    const room = { code, createdAt: Date.now(), meta, players: [newPlayer(profile, socketId), null], state: newMatchState(), phaseTimer: null, emptyTimer: null };
     rooms.set(code, room);
     bySocket.set(socketId, { code, slot: 0 });
     syncRoom(room);
@@ -732,7 +860,25 @@ function createRoomManager({ emit = () => {}, sync = () => {}, timings = {}, ran
     return { room, slot: ref.slot };
   };
 
-  return { createRoom, joinRoom, resumeRoom, setReady, disconnect, leave, sweep, deleteRoom, context, engine, rooms, bySocket };
+  /**
+   * Recupera una sala guardada (versión sin servidor: el anfitrión recargó la página).
+   * snap = { code, meta, state, players:[{name, conecti, ship, token, connected, socketId}] }
+   */
+  function restoreRoom(snap) {
+    if (rooms.has(snap.code)) deleteRoom(snap.code);
+    const room = { code: snap.code, createdAt: Date.now(), meta: snap.meta || {}, players: [null, null], state: { ...newMatchState(), ...snap.state }, phaseTimer: null, emptyTimer: null };
+    snap.players.forEach((p, i) => {
+      if (!p) return;
+      room.players[i] = { name: p.name, conecti: p.conecti, ship: p.ship, token: p.token, socketId: p.socketId, connected: !!p.connected, ready: false, rematch: false, left: !!p.left, reconnectEndsAt: 0, timer: null };
+      if (p.connected) bySocket.set(p.socketId, { code: snap.code, slot: i });
+    });
+    rooms.set(room.code, room);
+    room.players.forEach((p, i) => { if (p && !p.connected && !p.left) { p.reconnectEndsAt = Date.now() + T.RECONNECT_MS; p.timer = setTimeout(() => expire(room, i), T.RECONNECT_MS); } });
+    engine.restore(room);
+    return room;
+  }
+
+  return { createRoom, joinRoom, resumeRoom, restoreRoom, setReady, disconnect, leave, sweep, deleteRoom, context, engine, rooms, bySocket };
 }
 
 module.exports = { createRoomManager, genCode };

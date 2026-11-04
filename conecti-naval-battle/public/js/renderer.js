@@ -92,11 +92,21 @@
       },
       texto(txt, x, y, color = '#FFD84A') { textos.push({ txt, x, y, t: 0, color }); },
       banner(txt, color = '#FFD84A', ms = 1500) { banner = { txt, color, t: 0, ms }; },
-      disparo({ path, flightMs, projectile, shooter }, onEnd) {
-        proyectiles.push({ path, flightMs, t0: performance.now(), tipo: projectile, onEnd, shooter, rot: 0 });
-        const p0 = path[0];
-        for (let i = 0; i < 12; i++) particula(p0[0], p0[1], C.FACING[shooter] * (20 + Math.random() * 40), -10 - Math.random() * 30, 0.4, i % 2 ? '#FFFFFF' : '#C8CCD6', 3, -20);
-        golpeBarco[shooter] = -0.2;
+      /**
+       * Lanza un disparo ya calculado por el servidor.
+       * shot = { shooter, projectile, trayectorias:[{path, startMs, durMs, impact, bounces}] } (o un solo {path, flightMs})
+       * delayMs: espera antes de salir (los barcos terminan de moverse); onImpact(trayectoria) al terminar cada una.
+       */
+      disparo(shot, delayMs = 0, onImpact) {
+        if (typeof delayMs === 'function') { onImpact = delayMs; delayMs = 0; }
+        const trs = shot.trayectorias || [{ path: shot.path, startMs: 0, durMs: shot.flightMs, impact: shot.impact, bounces: [] }];
+        const base = performance.now() + delayMs;
+        for (const tr of trs) {
+          let rebote = -1;
+          if (tr.bounces && tr.bounces.length) rebote = tr.path.findIndex((q, k) => k > 0 && q[1] >= C.SEA_Y - 0.5);
+          proyectiles.push({ path: tr.path, durMs: Math.max(1, tr.durMs), t0: base + tr.startMs, tipo: shot.projectile, shooter: shot.shooter, rot: 0,
+            principal: tr.startMs === 0, salio: false, rebote, reboto: false, split: tr.impact && tr.impact.type === 'split', onEnd: () => onImpact && onImpact(tr) });
+        }
       },
       terminarDisparo() { for (const p of proyectiles.splice(0)) p.onEnd && p.onEnd(); },
       pose(slot, pose, ms = 1200) { capitan[slot] = { pose, hasta: performance.now() + ms }; },
@@ -259,8 +269,10 @@
       // Conecti capitán
       const ahora = performance.now();
       let pose = m.poseBase[slot] || ((Math.floor(t * 2 + slot) % 2) ? 'idle' : 'idle2');
+      if (pose === 'dance') pose = Math.floor(t * 4) % 2 ? 'dance' : 'cheer';
       if (capitan[slot].pose && ahora < capitan[slot].hasta) pose = capitan[slot].pose;
-      const salto = pose === 'cheer' ? -Math.abs(Math.round(Math.sin(t * 10) * 3)) : 0;
+      if (pose === 'wave') pose = Math.floor(t * 5) % 2 ? 'wave' : 'wave2';
+      const salto = pose === 'cheer' || pose === 'dance' ? -Math.abs(Math.round(Math.sin(t * 10) * 3)) : 0;
       const tiembla = pose === 'hit' ? Math.round(Math.sin(t * 50)) : 0;
       const spr = conectiSprite(pose, m.colores[slot].conecti, f < 0);
       const cxC = cx - f * 4;
@@ -335,19 +347,91 @@
 
     function dibujarProyectil(ahora) {
       for (const p of proyectiles.slice()) {
-        const k = Math.min(1, (ahora - p.t0) / p.flightMs);
+        if (ahora < p.t0) continue;
+        if (!p.salio) {
+          p.salio = true;
+          if (p.principal) {   // humo en la boca del cañón y retroceso
+            const p0 = p.path[0];
+            for (let i = 0; i < 12; i++) particula(p0[0], p0[1], C.FACING[p.shooter] * (20 + Math.random() * 40), -10 - Math.random() * 30, 0.4, i % 2 ? '#FFFFFF' : '#C8CCD6', 3, -20);
+            golpeBarco[p.shooter] = -0.2;
+          }
+        }
+        const k = Math.min(1, (ahora - p.t0) / p.durMs);
         const idx = k * (p.path.length - 1), i = Math.floor(idx), fr = idx - i;
         const a = p.path[i], b = p.path[Math.min(i + 1, p.path.length - 1)];
         const x = a[0] + (b[0] - a[0]) * fr, y = a[1] + (b[1] - a[1]) * fr;
+        if (p.rebote > 0 && !p.reboto && idx >= p.rebote) {   // TikTok toca el agua y rebota
+          p.reboto = true;
+          for (let j = 0; j < 14; j++) particula(x, C.SEA_Y, (Math.random() - 0.5) * 60, -30 - Math.random() * 60, 0.5, j % 2 ? '#FFFFFF' : '#9BD8FF', 2, 220);
+          anillos.push({ x, t: 0 });
+        }
         p.rot += 0.25 * C.FACING[p.shooter];
-        // Estela
         const est = S.ICONOS[p.tipo].estela;
         for (let j = 0; j < 2; j++) particula(x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, 0.45, est[(Math.random() * est.length) | 0], p.tipo === 'tiktok' ? 2 : 1 + (Math.random() < 0.5), 0);
         const ico = iconoSprite(p.tipo);
         ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.rotate(Math.round(p.rot / (Math.PI / 8)) * (Math.PI / 8));
         ctx.drawImage(ico, -6, -6); ctx.restore();
-        if (k >= 1) { proyectiles.splice(proyectiles.indexOf(p), 1); p.onEnd && p.onEnd(); }
+        if (k >= 1) {
+          proyectiles.splice(proyectiles.indexOf(p), 1);
+          if (p.split) {   // Instagram se divide: destello de colores
+            for (let j = 0; j < 20; j++) { const an = Math.random() * Math.PI * 2, v = 20 + Math.random() * 50; particula(x, y, Math.cos(an) * v, Math.sin(an) * v, 0.5, est[j % est.length], 2, 60); }
+          }
+          p.onEnd && p.onEnd();
+        }
       }
+    }
+
+    // ---------- viento, rocas, caja 360 y cartel del negocio ----------
+    function viento(m, t) {
+      if (m.wind === undefined || m.wind === null) return;
+      const w = m.wind, f = Math.sign(w), n = Math.min(4, Math.ceil(Math.abs(w) / 7));
+      const cx = W / 2, y = 8;
+      ctx.fillStyle = 'rgba(15,27,61,.75)'; ctx.fillRect(cx - 46, y - 3, 92, 20);
+      texto8('VIENTO', cx, y, '#FFFFFF', 'center', 8);
+      ctx.fillStyle = w === 0 ? '#9DBBE6' : '#FFD84A';
+      if (w === 0) { ctx.fillRect(cx - 6, y + 12, 12, 2); return; }
+      const mov = Math.floor(t * 6) % 2;
+      for (let i = 0; i < n; i++) {
+        const bx = cx - f * 14 + f * i * 8 + f * mov;
+        ctx.fillRect(bx, y + 10, 1, 7); ctx.fillRect(bx + f, y + 11, 1, 5); ctx.fillRect(bx + 2 * f, y + 12, 1, 3);   // punta hacia donde sopla
+      }
+    }
+    function rocas(m) {
+      for (const r of m.rocks || []) {
+        const x0 = Math.round(r.x - r.w / 2), top = C.SEA_Y - r.h;
+        for (let yy = 0; yy < r.h + 4; yy++) {
+          const ancho = Math.round(r.w * (0.55 + 0.45 * Math.min(1, yy / (r.h * 0.6))));
+          const off = Math.round((r.w - ancho) / 2);
+          ctx.fillStyle = yy < 2 ? '#B9C2D4' : (yy + off) % 7 === 0 ? '#5B6478' : '#7D879C';
+          ctx.fillRect(x0 + off, top + yy, ancho, 1);
+          ctx.fillStyle = '#4A5266'; ctx.fillRect(x0 + off + ancho - 2, top + yy, 2, 1);
+        }
+        ctx.fillStyle = '#3FA34D'; ctx.fillRect(x0 + 2, top + Math.round(r.h * 0.5), 3, 2);
+      }
+    }
+    function caja(m, t) {
+      const c = m.crate; if (!c) return;
+      const y = Math.round(c.y + Math.sin(t * 2) * 2), x = Math.round(c.x), s2 = C.CRATE_SIZE / 2;
+      // Globo con cuerda
+      ctx.fillStyle = '#FF4D5E';
+      for (let yy = -14; yy <= 0; yy++) { const w = Math.round(Math.sqrt(Math.max(0, 49 - (yy + 7) * (yy + 7))) ); ctx.fillRect(x - w, y - s2 - 12 + yy, w * 2, 1); }
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x - 3, y - s2 - 22, 2, 3);
+      ctx.fillStyle = '#E9F6FF'; ctx.fillRect(x, y - s2 - 12, 1, 12);
+      // Caja
+      ctx.fillStyle = '#1FA4F5'; ctx.fillRect(x - s2, y - s2, C.CRATE_SIZE, C.CRATE_SIZE);
+      ctx.fillStyle = '#0F1B3D'; ctx.fillRect(x - s2, y - s2, C.CRATE_SIZE, 1); ctx.fillRect(x - s2, y + s2 - 1, C.CRATE_SIZE, 1); ctx.fillRect(x - s2, y - s2, 1, C.CRATE_SIZE); ctx.fillRect(x + s2 - 1, y - s2, 1, C.CRATE_SIZE);
+      ctx.fillStyle = '#FFFFFF'; ctx.font = '5px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('360', x + 1, y - 2);
+      if (Math.floor(t * 4) % 2) { ctx.fillStyle = '#FFD84A'; ctx.fillRect(x + s2 + 2, y - s2 - 2, 2, 2); ctx.fillRect(x - s2 - 4, y + 2, 2, 2); }
+    }
+    function cartelNegocio(m) {
+      if (!m.negocio) return;
+      ctx.font = fuente(m.negocio, 8);
+      const w = Math.min(200, Math.round(ctx.measureText(m.negocio).width) + 14), x = Math.round(318 - w / 2), y = 112;
+      ctx.fillStyle = '#5A3A1C'; ctx.fillRect(x + 6, y + 14, 2, 22); ctx.fillRect(x + w - 8, y + 14, 2, 22);
+      ctx.fillStyle = '#0F1B3D'; ctx.fillRect(x - 1, y - 1, w + 2, 17);
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, y, w, 15);
+      ctx.fillStyle = '#1FA4F5'; ctx.fillRect(x, y + 13, w, 2);
+      texto8(m.negocio, x + w / 2, y + 3, '#0F1B3D', 'center', 8);
     }
 
     function efectos(dt) {
@@ -393,13 +477,16 @@
       if (m.sinking !== null && m.sinking !== undefined) m.sinkT = (m.sinkT || 0) + dt;
       ctx.save();
       if (shake > 0.2) { ctx.translate(Math.round((Math.random() - 0.5) * shake), Math.round((Math.random() - 0.5) * shake)); shake *= 0.86; }
-      cielo(t, false); nubesYAves(t, dt); costa(); marFondo(t);
+      cielo(t, false); nubesYAves(t, dt); costa(); cartelNegocio(m); marFondo(t);
+      rocas(m);
       for (const slot of [0, 1]) barco(slot, m.ships[slot], m, t);
       marFrente(t);
+      caja(m, t);
       guias(m, t);
       dibujarProyectil(ahora);
       efectos(dt);
       if (m.mostrarBarras) for (const slot of [0, 1]) barraVida(slot, m.ships[slot], m);
+      viento(m, t);
       cartel(dt);
       ctx.restore();
       if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${flash.toFixed(2)})`; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - dt); }

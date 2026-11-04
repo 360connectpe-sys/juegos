@@ -35,11 +35,11 @@ function createRoomManager({ emit = () => {}, sync = () => {}, timings = {}, ran
     return { ...profile, socketId, token: genToken(), connected: true, ready: false, rematch: false, left: false, reconnectEndsAt: 0, timer: null };
   }
 
-  function createRoom(profile, socketId) {
+  function createRoom(profile, socketId, meta = {}) {
     if (bySocket.has(socketId)) return { error: 'Ya estás en una sala.' };
     let code;
     do { code = genCode(); } while (rooms.has(code));
-    const room = { code, createdAt: Date.now(), players: [newPlayer(profile, socketId), null], state: newMatchState(), phaseTimer: null, emptyTimer: null, onResume: null };
+    const room = { code, createdAt: Date.now(), meta, players: [newPlayer(profile, socketId), null], state: newMatchState(), phaseTimer: null, emptyTimer: null };
     rooms.set(code, room);
     bySocket.set(socketId, { code, slot: 0 });
     syncRoom(room);
@@ -163,7 +163,25 @@ function createRoomManager({ emit = () => {}, sync = () => {}, timings = {}, ran
     return { room, slot: ref.slot };
   };
 
-  return { createRoom, joinRoom, resumeRoom, setReady, disconnect, leave, sweep, deleteRoom, context, engine, rooms, bySocket };
+  /**
+   * Recupera una sala guardada (versión sin servidor: el anfitrión recargó la página).
+   * snap = { code, meta, state, players:[{name, conecti, ship, token, connected, socketId}] }
+   */
+  function restoreRoom(snap) {
+    if (rooms.has(snap.code)) deleteRoom(snap.code);
+    const room = { code: snap.code, createdAt: Date.now(), meta: snap.meta || {}, players: [null, null], state: { ...newMatchState(), ...snap.state }, phaseTimer: null, emptyTimer: null };
+    snap.players.forEach((p, i) => {
+      if (!p) return;
+      room.players[i] = { name: p.name, conecti: p.conecti, ship: p.ship, token: p.token, socketId: p.socketId, connected: !!p.connected, ready: false, rematch: false, left: !!p.left, reconnectEndsAt: 0, timer: null };
+      if (p.connected) bySocket.set(p.socketId, { code: snap.code, slot: i });
+    });
+    rooms.set(room.code, room);
+    room.players.forEach((p, i) => { if (p && !p.connected && !p.left) { p.reconnectEndsAt = Date.now() + T.RECONNECT_MS; p.timer = setTimeout(() => expire(room, i), T.RECONNECT_MS); } });
+    engine.restore(room);
+    return room;
+  }
+
+  return { createRoom, joinRoom, resumeRoom, restoreRoom, setReady, disconnect, leave, sweep, deleteRoom, context, engine, rooms, bySocket };
 }
 
 module.exports = { createRoomManager, genCode };

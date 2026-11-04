@@ -16,6 +16,14 @@ function hitsHull(shipX, px, py, r = C.PROJECTILE_R) {
   return dx * dx + dy * dy <= r * r;
 }
 
+/** ¿El círculo (px, py, r) toca un rectángulo {left, right, top, bottom}? (rocas y Caja 360) */
+function hitsRect(rect, px, py, r = C.PROJECTILE_R) {
+  const cx = Math.max(rect.left, Math.min(px, rect.right));
+  const cy = Math.max(rect.top, Math.min(py, rect.bottom));
+  const dx = px - cx, dy = py - cy;
+  return dx * dx + dy * dy <= r * r;
+}
+
 /**
  * Zona del casco según coordenadas LOCALES del barco.
  * u = 0 en la popa (atrás) y u = 1 en la proa (adelante), según hacia dónde mira el barco.
@@ -29,4 +37,4 @@ function zoneAt(shipX, facing, hitX) {
   return { zone: 'centro', damage: C.DAMAGE_ARMOR, u };
 }
 
-module.exports = { hullRect, hitsHull, zoneAt };
+module.exports = { hullRect, hitsHull, zoneAt, hitsRect };

@@ -28,6 +28,11 @@
     cheer:   ['H.BBBBBBBB.H', 'HBBBBBBBBBBH', '.BWWWWWWWWB.', ...ojos, '.BWKWWWWKWB.', '.BWWKKKKWWB.', '.BDDDDDDDDB.', '.BBBQQQQBBB.', ...qr, '..L......L..', '.HH......HH.', '............'],
     // Recibe daño: ojos en X
     hit:     [...cara, '.BKWKWWKWKB.', '.BWKWWWWKWB.', '.BKWKWWKWKB.', '.BWWWKKWWWB.', '.BWWWKKWWWB.', '.BDDDDDDDDB.', 'HBBBQQQQBBBH', ...qr, ...pies],
+    // Saluda con la mano (dos cuadros)
+    wave:    ['..BBBBBBBB.H', '.BBBBBBBBBBH', '.BWWWWWWWWBB', ...ojos, '.BWWKWWKWWB.', '.BWWWKKWWWB.', '.BDDDDDDDDB.', 'HBBBQQQQBBB.', ...qr, ...pies],
+    wave2:   ['..BBBBBBBB..', '.BBBBBBBBBBHH', '.BWWWWWWWWBB.', ...ojos, '.BWWKWWKWWB.', '.BWWWKKWWWB.', '.BDDDDDDDDB.', 'HBBBQQQQBBB.', ...qr, ...pies],
+    // Baile de victoria (alterna con cheer)
+    dance:   ['..BBBBBBBB..', 'HBBBBBBBBBB.', 'HBWWWWWWWWB.', '.BWKWWWWKWB.', '.BWKKWWKKWB.', '.BPWWWWWWPB.', '.BWKWWWWKWB.', '.BWWKKKKWWB.', '.BDDDDDDDDBH', '.BBBQQQQBBBH', ...qr, '...L...L....', '..L.....L...', '.HH......HH.'],
     // Tristeza
     sad:     [...cara, '.BWKWWWWKWB.', '.BWWKWWKWWB.', '.BPWWWWWWPB.', '.BWWWKKWWWB.', '.BWWKWWKWWB.', '.BDDDDDDDDB.', 'HBBBQQQQBBBH', ...qr, ...pies],
   };

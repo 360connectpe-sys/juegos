@@ -20,6 +20,7 @@
   };
   const KEY = 'cnb-session-fb';
   const ENG = root.CNB_ENGINE;              // motor del servidor empaquetado
+  const X = root.CNB_EXTRAS;                // ranking semanal y torneos
   const V = ENG.validation;
   let db = null;
   try { firebase.initializeApp(FIREBASE); db = firebase.database(); } catch (e) { console.error(e); }
@@ -51,10 +52,11 @@
   // ======================= ANFITRIÓN =======================
   let host = null;   // { code, ref, rooms, seq, guestToken, guestConocido }
   function crearAnfitrion(code, ref) {
-    const h = { code, ref, seq: 0, guestToken: null, guestConocido: false, limiter: V.createRateLimiter({ capacity: 30, refillPerSec: 20, minIntervals: { move: 35, aim: 45, fire: 500 } }) };
+    const h = { code, ref, seq: 0, guestToken: null, guestConocido: false, limiter: V.createRateLimiter({ capacity: 30, refillPerSec: 20, minIntervals: { plan: 500 } }) };
     h.rooms = ENG.rooms.createRoomManager({
       emit: (room, ev, p) => {
         dispatch(ev, p);
+        if (ev === 'gameOver') registrarResultado(room, p);
         const k = 'e' + String(++h.seq).padStart(7, '0');
         ref.child('events/' + k).set({ ev, p: limpiar(p) });
         if (h.seq > 25) ref.child('events/e' + String(h.seq - 25).padStart(7, '0')).remove();
@@ -62,6 +64,7 @@
       sync: (room, snap) => {
         dispatch('state', snap);
         ref.child('state').set(limpiar(snap));
+        guardarRespaldo(h, room);
         // Si el lugar del invitado quedó libre (salió o no volvió a tiempo), se libera en Firebase
         const g = room.players[1];
         if (h.guestConocido && (!g || g.left)) { h.guestConocido = false; h.guestToken = null; ref.child('guest').remove(); }
@@ -76,10 +79,7 @@
     const R = h.rooms, ctx = R.context(sid);
     switch (ev) {
       case 'ready': return { ok: R.setReady(sid, !!(p && p.ready)) };
-      case 'move': { const dx = V.moveStep(p); if (!ctx || dx === null) return { ok: false }; return { ok: true, moved: R.engine.move(ctx.room, ctx.slot, dx) }; }
-      case 'endMove': return { ok: !!ctx && R.engine.confirmMove(ctx.room, ctx.slot) };
-      case 'aim': { const a = V.aim(p); if (!ctx || !a) return { ok: false }; return { ok: R.engine.setAim(ctx.room, ctx.slot, a) }; }
-      case 'fire': { const a = V.aim(p); if (!ctx || !a) return { ok: false, error: 'Disparo no válido.' }; const ok = R.engine.fire(ctx.room, ctx.slot, a); return ok ? { ok } : { ok, error: 'Ahora no puedes disparar.' }; }
+      case 'plan': { const pl = V.plan(p); if (!ctx || !pl) return { ok: false, error: 'Plan no válido.' }; const ok = R.engine.submitPlan(ctx.room, ctx.slot, pl); return ok ? { ok } : { ok, error: 'Ahora no puedes disparar.' }; }
       case 'rematch': return { ok: !!ctx && R.engine.requestRematch(ctx.room, ctx.slot) };
       case 'leave': R.leave(sid); return { ok: true };
       default: return { ok: false, error: 'Acción desconocida.' };
@@ -116,6 +116,94 @@
     });
   }
 
+  /** Respaldo de la partida en Firebase para recuperarla si el anfitrión recarga (sin los planes secretos). */
+  function guardarRespaldo(h, room) {
+    const { pending, ...visible } = room.state;
+    h.ref.child('snap').set(limpiar({
+      seq: h.seq, meta: room.meta || {}, state: { ...visible, phaseEndsAt: 0 },
+      players: room.players.map(p => p && { name: p.name, conecti: p.conecti, ship: p.ship, token: p.token, left: !!p.left }),
+    }));
+  }
+
+  // ----- Ranking semanal y torneos (en Firebase, bajo salas/R<semana> y salas/T<código>) -----
+  const refRanking = () => db.ref('salas/R' + X.semana());
+  const refTorneo = id => db.ref('salas/' + id);
+  /** Firebase borra los null y convierte listas: se reconstruye la forma de las llaves. */
+  function normalizarTorneo(t) {
+    if (!t || t.tipo !== 'torneo') return null;
+    const tam = t.tam === 8 ? 8 : 4, n = tam === 8 ? 3 : 2;
+    const rondas = [];
+    for (let r = 0, k = tam / 2; r < n; r++, k /= 2) {
+      const src = (t.rondas && t.rondas[r]) || [];
+      rondas.push(Array.from({ length: k }, (_, m) => { const p = src[m] || {}; return { a: p.a || null, b: p.b || null, ganador: p.ganador || null }; }));
+    }
+    return { tipo: 'torneo', nombre: t.nombre || 'Torneo Conecti', negocio: t.negocio || '', premio: t.premio || '', tam, rondas, campeon: t.campeon || null, org: t.org || '' };
+  }
+  const publico = (id, t) => { const { org, ...resto } = t; return { id, ...resto }; };
+  async function hash(txt) {
+    const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+    return Array.from(new Uint8Array(b), x => x.toString(16).padStart(2, '0')).join('');
+  }
+  function registrarResultado(room, p) {
+    // Ranking semanal
+    refRanking().transaction(cur => {
+      const v = cur && cur.tipo === 'ranking' ? cur : { tipo: 'ranking', t: {} };
+      v.t = X.sumarResultado(v.t || {}, p.names, p.winner);
+      return v;
+    }).catch(e => console.error(e));
+    // Torneo: el ganador pasa solo a la siguiente ronda
+    const tm = room.meta && room.meta.torneo;
+    if (tm) refTorneo(tm.id).transaction(cur => {
+      const t = normalizarTorneo(cur); if (!t) return undefined;
+      const g = X.ganadorDeSala(t, tm.r, tm.m, p.names, p.winner);
+      if (!g || !X.ponerGanador(t, tm.r, tm.m, g)) return undefined;
+      return t;
+    }).catch(e => console.error(e));
+  }
+  let torneoEscuchado = null;
+  async function extras(ev, p) {
+    if (ev === 'ranking:get') {
+      const v = (await refRanking().once('value')).val();
+      return { ok: true, semana: X.semana(), top: X.top((v && v.t) || {}, 10) };
+    }
+    if (ev === 'torneo:create') {
+      const jug = Array.isArray(p && p.jugadores) ? p.jugadores.map(V.sanitizeName) : [];
+      if (![4, 8].includes(jug.length) || new Set(jug.map(X.claveNombre)).size !== jug.length) return { ok: false, error: 'Escribe 4 u 8 nombres distintos.' };
+      const token = nuevoToken(), org = await hash(token);
+      const datos = X.crearTorneo({ nombre: V.textoCorto(p.nombre, 30) || 'Torneo Conecti', negocio: V.textoCorto(p.negocio, 24), premio: V.textoCorto(p.premio, 40), jugadores: jug });
+      for (let i = 0; i < 6; i++) {
+        const id = 'T' + ENG.rooms.genCode().slice(4);
+        const r = await refTorneo(id).transaction(a => (a === null ? { ...datos, org, creado: firebase.database.ServerValue.TIMESTAMP } : undefined));
+        if (r.committed) return { ok: true, id, token };
+      }
+      return { ok: false, error: 'No se pudo crear el torneo.' };
+    }
+    if (ev === 'torneo:get') {
+      const id = p && V.TORNEO_RE.test(p.id) ? p.id : null;
+      const t = id && normalizarTorneo((await refTorneo(id).once('value')).val());
+      if (!t) return { ok: false, error: 'Ese torneo no existe.' };
+      if (torneoEscuchado) torneoEscuchado.off();
+      torneoEscuchado = refTorneo(id);
+      torneoEscuchado.on('value', s => { const tt = normalizarTorneo(s.val()); if (tt) dispatch('torneo', publico(id, tt)); });
+      return { ok: true, torneo: publico(id, t) };
+    }
+    if (ev === 'torneo:winner') {
+      const id = p && V.TORNEO_RE.test(p.id) ? p.id : null;
+      if (!id || typeof p.token !== 'string') return { ok: false, error: 'Solo el organizador puede marcar ganadores.' };
+      const org = await hash(p.token);
+      let error = null;
+      await refTorneo(id).transaction(cur => {
+        const t = normalizarTorneo(cur);
+        if (!t || t.org !== org) { error = 'Solo el organizador puede marcar ganadores.'; return undefined; }
+        if (!X.ponerGanador(t, p.r | 0, p.m | 0, String(p.nombre || ''))) { error = 'No se pudo marcar ese ganador.'; return undefined; }
+        error = null;
+        return t;
+      });
+      return error ? { ok: false, error } : { ok: true };
+    }
+    return null;
+  }
+
   // ======================= INVITADO =======================
   let guest = null;  // { code, ref, token }
   function escucharComoInvitado(g) {
@@ -128,7 +216,13 @@
     g.ref.child('host/on').on('value', s => { if (s.val() === false) dispatch('hostAway', true); else if (s.val() === true) dispatch('hostAway', false); });
     g.ref.on('value', s => { if (!s.exists() && guest) { dispatch('closed', true); } });
     g.ref.child('events').orderByKey().startAt('e' + String(g.desde).padStart(7, '0')).on('child_added', s => {
-      const e = s.val(); if (e && e.ev) dispatch(e.ev, e.p);
+      const e = s.val(); if (!e || !e.ev) return;
+      const pl = e.p || {};
+      // Firebase borra listas vacías y valores null: se devuelve la forma original
+      if (e.ev === 'reveal') { pl.shots = pl.shots || []; pl.missed = pl.missed || []; pl.moves = pl.moves || []; pl.shots.forEach(sh => { sh.trayectorias = sh.trayectorias || []; }); }
+      if (e.ev === 'resolution') { pl.impacts = pl.impacts || []; if (pl.crate === undefined) pl.crate = null; }
+      if (e.ev === 'gameOver' && pl.winner === undefined) pl.winner = null;
+      dispatch(e.ev, pl);
     });
   }
   /** Firebase quita valores null y convierte objetos a listas: se devuelve la forma original. */
@@ -136,7 +230,12 @@
     st.players = [0, 1].map(i => (st.players && st.players[i]) || null);
     st.ships = [0, 1].map(i => st.ships[i]);
     st.aim = [0, 1].map(i => st.aim[i]);
-    ['pausedPhase', 'winner', 'reason'].forEach(k => { if (st[k] === undefined) st[k] = null; });
+    ['pausedPhase', 'winner', 'reason', 'crate'].forEach(k => { if (st[k] === undefined) st[k] = null; });
+    st.locked = [0, 1].map(i => !!(st.locked && st.locked[i]));
+    st.powers = [0, 1].map(i => ({ escudo: !!(st.powers && st.powers[i] && st.powers[i].escudo), doble: !!(st.powers && st.powers[i] && st.powers[i].doble) }));
+    st.rocks = st.rocks ? Object.values(st.rocks) : [];
+    st.meta = st.meta || {};
+    st.wind = st.wind || 0;
     return st;
   }
   function enviarComoInvitado(ev, p, conRespuesta) {
@@ -160,7 +259,7 @@
       if (!r.committed) continue;
       host = crearAnfitrion(code, ref);
       // El motor genera su propio código: se reemplaza por el reservado en Firebase
-      const res = host.rooms.createRoom(prof, 'host');
+      const res = host.rooms.createRoom(prof, 'host', V.meta(p && p.meta));
       const room = res.room; host.rooms.rooms.delete(room.code); room.code = code; host.rooms.rooms.set(code, room);
       host.rooms.bySocket.set('host', { code, slot: 0 });
       const snap = ENG.gameState.publicState(room);
@@ -206,9 +305,23 @@
     const v = (await ref.once('value')).val();
     if (!v) return { ok: false, error: 'La sala ya no existe.' };
     if (ses.rol === 'host') {
-      // El motor vivía en esta página: al recargarla, la partida no se puede recuperar.
-      ref.remove();
-      return { ok: false, error: 'Recargaste la página del anfitrión y la sala se cerró. Crea una nueva.' };
+      // El motor vivía en esta página: se reconstruye desde el respaldo guardado en Firebase
+      const sn = v.snap;
+      const p0 = sn && sn.players && sn.players[0];
+      if (!sn || !p0 || p0.token !== ses.token) { ref.remove(); return { ok: false, error: 'No se pudo recuperar la sala. Crea una nueva.' }; }
+      host = crearAnfitrion(code, ref);
+      host.seq = (sn.seq || 0) + 1;
+      const g = v.guest, p1 = sn.players[1];
+      const st = normalizar({ ...sn.state, players: [], ships: sn.state.ships, aim: sn.state.shownAim || sn.state.aim || [{}, {}] });
+      const estado = { ...sn.state, ships: st.ships, locked: [false, false], pending: [null, null], powers: st.powers, rocks: st.rocks, crate: sn.state.crate || null,
+        shownAim: [0, 1].map(i => (sn.state.shownAim && sn.state.shownAim[i]) || { angle: 45, power: 60, projectile: 'tiktok' }), pausedPhase: sn.state.pausedPhase || null, winner: sn.state.winner === undefined ? null : sn.state.winner, reason: sn.state.reason || null };
+      host.rooms.restoreRoom({ code, meta: sn.meta || {}, state: estado, players: [
+        { ...p0, socketId: 'host', connected: true },
+        p1 ? { ...p1, socketId: 'guest', connected: !!(g && g.on) } : null,
+      ] });
+      host.guestConocido = !!p1 && !!g; host.guestToken = g ? g.token : null;
+      escucharComoAnfitrion(host);
+      return { ok: true, code, slot: 0, token: ses.token };
     }
     if (!v.guest || v.guest.token !== ses.token) return { ok: false, error: 'No se pudo recuperar tu lugar en la sala.' };
     const ultimo = Object.keys(v.events || {}).sort().pop();
@@ -250,6 +363,8 @@
         return r;
       }
       if (ev === 'leave') return await salir();
+      const ex = await extras(ev, p);
+      if (ex) return ex;
       if (host) {
         const r = manejar(host, 'host', ev, p);
         return r;

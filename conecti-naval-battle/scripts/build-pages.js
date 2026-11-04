@@ -22,6 +22,7 @@ fs.rmSync(DESTINO, { recursive: true, force: true });
 copiar(path.join(RAIZ, 'public'), DESTINO);
 fs.mkdirSync(path.join(DESTINO, 'shared'), { recursive: true });
 fs.copyFileSync(path.join(RAIZ, 'shared/constants.js'), path.join(DESTINO, 'shared/constants.js'));
+fs.copyFileSync(path.join(RAIZ, 'shared/extras.js'), path.join(DESTINO, 'shared/extras.js'));
 fs.rmSync(path.join(DESTINO, 'js/network.js'));
 fs.copyFileSync(path.join(RAIZ, 'pages/net-firebase.js'), path.join(DESTINO, 'js/net-firebase.js'));
 
@@ -66,14 +67,15 @@ fs.writeFileSync(path.join(DESTINO, 'js/engine-bundle.js'), bundle);
 // ---- index.html: Firebase en lugar de Socket.io ----
 const idx = path.join(DESTINO, 'index.html');
 let html = fs.readFileSync(idx, 'utf8');
-const antes = '<script src="/socket.io/socket.io.js"></script>\n<script src="/shared/constants.js"></script>';
-if (!html.includes(antes)) throw new Error('No encontré los scripts de Socket.io en index.html');
-html = html.replace(antes, [
-  '<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>',
-  '<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>',
-  '<script src="shared/constants.js"></script>',
-  '<script src="js/engine-bundle.js"></script>',
-].join('\n'));
+const reemplazos = [
+  ['<script src="/socket.io/socket.io.js"></script>', '<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>\n<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>'],
+  ['<script src="/shared/constants.js"></script>', '<script src="shared/constants.js"></script>'],
+  ['<script src="/shared/extras.js"></script>', '<script src="shared/extras.js"></script>\n<script src="js/engine-bundle.js"></script>'],
+];
+for (const [a, b] of reemplazos) {
+  if (!html.includes(a)) throw new Error('No encontré en index.html: ' + a);
+  html = html.replace(a, b);
+}
 html = html.replace('<script src="js/network.js"></script>', '<script src="js/net-firebase.js"></script>');
 fs.writeFileSync(idx, html);
 console.log('Versión para GitHub Pages generada en', path.relative(process.cwd(), DESTINO));

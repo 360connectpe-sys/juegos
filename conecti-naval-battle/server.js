@@ -11,6 +11,8 @@ const { Server } = require('socket.io');
 const C = require('./shared/constants');
 const V = require('./server/validation');
 const { createRoomManager } = require('./server/rooms');
+const X = require('./shared/extras');
+const crypto = require('crypto');
 
 const envMs = (name, def) => {
   const n = Number(process.env[name]);
@@ -19,8 +21,8 @@ const envMs = (name, def) => {
 
 function startServer({ port = Number(process.env.PORT) || 3000, timings = {}, quiet = false } = {}) {
   const T = {
-    MOVE_MS: envMs('MOVE_MS', C.MOVE_MS),
-    AIM_MS: envMs('AIM_MS', C.AIM_MS),
+    PLAN_MS: envMs('PLAN_MS', C.PLAN_MS),
+    REVEAL_MOVE_MS: envMs('REVEAL_MOVE_MS', C.REVEAL_MOVE_MS),
     RESOLUTION_MS: envMs('RESOLUTION_MS', C.RESOLUTION_MS),
     START_DELAY_MS: envMs('START_DELAY_MS', C.START_DELAY_MS),
     RECONNECT_MS: envMs('RECONNECT_MS', C.RECONNECT_MS),
@@ -47,16 +49,29 @@ function startServer({ port = Number(process.env.PORT) || 3000, timings = {}, qu
     cors: process.env.CORS_ORIGIN ? { origin: process.env.CORS_ORIGIN.split(',') } : undefined,
   });
 
+  // Ranking semanal y torneos en memoria (MVP de una sola instancia)
+  const ranking = {};            // semana → tabla
+  const torneos = new Map();     // id → { datos, token }
+  const tablaSemana = () => (ranking[X.semana()] = ranking[X.semana()] || {});
+  function alTerminar(room, p) {
+    X.sumarResultado(tablaSemana(), p.names, p.winner);
+    const t = room.meta && room.meta.torneo && torneos.get(room.meta.torneo.id);
+    if (t) {
+      const g = X.ganadorDeSala(t.datos, room.meta.torneo.r, room.meta.torneo.m, p.names, p.winner);
+      if (g && X.ponerGanador(t.datos, room.meta.torneo.r, room.meta.torneo.m, g)) io.to('t:' + room.meta.torneo.id).emit('torneo', { id: room.meta.torneo.id, ...t.datos });
+    }
+  }
+
   const rooms = createRoomManager({
     timings: T,
-    emit: (room, event, payload) => io.to(room.code).emit(event, payload),
+    emit: (room, event, payload) => { io.to(room.code).emit(event, payload); if (event === 'gameOver') alTerminar(room, payload); },
     sync: (room, snapshot) => io.to(room.code).emit('state', snapshot),
   });
   const sweeper = setInterval(() => rooms.sweep(), 60000);
   sweeper.unref();
 
   io.on('connection', socket => {
-    const allow = V.createRateLimiter({ capacity: 30, refillPerSec: 20, minIntervals: { move: 35, aim: 45, fire: 500, create: 1000, join: 600, resume: 600 } });
+    const allow = V.createRateLimiter({ capacity: 30, refillPerSec: 20, minIntervals: { plan: 500, create: 1000, join: 600, resume: 600, 'torneo:create': 3000 } });
     const ack = fn => (typeof fn === 'function' ? fn : () => {});
     // Envuelve cada evento: límite de frecuencia + captura de errores
     const on = (event, handler) => socket.on(event, (payload, cb) => {
@@ -73,7 +88,7 @@ function startServer({ port = Number(process.env.PORT) || 3000, timings = {}, qu
 
     on('create', (p, reply) => {
       const prof = V.profile(p); if (!prof) return reply({ ok: false, error: 'Datos de jugador no válidos.' });
-      entrar(rooms.createRoom(prof, socket.id), reply);
+      entrar(rooms.createRoom(prof, socket.id, V.meta(p && p.meta)), reply);
     });
     on('join', (p, reply) => {
       const prof = V.profile(p), code = V.roomCode(p && p.code);
@@ -88,25 +103,35 @@ function startServer({ port = Number(process.env.PORT) || 3000, timings = {}, qu
     });
     on('ready', (p, reply) => reply({ ok: rooms.setReady(socket.id, !!(p && p.ready)) }));
 
-    on('move', (p, reply) => {
-      const ctx = rooms.context(socket.id), dx = V.moveStep(p);
-      if (!ctx || dx === null) return reply({ ok: false });
-      reply({ ok: true, moved: rooms.engine.move(ctx.room, ctx.slot, dx) });
-    });
-    on('endMove', (p, reply) => {
-      const ctx = rooms.context(socket.id); if (!ctx) return reply({ ok: false });
-      reply({ ok: rooms.engine.confirmMove(ctx.room, ctx.slot) });
-    });
-    on('aim', (p, reply) => {
-      const ctx = rooms.context(socket.id), a = V.aim(p);
-      if (!ctx || !a) return reply({ ok: false });
-      reply({ ok: rooms.engine.setAim(ctx.room, ctx.slot, a) });
-    });
-    on('fire', (p, reply) => {
-      const ctx = rooms.context(socket.id), a = V.aim(p);
-      if (!ctx || !a) return reply({ ok: false, error: 'Disparo no válido.' });
-      const ok = rooms.engine.fire(ctx.room, ctx.slot, a);
+    on('plan', (p, reply) => {
+      const ctx = rooms.context(socket.id), plan = V.plan(p);
+      if (!ctx || !plan) return reply({ ok: false, error: 'Plan no válido.' });
+      const ok = rooms.engine.submitPlan(ctx.room, ctx.slot, plan);
       reply(ok ? { ok: true } : { ok: false, error: 'Ahora no puedes disparar.' });
+    });
+    on('ranking:get', (p, reply) => reply({ ok: true, semana: X.semana(), top: X.top(tablaSemana(), 10) }));
+    on('torneo:create', (p, reply) => {
+      const jug = Array.isArray(p && p.jugadores) ? p.jugadores.map(V.sanitizeName) : [];
+      const unicos = new Set(jug.map(X.claveNombre));
+      if (![4, 8].includes(jug.length) || unicos.size !== jug.length) return reply({ ok: false, error: 'Escribe 4 u 8 nombres distintos.' });
+      let id; do { id = 'T' + require('./server/rooms').genCode().slice(4); } while (torneos.has(id));
+      const datos = X.crearTorneo({ nombre: V.textoCorto(p.nombre, 30) || 'Torneo Conecti', negocio: V.textoCorto(p.negocio, C.NEGOCIO_MAX), premio: V.textoCorto(p.premio, C.PREMIO_MAX), jugadores: jug });
+      const token = crypto.randomBytes(18).toString('base64url');
+      torneos.set(id, { datos, token });
+      reply({ ok: true, id, token });
+    });
+    on('torneo:get', (p, reply) => {
+      const id = p && V.TORNEO_RE.test(p.id) ? p.id : null, t = id && torneos.get(id);
+      if (!t) return reply({ ok: false, error: 'Ese torneo no existe.' });
+      socket.join('t:' + id);
+      reply({ ok: true, torneo: { id, ...t.datos } });
+    });
+    on('torneo:winner', (p, reply) => {
+      const id = p && V.TORNEO_RE.test(p.id) ? p.id : null, t = id && torneos.get(id);
+      if (!t || typeof p.token !== 'string' || p.token !== t.token) return reply({ ok: false, error: 'Solo el organizador puede marcar ganadores.' });
+      if (!X.ponerGanador(t.datos, p.r | 0, p.m | 0, String(p.nombre || ''))) return reply({ ok: false, error: 'No se pudo marcar ese ganador.' });
+      io.to('t:' + id).emit('torneo', { id, ...t.datos });
+      reply({ ok: true });
     });
     on('rematch', (p, reply) => {
       const ctx = rooms.context(socket.id); if (!ctx) return reply({ ok: false });
