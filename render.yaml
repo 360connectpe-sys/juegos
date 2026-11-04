@@ -1,0 +1,15 @@
+# Render Blueprint: despliega CONECTI NAVAL BATTLE (carpeta conecti-naval-battle) como servicio web gratis.
+# En render.com: New → Blueprint → elegir este repositorio.
+services:
+  - type: web
+    name: conecti-naval-battle
+    runtime: node
+    plan: free
+    rootDir: conecti-naval-battle
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

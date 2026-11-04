@@ -1,0 +1,23 @@
+{
+  "name": "conecti-naval-battle",
+  "version": "1.0.0",
+  "description": "Batalla naval de artillería 1 contra 1, online y por turnos, en pixel art, con Conecti de 360 Connect.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "MOVE_MS=15000 AIM_MS=20000 node server.js",
+    "test": "node --test \"tests/*.test.js\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  },
+  "license": "UNLICENSED"
+}
