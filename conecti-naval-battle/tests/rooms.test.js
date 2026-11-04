@@ -30,14 +30,14 @@ const tiro = (room, shooter, where, extra = {}) => findShot({ shooter, ships: ro
 const plan = (t, dx = 0, projectile = 'tiktok') => ({ dx, angle: t.angle, power: t.power, projectile });
 const alAgua = i => i.type === 'water';
 
-test('crear sala: código CNX-XXXX no predecible, token secreto y datos de negocio', () => {
+test('crear sala: código de 4 números, token secreto y datos de negocio', () => {
   const { m } = manager();
   const r = m.createRoom(P(), 's1', { negocio: 'Café Aroma', premio: '10%' });
   assert.match(r.room.code, V.CODE_RE);
   assert.ok(r.token.length >= 30);
   assert.deepEqual(publicState(r.room).meta, { negocio: 'Café Aroma', premio: '10%' });
   const codigos = new Set(Array.from({ length: 50 }, (_, i) => m.createRoom(P(), 'x' + i).room.code));
-  assert.equal(codigos.size, 50);
+  assert.equal(codigos.size, 50, 'nunca se repite un código en uso');
   cleanup(m);
 });
 
@@ -52,9 +52,12 @@ test('exactamente 2 jugadores y una conexión por lugar', () => {
 
 test('validación de entradas', () => {
   const { m } = manager();
-  assert.match(m.joinRoom('CNX-ZZZZ', P(), 'A').error, /no existe/);
-  assert.equal(V.roomCode('k7p2'), 'CNX-K7P2');
-  assert.equal(V.roomCode('CNX-K7P'), null);
+  assert.match(m.joinRoom('9999', P(), 'A').error, /no existe/);
+  assert.equal(V.roomCode(' 12 34 '), '1234');
+  assert.equal(V.roomCode('0042'), '0042');
+  assert.equal(V.roomCode('123'), null);
+  assert.equal(V.roomCode('12345'), null);
+  assert.match(require('../server/rooms').genTorneo(), V.TORNEO_RE);
   assert.equal(V.sanitizeName('<script>Ana</script>'), 'scriptAnascrip');
   assert.equal(V.plan({ dx: 25, angle: 45, power: 50, projectile: 'tiktok' }), null, 'no más de 24 px');
   assert.equal(V.plan({ dx: 2.5, angle: 45, power: 50, projectile: 'tiktok' }), null);

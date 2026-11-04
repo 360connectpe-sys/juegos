@@ -89,8 +89,8 @@
       const listo = st.phase === 'PLANNING' && st.locked && st.locked[i];
       el.classList.toggle('activo', st.phase === 'PLANNING' && !listo);
       const pw = (st.powers && st.powers[i]) || {};
-      const poderes = [pw.escudo ? '🛡 ESCUDO' : '', pw.doble ? '✖2 DOBLE' : ''].filter(Boolean).join(' · ');
-      el.innerHTML = `<div class="nom"><i style="background:${C.COLORS[p.ship]}"></i><span></span></div><div class="vida"><b class="${cls}" style="width:${pct}%"></b></div><div class="hp">${hp}/${C.MAX_HP} HP${p.connected ? '' : ' · ⚠'}${listo ? ' · ✓ LISTO' : ''}</div><div class="poderes">${poderes}</div>`;
+      const poderes = (pw.escudo ? '🛡' : '') + (pw.doble ? '✖2' : '');
+      el.innerHTML = `<div class="nom"><i style="background:${C.COLORS[p.ship]}"></i><span></span>${poderes ? `<small>${poderes}</small>` : ''}${listo ? '<em>✓</em>' : ''}${p.connected ? '' : '<small>⚠</small>'}</div><div class="vida" title="${hp} de ${C.MAX_HP} de vida"><b class="${cls}" style="width:${pct}%"></b></div>`;
       el.querySelector('span').textContent = (i === yo ? 'TÚ: ' : '') + p.name;
     });
   }

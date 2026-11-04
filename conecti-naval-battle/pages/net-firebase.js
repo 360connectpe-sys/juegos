@@ -31,7 +31,7 @@
     if (ev === 'state') ultimoEstado = p;
     (handlers[ev] || []).forEach(fn => { try { fn(p); } catch (e) { console.error(e); } });
   };
-  const keyDe = code => 'N' + code.slice(4);      // CNX-K7P2 → NK7P2 (las reglas de Firebase aceptan 4–6 caracteres)
+  const keyDe = code => 'N' + code;              // 1234 → N1234 (las reglas de Firebase aceptan 4–6 caracteres)
   const rnd = n => { const a = new Uint8Array(n); crypto.getRandomValues(a); return a; };
   const nuevoToken = () => Array.from(rnd(24), b => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[b & 63]).join('');
 
@@ -172,7 +172,7 @@
       const token = nuevoToken(), org = await hash(token);
       const datos = X.crearTorneo({ nombre: V.textoCorto(p.nombre, 30) || 'Torneo Conecti', negocio: V.textoCorto(p.negocio, 24), premio: V.textoCorto(p.premio, 40), jugadores: jug });
       for (let i = 0; i < 6; i++) {
-        const id = 'T' + ENG.rooms.genCode().slice(4);
+        const id = ENG.rooms.genTorneo();
         const r = await refTorneo(id).transaction(a => (a === null ? { ...datos, org, creado: firebase.database.ServerValue.TIMESTAMP } : undefined));
         if (r.committed) return { ok: true, id, token };
       }
@@ -274,7 +274,7 @@
   async function unirse(p) {
     const prof = V.profile(p), code = V.roomCode(p && p.code);
     if (!prof) return { ok: false, error: 'Datos de jugador no válidos.' };
-    if (!code) return { ok: false, error: 'El código no es válido. Tiene la forma CNX-ABCD.' };
+    if (!code) return { ok: false, error: 'El código tiene 4 números.' };
     const ref = db.ref('salas/' + keyDe(code));
     const snap = await ref.once('value'), v = snap.val();
     if (!v || v.tipo !== 'battle') return { ok: false, error: 'Esa sala no existe. Revisa el código.' };

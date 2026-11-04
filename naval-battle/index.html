@@ -44,9 +44,9 @@
       <button class="btn grande sec" id="b-unirse">UNIRSE A PARTIDA</button>
     </div>
     <form class="unirse" id="f-unirse" hidden>
-      <label for="i-codigo" class="rot">CÓDIGO DE LA SALA</label>
+      <label for="i-codigo" class="rot">CÓDIGO DE LA SALA (4 NÚMEROS)</label>
       <div class="fila">
-        <input id="i-codigo" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CNX-ABCD">
+        <input id="i-codigo" maxlength="4" autocomplete="off" inputmode="numeric" pattern="[0-9]*" spellcheck="false" placeholder="1234">
         <button class="btn" type="submit">ENTRAR</button>
       </div>
     </form>
@@ -56,15 +56,7 @@
       <button class="btn sec" id="b-torneo">⚔ MODO TORNEO</button>
     </div>
 
-    <div class="panel instrucciones">
-      <h2>CÓMO SE JUEGA</h2>
-      <ol>
-        <li><b>En secreto y a la vez</b>: mueve tu barco (◀ ▶) y apunta. Tienes 20 s.</li>
-        <li>Toca <b>¡DISPARAR!</b> Cuando los dos disparan, se revela todo y vuelan las bombas.</li>
-        <li>Proa y popa: <b class="r">−20</b>. Centro blindado: <b class="a">−8</b>. Ojo con el <b>viento</b> y las <b>rocas</b>.</li>
-        <li><b>TikTok</b> rebota en el agua. <b>Instagram</b> se divide en 3. Acierta a la <b>Caja 360</b> para ganar un poder.</li>
-      </ol>
-    </div>
+    <button class="btn sec" id="b-guia">¿CÓMO SE JUEGA?</button>
     <p class="pie">Un juego de <b>360 Connect</b> · Placas NFC + QR · WhatsApp 974 337 299</p>
   </section>
 
@@ -73,8 +65,7 @@
     <div class="conecti-panel" id="cp-sala"><canvas class="cp-avatar" width="12" height="16"></canvas><p class="cp-texto"></p></div>
     <p class="negocio-sala" id="t-negocio-sala" hidden></p>
     <h2>CÓDIGO DE TU SALA</h2>
-    <div class="codigo" id="t-codigo">CNX-····</div>
-    <div class="qr-caja"><div id="qr" aria-label="Código QR para unirse"></div><p>Tu rival escanea este QR con la cámara para entrar</p></div>
+    <div class="codigo" id="t-codigo">····</div>
     <div class="fila wrap">
       <button class="btn sec" id="b-copiar-codigo">COPIAR CÓDIGO</button>
       <button class="btn sec" id="b-copiar-enlace">COPIAR ENLACE</button>
@@ -99,13 +90,12 @@
 
     <div class="escena-marco juego-marco">
       <canvas id="c-juego" aria-label="Mar de batalla"></canvas>
+      <div class="burbuja" id="burbuja" hidden><canvas width="12" height="16"></canvas><span></span></div>
       <div class="capa" id="ov-pausa" hidden>
         <p class="capa-t">PARTIDA EN PAUSA</p>
         <p id="ov-pausa-txt"></p>
       </div>
     </div>
-
-    <div class="conecti-panel" id="cp-juego"><canvas class="cp-avatar" width="12" height="16"></canvas><p class="cp-texto"></p></div>
 
     <!-- Plan secreto: moverse + apuntar + disparar, todo en la misma fase -->
     <div class="controles" id="ctl-plan" hidden>
@@ -114,32 +104,22 @@
         <div class="medidor"><span>MOTOR</span><div class="barra"><i id="motor-barra"></i></div><span id="motor-txt">24</span></div>
         <button class="btn tactil" id="b-der" aria-label="Mover a la derecha">▶</button>
       </div>
-      <div class="ajuste">
-        <span class="rot">ÁNGULO</span>
-        <button class="btn mini" id="b-ang-menos" aria-label="Bajar ángulo">−</button>
-        <input type="range" id="r-angulo" min="15" max="80" step="1" value="45" aria-label="Ángulo">
-        <button class="btn mini" id="b-ang-mas" aria-label="Subir ángulo">+</button>
-        <output id="o-angulo">45°</output>
+      <div class="mira">
+        <div class="valor"><span>ÁNGULO</span><b id="o-angulo">45°</b><button class="btn mini" id="b-ang-menos" aria-label="Bajar ángulo">−</button><button class="btn mini" id="b-ang-mas" aria-label="Subir ángulo">+</button></div>
+        <div class="valor"><span>POTENCIA</span><b id="o-potencia">60%</b><button class="btn mini" id="b-pot-menos" aria-label="Bajar potencia">−</button><button class="btn mini" id="b-pot-mas" aria-label="Subir potencia">+</button></div>
       </div>
-      <div class="ajuste">
-        <span class="rot">POTENCIA</span>
-        <button class="btn mini" id="b-pot-menos" aria-label="Bajar potencia">−</button>
-        <input type="range" id="r-potencia" min="20" max="100" step="1" value="60" aria-label="Potencia">
-        <button class="btn mini" id="b-pot-mas" aria-label="Subir potencia">+</button>
-        <output id="o-potencia">60%</output>
-      </div>
+      <p class="pista">☝ Arrastra sobre el mar para apuntar</p>
       <div class="fila">
         <div class="proyectiles" role="radiogroup" aria-label="Proyectil">
-          <button class="proy" data-p="tiktok" role="radio"><canvas width="12" height="12"></canvas>TIKTOK<small>rebota</small></button>
-          <button class="proy" data-p="instagram" role="radio"><canvas width="12" height="12"></canvas>INSTAGRAM<small>se divide</small></button>
+          <button class="proy" data-p="tiktok" role="radio"><canvas width="12" height="12"></canvas>TIKTOK</button>
+          <button class="proy" data-p="instagram" role="radio"><canvas width="12" height="12"></canvas>INSTAGRAM</button>
         </div>
         <button class="btn grande fuego" id="b-disparar">¡DISPARAR!</button>
       </div>
-      <p class="ayuda">Teclado: A/D mover · ↑/↓ ángulo · ←/→ potencia · 1/2 proyectil · Espacio dispara</p>
+      <p class="ayuda teclado">Teclado: A/D mover · ↑/↓ ángulo · ←/→ potencia · 1/2 proyectil · Espacio dispara</p>
     </div>
 
-    <div class="controles espera" id="ctl-espera"><p id="t-espera">Observa el mar...</p></div>
-    <button class="btn chico sec" id="b-abandonar">ABANDONAR PARTIDA</button>
+    <p class="espera-linea" id="ctl-espera" hidden><span id="t-espera"></span></p>
   </section>
 
   <!-- ================= RANKING ================= -->
@@ -194,9 +174,14 @@
   <p class="nota" id="fin-nota"></p>
 </div>
 
-<div class="sonido">
-  <button class="btn mini" id="b-sonido" aria-label="Sonido">♪</button>
-  <input type="range" id="r-volumen" min="0" max="100" value="70" aria-label="Volumen">
+<button class="ajustes-btn" id="b-ajustes" aria-label="Ajustes" aria-expanded="false">⚙</button>
+<div class="menu-ajustes" id="menu-ajustes" hidden>
+  <div class="fila"><button class="btn mini" id="b-sonido" aria-label="Sonido">♪</button><input type="range" id="r-volumen" min="0" max="100" value="70" aria-label="Volumen"></div>
+  <button class="btn chico sec" id="b-abandonar" hidden>ABANDONAR PARTIDA</button>
+</div>
+<div class="capa guia" id="ov-guia" hidden>
+  <img src="assets/como-jugar.png" alt="Cómo jugar CONECTI NAVAL BATTLE: arma la sala, plan secreto de 20 segundos, fuego cruzado y elige tu proyectil">
+  <button class="btn" id="b-cerrar-guia">CERRAR</button>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

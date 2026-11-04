@@ -2,7 +2,7 @@
 /* Validación y saneamiento de todo lo que llega por Socket.io. Nunca se confía en el cliente. */
 const C = require('../shared/constants');
 
-const CODE_RE = /^CNX-[A-HJ-NP-Z2-9]{4}$/;
+const CODE_RE = /^\d{4}$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{20,64}$/;
 
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -25,12 +25,9 @@ function profile(p) {
 }
 
 function roomCode(v) {
-  if (typeof v !== 'string' || v.length > 20) return null;
-  const s = v.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const cuerpo = s.length === 7 && s.startsWith('CNX') ? s.slice(3) : s.length === 4 ? s : null;
-  if (!cuerpo) return null;
-  const c = 'CNX-' + cuerpo;
-  return CODE_RE.test(c) ? c : null;
+  if (typeof v !== 'string' && typeof v !== 'number') return null;
+  const s = String(v).replace(/\D/g, '');
+  return s.length === 4 ? s : null;
 }
 
 function token(v) { return typeof v === 'string' && TOKEN_RE.test(v) ? v : null; }

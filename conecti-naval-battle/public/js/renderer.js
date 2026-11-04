@@ -60,6 +60,7 @@
     const parts = [];        // partículas cuadradas
     const textos = [];       // números flotantes
     let banner = null, shake = 0, flash = 0;
+    const colaCarteles = [];
     const proyectiles = [];  // { path, flightMs, t0, tipo, onEnd } — pueden volar dos a la vez
     const capitan = [{ pose: null, hasta: 0 }, { pose: null, hasta: 0 }];
     const golpeBarco = [0, 0];
@@ -91,7 +92,14 @@
         shake = 2;
       },
       texto(txt, x, y, color = '#FFD84A') { textos.push({ txt, x, y, t: 0, color }); },
-      banner(txt, color = '#FFD84A', ms = 1500) { banner = { txt, color, t: 0, ms }; },
+      /** Cartel grande y breve. Si ya hay uno, espera su turno (nunca se encima; máximo 2 en fila). */
+      banner(txt, color = '#FFD84A', ms = 900) {
+        const b = { txt, color, t: 0, ms: Math.min(ms, 2200) };
+        if (!banner) { banner = b; return; }
+        if (banner.txt === txt) return;
+        colaCarteles.push(b);
+        if (colaCarteles.length > 2) colaCarteles.shift();
+      },
       /**
        * Lanza un disparo ya calculado por el servidor.
        * shot = { shooter, projectile, trayectorias:[{path, startMs, durMs, impact, bounces}] } (o un solo {path, flightMs})
@@ -111,7 +119,7 @@
       terminarDisparo() { for (const p of proyectiles.splice(0)) p.onEnd && p.onEnd(); },
       pose(slot, pose, ms = 1200) { capitan[slot] = { pose, hasta: performance.now() + ms }; },
       golpe(slot) { golpeBarco[slot] = 0.5; },
-      reset() { parts.length = 0; textos.length = 0; banner = null; proyectiles.length = 0; anillos.length = 0; capitan[0] = { pose: null, hasta: 0 }; capitan[1] = { pose: null, hasta: 0 }; },
+      reset() { parts.length = 0; textos.length = 0; banner = null; colaCarteles.length = 0; proyectiles.length = 0; anillos.length = 0; capitan[0] = { pose: null, hasta: 0 }; capitan[1] = { pose: null, hasta: 0 }; },
       draw,
     };
     const anillos = [];
@@ -453,7 +461,7 @@
     function cartel(dt) {
       if (!banner) return;
       banner.t += dt * 1000;
-      if (banner.t > banner.ms) { banner = null; return; }
+      if (banner.t > banner.ms) { banner = colaCarteles.shift() || null; return; }
       const k = Math.min(1, banner.t / 150), tam = 16;
       ctx.font = fuente(banner.txt, tam);
       const w = Math.min(W - 8, ctx.measureText(banner.txt).width + 24);
@@ -486,7 +494,7 @@
       dibujarProyectil(ahora);
       efectos(dt);
       if (m.mostrarBarras) for (const slot of [0, 1]) barraVida(slot, m.ships[slot], m);
-      viento(m, t);
+      if (m.vientoEnMar) viento(m, t);   // el viento ya se muestra en la barra de arriba
       cartel(dt);
       ctx.restore();
       if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${flash.toFixed(2)})`; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - dt); }

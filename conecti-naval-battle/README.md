@@ -9,7 +9,7 @@ Batalla naval de artillería 1 contra 1, online y por turnos, en pixel art de 8 
 - Proyectiles con efecto: **TikTok rebota** una vez en el agua; **Instagram se divide en 3** en lo más alto (cada fragmento hace la mitad del daño).
 - Daño por zona del casco: **proa y popa −20 HP**, **centro blindado −8 HP**. Cada barco tiene 100 HP.
 - Conecti en **morado #8A2BE2**, **azul #00BFFF** o **verde #32CD32** (barco aparte): saluda al empezar, señala el cañón, celebra, se lamenta y **baila** al ganar.
-- Salas privadas `CNX-XXXX` con **código QR** para unirse, enlace y WhatsApp; reconexión de 30 s; revancha.
+- Salas privadas con **código de 4 números**, enlace y WhatsApp; reconexión de 30 s; revancha. Pantalla limpia: Conecti habla en un globito de 2 s, carteles de 1 s que nunca se enciman, HUD delgado, **apuntar arrastrando sobre el mar** y ajustes (sonido / abandonar) en el botón ⚙.
 - **Ranking semanal**, **modo torneo** (4 u 8 capitanes con llaves), **versión para negocios** (cartel con el nombre del negocio en el mar y premio para el ganador) y **compartir resultado** (imagen para historias).
 - Funciona en computadora (teclado) y celular (botones táctiles).
 
@@ -130,7 +130,7 @@ conecti-naval-battle/
 
 **Física:** `vx = v·cos θ`, `vy = v·sin θ`, `x = x0 + vx·t`, `y = y0 − vy·t + ½·g·t²`, con `v = potencia × 235 px/s` y `g = 120 px/s²`, paso fijo de 1/60 s y 3 sub-pasos de colisión. El proyectil sale de la boca real del cañón, puede caer al agua, salir del mapa o golpear incluso al propio barco.
 
-**Seguridad:** códigos con `crypto.randomInt` (32⁴ combinaciones, sin letras confusas), tokens de 24 bytes aleatorios comparados en tiempo constante, nombres saneados, mensajes de máx. 4 KB, límite de frecuencia por conexión y por tipo de evento, sin disparos duplicados ni acciones fuera de fase, y nadie puede tomar el lugar de un jugador desconectado sin su token.
+**Seguridad:** códigos de sala de 4 números con `crypto.randomInt` (10 000 combinaciones: fáciles de dictar, a cambio de ser más adivinables; las salas vacías se borran solas), tokens de 24 bytes aleatorios comparados en tiempo constante, nombres saneados, mensajes de máx. 4 KB, límite de frecuencia por conexión y por tipo de evento, sin disparos duplicados ni acciones fuera de fase, y nadie puede tomar el lugar de un jugador desconectado sin su token.
 
 ---
 

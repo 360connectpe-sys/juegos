@@ -116,15 +116,22 @@
   $('b-crear').onclick = () => crear();
   $('b-unirse').onclick = () => { A.play('click'); const f = $('f-unirse'); f.hidden = !f.hidden; if (!f.hidden) $('i-codigo').focus(); };
   $('f-unirse').onsubmit = e => { e.preventDefault(); unirse($('i-codigo').value); };
-  $('i-codigo').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''); });
+  $('i-codigo').addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); });
 
   // ---------------- Sonido ----------------
-  function pintarSonido() { $('b-sonido').classList.toggle('mudo', A.muted); $('b-sonido').setAttribute('aria-pressed', String(!A.muted)); $('r-volumen').value = Math.round(A.volume * 100); }
+  function pintarSonido() { $('b-sonido').classList.toggle('sonido-off', A.muted); $('b-sonido').setAttribute('aria-pressed', String(!A.muted)); $('r-volumen').value = Math.round(A.volume * 100); }
   $('b-sonido').onclick = () => { A.unlock(); A.setMuted(!A.muted); pintarSonido(); A.play('click'); };
   $('r-volumen').oninput = e => { A.unlock(); A.setVolume(e.target.value / 100); if (A.muted) A.setMuted(false); pintarSonido(); };
   pintarSonido();
   addEventListener('pointerdown', () => A.unlock(), { once: true });
   document.addEventListener('visibilitychange', () => (document.hidden ? A.suspend() : A.resume()));
+
+  // ---------------- Ajustes ⚙ y guía ----------------
+  const menu = $('menu-ajustes');
+  $('b-ajustes').onclick = e => { e.stopPropagation(); A.unlock(); menu.hidden = !menu.hidden; $('b-ajustes').setAttribute('aria-expanded', String(!menu.hidden)); if (!menu.hidden) pintarControles(); };
+  document.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target) && e.target !== $('b-ajustes')) { menu.hidden = true; $('b-ajustes').setAttribute('aria-expanded', 'false'); } });
+  $('b-guia').onclick = () => { A.play('click'); $('ov-guia').hidden = false; };
+  $('b-cerrar-guia').onclick = () => { $('ov-guia').hidden = true; };
 
   // ---------------- Sala de espera ----------------
   const enlace = () => {
@@ -182,7 +189,6 @@
   function pintarSala() {
     $('t-codigo').textContent = codigo;
     $('a-whatsapp').href = 'https://wa.me/?text=' + encodeURIComponent(`⚓ ¡Te reto a CONECTI NAVAL BATTLE! Entra aquí: ${enlace()} (sala ${codigo})`);
-    qr($('qr'), enlace());
     const m = meta();
     $('t-negocio-sala').hidden = !m.negocio && !m.torneo;
     $('t-negocio-sala').textContent = [m.torneo ? '⚔ Partido de torneo' : '', m.negocio ? `Presentado por ${m.negocio}` : '', m.premio ? `Premio: ${m.premio}` : ''].filter(Boolean).join(' · ');
@@ -190,10 +196,10 @@
     const r = st.players[rival()], meListo = st.players[yo] && st.players[yo].ready;
     $('b-listo').textContent = meListo ? 'CANCELAR LISTO' : '¡ESTOY LISTO!';
     let msg, pose = meListo ? 'cheer' : 'idle';
-    if (!r || r.left) msg = `¡Comparte el código ${codigo} o el QR con tu rival! Yo te aviso cuando llegue.`;
-    else if (!r.connected) msg = `${r.name} se desconectó. Lo esperamos un momento…`;
-    else if (!meListo) { msg = `¡Llegó ${r.name}! Salúdalo y presiona ESTOY LISTO cuando quieras zarpar.`; pose = 'wave'; }
-    else if (!r.ready) msg = `Esperando a que ${r.name} esté listo…`;
+    if (!r || r.left) msg = `Comparte el código ${codigo} con tu rival.`;
+    else if (!r.connected) msg = `${r.name} se desconectó…`;
+    else if (!meListo) { msg = `¡Llegó ${r.name}! Toca ESTOY LISTO.`; pose = 'wave'; }
+    else if (!r.ready) msg = `Esperando a ${r.name}…`;
     else msg = '¡Todos listos! Zarpamos…';
     UI.conecti('cp-sala', msg, { color: miColor(), pose });
   }
@@ -224,8 +230,8 @@
     aimLocal = { ...aimLocal, ...cambios };
     aimLocal.angle = Math.max(C.ANGLE_MIN, Math.min(C.ANGLE_MAX, Math.round(aimLocal.angle)));
     aimLocal.power = Math.max(C.POWER_MIN, Math.min(C.POWER_MAX, Math.round(aimLocal.power)));
-    $('r-angulo').value = aimLocal.angle; $('o-angulo').textContent = aimLocal.angle + '°';
-    $('r-potencia').value = aimLocal.power; $('o-potencia').textContent = aimLocal.power + '%';
+    $('o-angulo').textContent = aimLocal.angle + '°';
+    $('o-potencia').textContent = aimLocal.power + '%';
     document.querySelectorAll('.proy').forEach(b => b.setAttribute('aria-checked', String(b.dataset.p === aimLocal.projectile)));
   }
   async function disparar() {
@@ -236,7 +242,7 @@
     enviando = false;
     if (!r.ok) { UI.toast(r.error || 'No se pudo disparar.'); pintarControles(); return; }
     rJuego.pose(yo, 'cheer', 900);
-    decir(`¡Cañón cargado! Cuando ${nombre(rival())} dispare, se revela todo.`, { reaccion: 'salta', pose: 'cheer' });
+    decir('¡Cañón listo!', { pose: 'cheer' });
     pintarControles();
   }
   const ctl = window.CONTROLS.create({
@@ -251,8 +257,23 @@
   ctl.mantener($('b-pot-menos'), () => setMira({ power: aimLocal.power - 1 }));
   ctl.mantener($('b-pot-mas'), () => setMira({ power: aimLocal.power + 1 }));
   $('b-disparar').onclick = disparar;
-  $('r-angulo').oninput = e => setMira({ angle: +e.target.value });
-  $('r-potencia').oninput = e => setMira({ power: +e.target.value });
+  // Apuntar arrastrando sobre el mar: la dirección desde tu cañón da el ángulo y la distancia, la potencia
+  (function arrastrarParaApuntar() {
+    const cv = $('c-juego');
+    let activo = false;
+    function apuntarDesde(e) {
+      const r = cv.getBoundingClientRect();
+      const lx = (e.clientX - r.left) * C.WIDTH / r.width, ly = (e.clientY - r.top) * C.HEIGHT / r.height;
+      const f = C.FACING[yo], px = modelo.ships[yo].x + f * C.CANNON_PIVOT_DX, py = C.CANNON_PIVOT_Y;
+      const dx = (lx - px) * f, dy = py - ly;
+      if (Math.hypot(dx, dy) < 6) return;
+      const ang = Math.atan2(Math.max(0, dy), Math.max(0.01, dx)) * 180 / Math.PI;
+      setMira({ angle: ang, power: Math.hypot(dx, dy) / 1.2 });
+    }
+    cv.addEventListener('pointerdown', e => { if (fase() !== 'plan') return; activo = true; A.unlock(); try { cv.setPointerCapture(e.pointerId); } catch (_) {} apuntarDesde(e); });
+    cv.addEventListener('pointermove', e => { if (activo && fase() === 'plan') apuntarDesde(e); });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => cv.addEventListener(ev, () => { if (activo) { activo = false; A.play('click'); } }));
+  })();
   document.querySelectorAll('.proy').forEach(b => {
     const cv = b.querySelector('canvas'), ico = window.RENDERER.iconoSprite(b.dataset.p);
     const c = cv.getContext('2d'); c.imageSmoothingEnabled = false; c.drawImage(ico, 0, 0);
@@ -263,23 +284,24 @@
   function pintarControles() {
     const f = fase(), r = rival();
     $('ctl-plan').hidden = !(st && st.phase === 'PLANNING' && !st.locked[yo]);
-    $('ctl-espera').hidden = !$('ctl-plan').hidden;
     $('b-disparar').disabled = f !== 'plan';
-    if (!st) return;
-    const espera = {
-      WAITING: '¡Prepárate! La batalla empieza en un instante…',
-      PLANNING: `¡Disparo listo! Esperando a ${nombre(r)}${st.locked[r] ? '…' : ' (todavía está decidiendo)…'}`,
-      REVEAL: '¡Fuego cruzado!',
-      RESOLUTION: 'Contando los daños…',
-      NEXT_TURN: 'Preparando la siguiente ronda…',
-      PAUSED: 'Partida en pausa.',
-      GAME_OVER: 'Fin de la batalla.',
-    };
-    $('t-espera').textContent = espera[st.phase] || 'Observa el mar…';
+    const esperando = st && st.phase === 'PLANNING' && st.locked[yo];
+    $('ctl-espera').hidden = !esperando;
+    if (esperando) $('t-espera').textContent = st.locked[r] ? '¡Fuego!' : `Esperando a ${nombre(r)}…`;
+    $('b-abandonar').hidden = !st || $('s-juego').hidden || st.phase === 'GAME_OVER';
   }
 
   // ---------------- Mensajes de Conecti en combate ----------------
-  const decir = (txt, opts = {}) => UI.conecti('cp-juego', txt, { color: miColor(), ...opts });
+  let burbujaT = null;
+  /** Conecti habla en un globito sobre el mar (2 s) y desaparece. */
+  function decir(txt, opts = {}) {
+    const b = $('burbuja'); if (!b) return;
+    UI.sprite(b.querySelector('canvas'), opts.pose || 'idle', miColor()); b.querySelector('canvas').style.width = '';
+    b.querySelector('span').textContent = txt;
+    b.hidden = false; b.classList.remove('sale');
+    clearTimeout(burbujaT);
+    burbujaT = setTimeout(() => { b.classList.add('sale'); burbujaT = setTimeout(() => { b.hidden = true; }, 260); }, opts.ms || 2200);
+  }
   const ZONA = { proa: 'la proa', popa: 'la popa', centro: 'el centro' };
   const PODER = { escudo: 'ESCUDO 🛡 (bloquea el próximo golpe)', doble: 'DOBLE DAÑO ✖2 (en tu próximo acierto)', reparar: `REPARACIÓN +${C.REPAIR_HP} HP` };
   const vientoTxt = w => (w === 0 ? 'sin viento' : `viento ${w > 0 ? 'hacia la derecha ▶' : 'hacia la izquierda ◀'} (${Math.abs(w)})`);
@@ -289,7 +311,7 @@
     const r = rival();
     if (st.phase === 'PLANNING' && st.locked[r] && !st.locked[yo] && rivalListoAviso !== clave) {
       rivalListoAviso = clave; A.play('alert');
-      decir(`¡${nombre(r)} ya disparó! Apura tu plan antes de que se acabe el tiempo.`, { reaccion: 'tiembla', pose: 'point' });
+      decir(`¡${nombre(r)} ya disparó!`, { pose: 'point' });
     }
     if (clave === ultimaClave) return;
     ultimaClave = clave;
@@ -298,19 +320,18 @@
         rJuego.reset(); modelo.sinking = null; modelo.sinkT = 0; modelo.winner = null; revelando = null;
         modelo.ships.forEach((s, i) => { s.x = st.ships[i].x; });
         A.play('start');
-        rJuego.banner('¡A LOS CAÑONES!', '#FFD84A', 2200);
         rJuego.pose(0, 'wave', 2400); rJuego.pose(1, 'wave', 2400);
-        decir(`¡Hola, capitán! Saluda a ${nombre(r)}. Aquí se mueve y se dispara en secreto, al mismo tiempo.`, { reaccion: 'salta', pose: 'wave' });
+        decir('¡Prepárate para atacar!', { pose: 'wave' });
         break;
       case 'PLANNING':
         planDx = 0; enviando = false; pintarMotor(); setMira({});
-        A.play('turn'); rJuego.banner(`RONDA ${st.round}`, '#FFD84A', 1000);
-        decir(`¡Tienes 20 segundos! Mueve tu barco y apunta: tu rival no ve nada hasta que los dos disparen. Hoy hay ${vientoTxt(st.wind)}.${st.crate ? ' ¡Apareció la Caja 360!' : ''}`, { reaccion: 'salta', pose: 'point' });
-        if (st.crate && st.round % C.CRATE_EVERY === 0) setTimeout(() => rJuego.banner('¡CAJA 360 EN EL AIRE!', '#1FA4F5', 1300), 1100);
+        A.play('turn'); rJuego.banner(`RONDA ${st.round}`, '#FFD84A', 800);
+        if (st.crate && st.round % C.CRATE_EVERY === 0) rJuego.banner('¡CAJA 360!', '#1FA4F5', 900);
+        decir('¡Mueve y apunta!', { pose: 'point' });
         break;
       case 'PAUSED': {
         const p = st.players.findIndex(x => x && !x.connected);
-        decir(`${nombre(p)} se desconectó. Lo esperamos unos segundos…`, { pose: 'sad' });
+        decir(`${nombre(p)} se desconectó`, { pose: 'sad', ms: 3000 });
         break;
       }
       case 'GAME_OVER': {
@@ -318,42 +339,36 @@
         A.play(gane ? 'win' : 'lose');
         modelo.winner = st.winner;
         modelo.sinking = empate ? 'ambos' : st.reason === 'hp' ? 1 - st.winner : null; modelo.sinkT = 0;
-        rJuego.banner(empate ? '¡EMPATE!' : gane ? '¡CONECTI DOMINA EL MAR!' : '¡VOLVEREMOS MÁS FUERTES!', gane || empate ? '#FFD84A' : '#9FC3FF', 2600);
+        rJuego.banner(empate ? '¡EMPATE!' : gane ? '¡VICTORIA!' : '¡DERROTA!', gane || empate ? '#FFD84A' : '#9FC3FF', 1800);
         if (gane) for (let i = 0; i < 5; i++) setTimeout(() => rJuego.explosion(60 + Math.random() * 360, 40 + Math.random() * 60, false), 300 + i * 350);
-        decir(empate ? '¡Empate! Los dos barcos se hundieron a la vez. ¡Pidan la revancha!'
-          : gane ? (st.reason === 'abandono' ? `${nombre(r)} abandonó la partida. ¡Victoria para Conecti!` : '¡Victoria para Conecti! ¡Mira cómo bailo!')
-          : '¡Volveremos más fuertes! Pide la revancha.', { reaccion: gane ? 'salta' : 'tiembla', pose: gane ? 'cheer' : 'sad' });
+        decir(empate ? '¡Empate!' : gane ? '¡Ganamos!' : '¡Volveremos!', { pose: gane ? 'cheer' : 'sad' });
         break;
       }
     }
   }
 
-  /** Efectos cuando termina cada trayectoria (el daño definitivo llega en 'resolution'). */
+  /** Efectos cuando termina cada trayectoria (el daño definitivo llega en 'resolution'). Solo carteles cortos. */
   function finTrayectoria(sh, tr) {
-    const imp = tr.impact, mio = sh.shooter === yo;
+    const imp = tr.impact;
     if (!imp || imp.type === 'split') return;
     if (imp.type === 'hull') {
       const crit = imp.zone !== 'centro';
       rJuego.explosion(imp.x, imp.y, crit && !tr.fragment);
       rJuego.golpe(imp.target); rJuego.pose(imp.target, 'hit', 1300);
       A.play(crit ? 'impact' : 'armor');
-      if (!tr.fragment) rJuego.banner(crit ? '¡IMPACTO CRÍTICO!' : '¡BLINDAJE RESISTENTE!', crit ? '#FF4D5E' : '#FFD84A', 1300);
-      const z = ZONA[imp.zone];
-      if (imp.self) decir(mio ? `¡Uy! Te diste a ti mismo en ${z}.` : `¡${nombre(sh.shooter)} se disparó a sí mismo!`, { reaccion: mio ? 'tiembla' : 'salta', pose: mio ? 'hit' : 'cheer' });
-      else if (mio) decir(crit ? `¡Impacto crítico en ${z}! ¡Buen disparo!` : '¡Le diste en el centro blindado!', { reaccion: 'salta', pose: 'cheer' });
-      else decir(crit ? `¡Nos dieron en ${z}! ¡Hay que responder!` : '¡Nuestro blindaje aguantó!', { reaccion: 'tiembla', pose: 'hit' });
+      if (!tr.fragment) rJuego.banner(imp.self ? '¡AUTOGOL!' : crit ? '¡CRÍTICO!' : '¡BLINDAJE!', crit ? '#FF4D5E' : '#FFD84A');
     } else if (imp.type === 'water') {
       rJuego.salpicadura(imp.x); A.play('splash');
-      if (!tr.fragment) { rJuego.banner('¡AL AGUA!', '#9BD8FF', 1100); decir(mio ? '¡Al agua! Ojo con el viento.' : '¡El enemigo ha fallado!', { reaccion: mio ? 'tiembla' : 'salta' }); }
+      if (!tr.fragment) rJuego.banner('¡AL AGUA!', '#9BD8FF');
     } else if (imp.type === 'rock') {
       rJuego.explosion(imp.x, imp.y, false); A.play('armor');
-      if (!tr.fragment) rJuego.banner('¡CHOCÓ CON LA ROCA!', '#B9C2D4', 1100);
-      if (mio) decir('¡La roca bloqueó tu disparo! Prueba un tiro más alto.', { reaccion: 'tiembla' });
+      if (!tr.fragment) rJuego.banner('¡ROCA!', '#B9C2D4');
     } else if (imp.type === 'crate') {
       rJuego.explosion(imp.x, imp.y, false); A.play('impact');
-      rJuego.banner('¡CAJA 360!', '#1FA4F5', 1200);
+      rJuego.banner('¡CAJA 360!', '#1FA4F5');
     } else {
-      rJuego.banner('¡DISPARO FALLIDO!', '#9FC3FF', 1100); A.play('splash');
+      A.play('splash');
+      if (!tr.fragment) rJuego.banner('¡FALLÓ!', '#9FC3FF');
     }
   }
 
@@ -417,7 +432,7 @@
     else { NET.session.clear(); if (codigo) { UI.toast(r.error || 'No se pudo volver a la sala.'); codigo = null; yo = null; st = null; UI.show('s-inicio'); } }
   });
   NET.on('disconnect', () => { if (codigo) UI.toast('Se perdió la conexión. Reconectando…'); });
-  NET.on('hostAway', fuera => { if (codigo && fuera) { UI.toast('El anfitrión perdió la conexión. Esperando…'); decir('El anfitrión se desconectó. Si vuelve pronto, seguimos.', { pose: 'sad' }); } else if (codigo && fuera === false) UI.toast('¡El anfitrión volvió!'); });
+  NET.on('hostAway', fuera => { if (codigo && fuera) UI.toast('El anfitrión se desconectó…'); else if (codigo && fuera === false) UI.toast('¡El anfitrión volvió!'); });
   NET.on('closed', () => { if (!codigo) return; NET.session.clear(); codigo = null; yo = null; st = null; rJuego.reset(); $('ov-fin').hidden = true; UI.toast('El anfitrión cerró la sala.'); try { history.replaceState(null, '', BASE); } catch (e) {} UI.show('s-inicio'); });
 
   NET.on('state', s => {
@@ -442,7 +457,7 @@
     const maxDist = Math.max(...p.moves.map(mv => Math.abs(mv.to - mv.from)), 1);
     revelando = { hasta: performance.now() + moveMs, vel: Math.max(70, maxDist / (moveMs / 1000)) };
     const rv = p.moves[rival()];
-    if (rv && rv.to !== rv.from) setTimeout(() => A.play('move'), 0);
+    if (rv && rv.to !== rv.from) A.play('move');
     for (const sh of p.shots) {
       st.aim[sh.shooter] = { angle: sh.angle, power: sh.power, projectile: sh.projectile };
       rJuego.disparo(sh, moveMs, tr => finTrayectoria(sh, tr));
@@ -450,13 +465,11 @@
     if (p.shots.length) setTimeout(() => {
       A.play('fire'); A.play('whistle', Math.max(...p.shots.map(x => x.flightMs)));
       p.shots.forEach(sh => rJuego.pose(sh.shooter, 'cheer', 900));
-      rJuego.banner(p.shots.length === 2 ? '¡FUEGO CRUZADO!' : '¡FUEGO!', '#FF9A2E', 1000);
+      rJuego.banner('¡FUEGO!', '#FF9A2E', 700);
     }, moveMs);
-    const mvTxt = rv && rv.to !== rv.from ? `${nombre(rival())} movió su barco ${Math.abs(rv.to - rv.from)} pasos ${rv.to > rv.from ? 'a la derecha' : 'a la izquierda'}. ` : '';
-    if (p.missed.includes(yo) && p.missed.length === 2) decir('¡Nadie disparó a tiempo! Siguiente ronda.', { pose: 'sad' });
-    else if (p.missed.includes(yo)) decir(`${mvTxt}¡Se acabó el tiempo! Perdiste tu disparo de esta ronda.`, { reaccion: 'tiembla', pose: 'sad' });
-    else if (p.missed.length) decir(`¡${nombre(rival())} no disparó a tiempo! Solo vuela tu proyectil.`, { reaccion: 'salta', pose: 'cheer' });
-    else decir(`${mvTxt}¡Fuego! Los dos proyectiles están en el aire…`, { reaccion: 'salta', pose: 'cheer' });
+    if (p.missed.includes(yo) && p.missed.length === 2) decir('¡Nadie disparó!', { pose: 'sad' });
+    else if (p.missed.includes(yo)) decir('¡Se acabó el tiempo!', { pose: 'sad' });
+    else if (p.missed.length) decir(`¡${nombre(rival())} no disparó!`, { pose: 'cheer' });
     pintarControles();
   });
   NET.on('resolution', r => {
@@ -469,12 +482,10 @@
       else rJuego.texto('-' + imp.damage, imp.x, imp.y - 14, imp.damage >= C.DAMAGE_CRIT ? '#FF4D5E' : '#FFD84A');
     }
     if (r.crate) {
-      const mio = r.crate.by === yo;
-      setTimeout(() => {
-        rJuego.banner(r.crate.power === 'reparar' ? '¡REPARACIÓN!' : r.crate.power === 'escudo' ? '¡ESCUDO!' : '¡DOBLE DAÑO!', '#1FA4F5', 1500);
-        decir(`¡${mio ? 'Ganaste' : nombre(r.crate.by) + ' ganó'} la Caja 360: ${PODER[r.crate.power]}!`, { reaccion: mio ? 'salta' : 'tiembla', pose: mio ? 'cheer' : 'idle' });
-        A.play('win');
-      }, 300);
+      const mio = r.crate.by === yo, nombreP = { escudo: 'ESCUDO', doble: 'DOBLE DAÑO', reparar: '+15 HP' }[r.crate.power];
+      rJuego.banner(`¡${nombreP}!`, '#1FA4F5', 1000);
+      decir(mio ? `¡${nombreP} para ti!` : `¡${nombreP} para ${nombre(r.crate.by)}!`, { pose: mio ? 'cheer' : 'idle' });
+      A.play('win');
     }
     UI.hud(st, yo);
   });
@@ -650,16 +661,18 @@
   window.__debug = () => ({ yo, codigo, phase: st && st.phase, round: st && st.round, locked: st && st.locked, wind: st && st.wind, rocks: st && st.rocks, crate: st && st.crate,
     powers: st && st.powers, ships: st ? st.ships.map(s => ({ x: s.x, hp: s.hp })) : [], planDx, torneo: torneoActual });
 
+  window.__apuntar = (angle, power, projectile) => setMira({ angle, power, projectile: projectile || aimLocal.projectile });
+
   // ---------------- Arranque ----------------
   const salaURL = params.get('sala'), torneoURL = params.get('torneo'), nombreURL = params.get('nombre');
   if (nombreURL) { perfil.name = nombreURL.slice(0, C.NAME_MAX); guardarPerfil(); $('i-nombre').value = perfil.name; colorearDemo(); }
   const ses = NET.session.get();
   UI.show('s-inicio');
-  if (ses && (!salaURL || salaURL.toUpperCase() === ses.code)) {
+  if (ses && (!salaURL || salaURL === ses.code)) {
     codigo = ses.code;                     // intentará recuperar el lugar al conectar
     UI.conecti('cp-sala', 'Recuperando tu partida…', { color: perfil.conecti });
   } else if (salaURL) {
-    $('f-unirse').hidden = false; $('i-codigo').value = salaURL.toUpperCase().slice(0, 8);
+    $('f-unirse').hidden = false; $('i-codigo').value = salaURL.replace(/\D/g, '').slice(0, 4);
     $('e-inicio').textContent = 'Elige tu nombre y colores, y toca ENTRAR.';
   } else if (torneoURL && C && /^T[A-Z2-9]{4}$/.test(torneoURL.toUpperCase())) {
     abrirTorneo(torneoURL.toUpperCase());

@@ -93,7 +93,7 @@ function startServer({ port = Number(process.env.PORT) || 3000, timings = {}, qu
     on('join', (p, reply) => {
       const prof = V.profile(p), code = V.roomCode(p && p.code);
       if (!prof) return reply({ ok: false, error: 'Datos de jugador no válidos.' });
-      if (!code) return reply({ ok: false, error: 'El código no es válido. Tiene la forma CNX-ABCD.' });
+      if (!code) return reply({ ok: false, error: 'El código tiene 4 números.' });
       entrar(rooms.joinRoom(code, prof, socket.id), reply);
     });
     on('resume', (p, reply) => {
@@ -114,7 +114,7 @@ function startServer({ port = Number(process.env.PORT) || 3000, timings = {}, qu
       const jug = Array.isArray(p && p.jugadores) ? p.jugadores.map(V.sanitizeName) : [];
       const unicos = new Set(jug.map(X.claveNombre));
       if (![4, 8].includes(jug.length) || unicos.size !== jug.length) return reply({ ok: false, error: 'Escribe 4 u 8 nombres distintos.' });
-      let id; do { id = 'T' + require('./server/rooms').genCode().slice(4); } while (torneos.has(id));
+      let id; do { id = require('./server/rooms').genTorneo(); } while (torneos.has(id));
       const datos = X.crearTorneo({ nombre: V.textoCorto(p.nombre, 30) || 'Torneo Conecti', negocio: V.textoCorto(p.negocio, C.NEGOCIO_MAX), premio: V.textoCorto(p.premio, C.PREMIO_MAX), jugadores: jug });
       const token = crypto.randomBytes(18).toString('base64url');
       torneos.set(id, { datos, token });

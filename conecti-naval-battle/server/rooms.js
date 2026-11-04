@@ -10,8 +10,13 @@ const { createTurnEngine } = require('./turns');
 
 const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';  // sin O/0/I/1 para que no se confundan
 
+/** Código de sala: 4 números (fácil de dictar y escribir en el celular). */
 function genCode() {
-  let s = 'CNX-';
+  return String(crypto.randomInt(10000)).padStart(4, '0');
+}
+/** Código de torneo: T + 4 letras/números. */
+function genTorneo() {
+  let s = 'T';
   for (let i = 0; i < 4; i++) s += ALFABETO[crypto.randomInt(ALFABETO.length)];
   return s;
 }
@@ -184,4 +189,4 @@ function createRoomManager({ emit = () => {}, sync = () => {}, timings = {}, ran
   return { createRoom, joinRoom, resumeRoom, restoreRoom, setReady, disconnect, leave, sweep, deleteRoom, context, engine, rooms, bySocket };
 }
 
-module.exports = { createRoomManager, genCode };
+module.exports = { createRoomManager, genCode, genTorneo };

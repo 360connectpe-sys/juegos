@@ -26,9 +26,9 @@ test('dos jugadores juegan una partida completa por red', async t => {
   t.after(async () => { [A, B, Z].forEach(s => s.close()); await srv.close(); });
 
   const ca = await pedir(A, 'create', { name: 'Ana<b>', conecti: 'morado', ship: 'azul', meta: { negocio: 'Café Aroma', premio: '10% dscto' } });
-  assert.ok(ca.ok); assert.match(ca.code, /^CNX-[A-Z2-9]{4}$/);
-  const cb = await pedir(B, 'join', { code: ca.code.slice(4).toLowerCase(), name: 'Beto', conecti: 'verde', ship: 'morado' });
-  assert.ok(cb.ok, 'se une escribiendo solo las 4 letras en minúscula');
+  assert.ok(ca.ok); assert.match(ca.code, /^\d{4}$/);
+  const cb = await pedir(B, 'join', { code: ' ' + ca.code + ' ', name: 'Beto', conecti: 'verde', ship: 'morado' });
+  assert.ok(cb.ok, 'se une con los 4 números (aunque tenga espacios)');
   const cz = await pedir(Z, 'join', { code: ca.code, name: 'Intruso', conecti: 'azul', ship: 'azul' });
   assert.equal(cz.ok, false, 'el tercero no entra');
 
