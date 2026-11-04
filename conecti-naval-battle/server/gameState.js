@@ -5,17 +5,19 @@ const C = require('../shared/constants');
 function newMatchState() {
   return {
     phase: 'LOBBY',          // LOBBY → WAITING → MOVEMENT → AIMING → PROJECTILE → RESOLUTION → NEXT_TURN … → GAME_OVER
-    turn: 0,
     round: 0,
     phaseEndsAt: 0,
     pausedPhase: null,
     pausedRemaining: 0,
     ships: [0, 1].map(i => ({ x: C.START_X[i], hp: C.MAX_HP, moveLeft: 0 })),
-    aim: [0, 1].map(() => ({ angle: 45, power: 60, projectile: 'tiktok' })),
-    fired: false,
+    moved: [false, false],   // ya confirmó su movimiento en esta ronda
+    locked: [false, false],  // ya fijó su disparo en esta ronda
+    aim: [0, 1].map(() => ({ angle: 45, power: 60, projectile: 'tiktok' })),        // PRIVADO: mira actual de cada uno
+    pending: [null, null],                                                          // PRIVADO: disparos fijados, aún secretos
+    shownAim: [0, 1].map(() => ({ angle: 45, power: 60, projectile: 'tiktok' })),   // PÚBLICO: último disparo ya lanzado
     lastResult: null,
-    winner: null,
-    reason: null,            // 'hp' | 'abandono'
+    winner: null,            // 0, 1 o null (empate)
+    reason: null,            // 'hp' | 'abandono' | 'empate'
     match: 0,                // número de partida dentro de la sala (sube con cada revancha)
   };
 }
@@ -25,7 +27,7 @@ function resetForMatch(state) {
   Object.assign(state, newMatchState(), { match });
 }
 
-/** Snapshot público: sin tokens, sin ids de socket. */
+/** Snapshot público: sin tokens, sin ids de socket y sin los disparos secretos. */
 function publicState(room, now = Date.now()) {
   const s = room.state;
   return {
@@ -33,13 +35,14 @@ function publicState(room, now = Date.now()) {
     serverNow: now,
     phase: s.phase,
     pausedPhase: s.pausedPhase,
-    turn: s.turn,
     round: s.round,
     match: s.match,
     phaseEndsAt: s.phaseEndsAt,
     pausedRemaining: s.pausedRemaining,
     ships: s.ships.map(sh => ({ x: sh.x, hp: sh.hp, moveLeft: sh.moveLeft })),
-    aim: s.aim.map(a => ({ ...a })),
+    moved: [...s.moved],
+    locked: [...s.locked],
+    aim: s.shownAim.map(a => ({ ...a })),
     winner: s.winner,
     reason: s.reason,
     players: room.players.map(p => p && {

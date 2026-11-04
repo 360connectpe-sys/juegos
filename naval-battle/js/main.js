@@ -1,7 +1,7 @@
 /*
  * CONECTI NAVAL BATTLE — cliente.
  * El navegador solo muestra lo que el servidor decide: recibe 'state' (estado completo),
- * 'shot' (trayectoria ya calculada) y 'resolution' (daño aplicado).
+ * 'shots' (las dos trayectorias, ya calculadas, salen juntas) y 'resolution' (daño aplicado).
  */
 (function () {
   const C = window.CNB, UI = window.UI, NET = window.NET, A = window.AUDIO, $ = UI.$;
@@ -163,11 +163,11 @@
     UI.conecti('cp-sala', msg, { color: miColor(), pose: meListo ? 'cheer' : 'idle' });
   }
 
-  // ---------------- Combate: controles ----------------
+  // ---------------- Combate: controles (turnos simultáneos) ----------------
   const fase = () => {
-    if (!st || yo === null || st.turn !== yo) return null;
-    if (st.phase === 'MOVEMENT') return 'move';
-    if (st.phase === 'AIMING' && !disparoEnVuelo) return 'aim';
+    if (!st || yo === null) return null;
+    if (st.phase === 'MOVEMENT' && !st.moved[yo]) return 'move';
+    if (st.phase === 'AIMING' && !st.locked[yo] && !disparoEnVuelo) return 'aim';
     return null;
   };
   let ultimoSonidoMotor = 0;
@@ -178,13 +178,7 @@
     if (ahora - ultimoSonidoMotor > 140) { A.play('move'); ultimoSonidoMotor = ahora; }
   }
   const confirmar = () => { if (fase() === 'move') { A.play('click'); NET.request('endMove', {}); } };
-  let aimEnviado = 0, aimPendiente = null;
-  function enviarMira() {
-    const ahora = performance.now();
-    clearTimeout(aimPendiente);
-    if (ahora - aimEnviado > 110) { aimEnviado = ahora; NET.send('aim', aimLocal); }
-    else aimPendiente = setTimeout(enviarMira, 120);
-  }
+  // La mira es SECRETA: no se envía al rival; solo se manda al disparar.
   function setMira(cambios) {
     aimLocal = { ...aimLocal, ...cambios };
     aimLocal.angle = Math.max(C.ANGLE_MIN, Math.min(C.ANGLE_MAX, Math.round(aimLocal.angle)));
@@ -192,13 +186,15 @@
     $('r-angulo').value = aimLocal.angle; $('o-angulo').textContent = aimLocal.angle + '°';
     $('r-potencia').value = aimLocal.power; $('o-potencia').textContent = aimLocal.power + '%';
     document.querySelectorAll('.proy').forEach(b => b.setAttribute('aria-checked', String(b.dataset.p === aimLocal.projectile)));
-    if (fase() === 'aim') enviarMira();
   }
   async function disparar() {
     if (fase() !== 'aim') return;
     disparoEnVuelo = true; $('b-disparar').disabled = true;
+    A.play('click');
     const r = await NET.request('fire', aimLocal);
-    if (!r.ok) { disparoEnVuelo = false; UI.toast(r.error || 'No se pudo disparar.'); pintarControles(); }
+    if (!r.ok) { disparoEnVuelo = false; UI.toast(r.error || 'No se pudo disparar.'); pintarControles(); return; }
+    rJuego.pose(yo, 'cheer', 900);
+    decir(`¡Cañón cargado! Tu disparo saldrá junto con el de ${nombre(rival())}.`, { reaccion: 'salta', pose: 'cheer' });
   }
   const ctl = window.CONTROLS.create({
     phase: fase, step: paso, confirm: confirmar, fire: disparar,
@@ -223,54 +219,63 @@
   setMira({});
 
   function pintarControles() {
-    const f = fase(), mio = st && st.turn === yo;
+    const f = fase(), r = rival();
     $('ctl-mover').hidden = f !== 'move';
-    $('ctl-apuntar').hidden = !(mio && st.phase === 'AIMING');
+    $('ctl-apuntar').hidden = !(st && st.phase === 'AIMING' && !st.locked[yo]);
     $('ctl-espera').hidden = !$('ctl-mover').hidden || !$('ctl-apuntar').hidden;
     $('b-disparar').disabled = f !== 'aim';
-    if (st && st.phase === 'MOVEMENT' && mio) {
+    if (f === 'move') {
       const left = st.ships[yo].moveLeft;
       $('motor-barra').style.width = (left / C.MOVE_BUDGET * 100) + '%';
       $('motor-txt').textContent = `${left}/${C.MOVE_BUDGET}`;
       $('b-izq').disabled = $('b-der').disabled = left <= 0;
     }
+    if (!st) return;
     const espera = {
       WAITING: '¡Prepárate! La batalla empieza en un instante…',
-      MOVEMENT: `${nombre(rival())} está moviendo su barco…`,
-      AIMING: `${nombre(rival())} está apuntando. ¡Atento al cielo!`,
-      PROJECTILE: '¡Proyectil en el aire!',
+      MOVEMENT: `Barco en posición. Esperando a que ${nombre(r)} termine de moverse…`,
+      AIMING: `¡Disparo listo! Esperando el disparo de ${nombre(r)}${st.locked[r] ? ' (¡ya disparó!)' : '…'}`,
+      PROJECTILE: '¡Los dos proyectiles están en el aire!',
       RESOLUTION: 'Contando los daños…',
+      NEXT_TURN: 'Preparando la siguiente ronda…',
       PAUSED: 'Partida en pausa.',
       GAME_OVER: 'Fin de la batalla.',
     };
-    $('t-espera').textContent = mio && st.phase === 'PROJECTILE' ? '¡Proyectil en el aire!' : (espera[st && st.phase] || 'Observa el mar…');
+    $('t-espera').textContent = espera[st.phase] || 'Observa el mar…';
   }
 
   // ---------------- Mensajes de Conecti en combate ----------------
   const decir = (txt, opts = {}) => UI.conecti('cp-juego', txt, { color: miColor(), ...opts });
   const ZONA = { proa: 'la proa', popa: 'la popa', centro: 'el centro' };
+  let rivalListoAviso = '';
 
   function alCambiarFase() {
-    const clave = `${st.match}-${st.phase}-${st.turn}-${st.round}`;
+    const clave = `${st.match}-${st.phase}-${st.round}`;
+    // Aviso cuando el rival ya fijó su disparo y tú todavía no
+    const r = rival();
+    if (st.phase === 'AIMING' && st.locked[r] && !st.locked[yo] && rivalListoAviso !== clave) {
+      rivalListoAviso = clave; A.play('alert');
+      decir(`¡${nombre(r)} ya disparó! Apura tu tiro antes de que se acabe el tiempo.`, { reaccion: 'tiembla', pose: 'point' });
+    }
     if (clave === ultimaClave) return;
     ultimaClave = clave;
-    const mio = st.turn === yo;
     switch (st.phase) {
       case 'WAITING':
         rJuego.reset(); modelo.sinking = null; modelo.sinkT = 0; modelo.winner = null; disparoEnVuelo = false; revanchaPedida = false;
         modelo.ships.forEach((s, i) => { s.x = st.ships[i].x; });
         A.play('start');
         rJuego.banner('¡A LOS CAÑONES!', '#FFD84A', 2200);
-        decir(`¡Capitán, prepara tu barco! Empieza ${mio ? 'TÚ' : nombre(st.turn)}.`, { reaccion: 'salta', pose: 'cheer' });
+        decir('¡Capitán, prepara tu barco! Esta vez los dos atacan al mismo tiempo.', { reaccion: 'salta', pose: 'cheer' });
         break;
       case 'MOVEMENT':
         disparoEnVuelo = false;
-        if (mio) { A.play('turn'); rJuego.banner('¡TU TURNO!', '#FFD84A', 1100); decir(`¡Es tu turno de moverte! Tienes ${C.MOVE_BUDGET} pasos de motor y 15 segundos.`, { reaccion: 'salta' }); }
-        else decir(`Turno de ${nombre(st.turn)}. Está moviendo su barco…`);
+        A.play('turn'); rJuego.banner(`RONDA ${st.round}`, '#FFD84A', 1100);
+        decir(`¡A moverse! Los dos se mueven a la vez: tienes ${C.MOVE_BUDGET} pasos de motor y 15 segundos.`, { reaccion: 'salta' });
         break;
       case 'AIMING':
-        if (mio) { setMira({}); decir('¡Ajusta tu cañón! Elige ángulo, potencia y proyectil… ¡y fuego!', { pose: 'point' }); }
-        else decir(`${nombre(st.turn)} está apuntando. ¡Atento al cielo!`);
+        disparoEnVuelo = false; setMira({});
+        rJuego.banner('¡APUNTEN!', '#FFD84A', 1000);
+        decir('¡Ajusta tu cañón! Tu disparo es secreto hasta que disparen los dos.', { pose: 'point' });
         break;
       case 'PAUSED': {
         const p = st.players.findIndex(x => x && !x.connected);
@@ -278,14 +283,15 @@
         break;
       }
       case 'GAME_OVER': {
-        const gane = st.winner === yo;
+        const empate = st.winner === null && st.reason === 'empate', gane = st.winner === yo;
         A.play(gane ? 'win' : 'lose');
         modelo.winner = st.winner;
-        modelo.sinking = st.reason === 'hp' ? 1 - st.winner : null; modelo.sinkT = 0;
-        rJuego.banner(gane ? '¡CONECTI DOMINA EL MAR!' : '¡VOLVEREMOS MÁS FUERTES!', gane ? '#FFD84A' : '#9FC3FF', 2600);
+        modelo.sinking = empate ? 'ambos' : st.reason === 'hp' ? 1 - st.winner : null; modelo.sinkT = 0;
+        rJuego.banner(empate ? '¡EMPATE!' : gane ? '¡CONECTI DOMINA EL MAR!' : '¡VOLVEREMOS MÁS FUERTES!', gane || empate ? '#FFD84A' : '#9FC3FF', 2600);
         if (gane) for (let i = 0; i < 4; i++) setTimeout(() => rJuego.explosion(60 + Math.random() * 360, 40 + Math.random() * 60, false), 300 + i * 350);
-        decir(gane ? (st.reason === 'abandono' ? `${nombre(rival())} abandonó la partida. ¡Victoria para Conecti!` : '¡Victoria para Conecti! ¡Dominamos el mar!')
-                   : '¡Volveremos más fuertes! Pide la revancha.', { reaccion: gane ? 'salta' : 'tiembla', pose: gane ? 'cheer' : 'sad' });
+        decir(empate ? '¡Empate! Los dos barcos se hundieron a la vez. ¡Pidan la revancha!'
+          : gane ? (st.reason === 'abandono' ? `${nombre(rival())} abandonó la partida. ¡Victoria para Conecti!` : '¡Victoria para Conecti! ¡Dominamos el mar!')
+          : '¡Volveremos más fuertes! Pide la revancha.', { reaccion: gane ? 'salta' : 'tiembla', pose: gane ? 'cheer' : 'sad' });
         break;
       }
     }
@@ -307,7 +313,7 @@
     } else if (imp.type === 'water') {
       rJuego.salpicadura(x); A.play('splash');
       rJuego.banner('¡AL AGUA!', '#9BD8FF', 1200);
-      decir(mio ? '¡Al agua! Ajusta el ángulo o la potencia.' : '¡El enemigo ha fallado! Es nuestra oportunidad.', { reaccion: mio ? 'tiembla' : 'salta' });
+      decir(mio ? '¡Al agua! Ajusta el ángulo o la potencia.' : '¡El enemigo ha fallado!', { reaccion: mio ? 'tiembla' : 'salta' });
     } else {
       rJuego.banner('¡DISPARO FALLIDO!', '#9FC3FF', 1200); A.play('splash');
       decir(mio ? '¡Disparo fallido! Se fue fuera del mar.' : `¡${nombre(p.shooter)} disparó fuera del mar!`);
@@ -318,15 +324,15 @@
   function pintarFin() {
     const ov = $('ov-fin');
     if (!st || st.phase !== 'GAME_OVER') { ov.hidden = true; return; }
-    const gane = st.winner === yo, r = st.players[rival()];
+    const empate = st.winner === null, gane = st.winner === yo, r = st.players[rival()];
     ov.hidden = false;
-    ov.classList.toggle('gana', gane); ov.classList.toggle('pierde', !gane);
-    $('fin-titulo').textContent = gane ? '¡VICTORIA NAVAL!' : '¡VOLVEREMOS MÁS FUERTES!';
+    ov.classList.toggle('gana', gane || empate); ov.classList.toggle('pierde', !gane && !empate);
+    $('fin-titulo').textContent = empate ? '¡EMPATE!' : gane ? '¡VICTORIA NAVAL!' : '¡VOLVEREMOS MÁS FUERTES!';
     $('fin-titulo').classList.toggle('tilde', /[ÁÉÍÓÚÑ]/.test($('fin-titulo').textContent));
-    $('fin-texto').textContent = gane
-      ? `Ganó ${nombre(yo)}${st.reason === 'abandono' ? ' (el rival abandonó)' : ''}. ¡Conecti domina el mar!`
+    $('fin-texto').textContent = empate ? 'Los dos barcos se hundieron en la misma ronda. ¡Nadie domina el mar… todavía!'
+      : gane ? `Ganó ${nombre(yo)}${st.reason === 'abandono' ? ' (el rival abandonó)' : ''}. ¡Conecti domina el mar!`
       : `Ganó ${nombre(st.winner)}. Tu barco se hundió, pero Conecti no se rinde.`;
-    UI.sprite($('c-fin'), gane ? 'cheer' : 'sad', miColor()); $('c-fin').style.width = '';
+    UI.sprite($('c-fin'), gane ? 'cheer' : empate ? 'idle' : 'sad', miColor()); $('c-fin').style.width = '';
     const rivalSeFue = !r || r.left;
     const rivalPide = r && r.rematch && !rivalSeFue;
     $('b-revancha').disabled = rivalSeFue || (st.players[yo] && st.players[yo].rematch);
@@ -364,6 +370,7 @@
     if (!codigo || s.code !== codigo) return;
     offset = s.serverNow - Date.now();
     st = s;
+    st.moved = st.moved || [false, false]; st.locked = st.locked || [false, false];
     NET.session.touch();
     if (s.phase === 'LOBBY') { UI.show('s-sala'); pintarSala(); return; }
     if ($('s-juego').hidden) { UI.show('s-juego'); modelo.ships.forEach((sh, i) => { sh.x = s.ships[i].x; }); }
@@ -371,21 +378,23 @@
     alCambiarFase();
     pintarControles(); pintarFin(); pintarPausa();
   });
-  NET.on('aim', a => { if (st && a.slot !== yo) st.aim[a.slot] = { angle: a.angle, power: a.power, projectile: a.projectile }; });
-  NET.on('shot', p => {
+  // Los dos disparos salen juntos
+  NET.on('shots', p => {
     if (!st) return;
-    st.aim[p.shooter] = { angle: p.angle, power: p.power, projectile: p.projectile };
-    A.play('fire'); A.play('whistle', p.flightMs);
-    rJuego.pose(p.shooter, 'cheer', 1000);
-    if (p.shooter === yo) decir('¡Fuego!', { reaccion: 'salta', pose: 'cheer' });
-    rJuego.disparo(p, () => resultadoDisparo(p));
+    const shots = p.shots || [], missed = p.missed || [];
+    for (const sh of shots) {
+      st.aim[sh.shooter] = { angle: sh.angle, power: sh.power, projectile: sh.projectile };
+      rJuego.pose(sh.shooter, 'cheer', 1000);
+      rJuego.disparo(sh, () => resultadoDisparo(sh));
+    }
+    if (shots.length) { A.play('fire'); A.play('whistle', Math.max(...shots.map(x => x.flightMs))); }
+    if (shots.length === 2) { rJuego.banner('¡FUEGO CRUZADO!', '#FF9A2E', 1100); decir('¡Fuego! Los dos proyectiles están en el aire…', { reaccion: 'salta', pose: 'cheer' }); }
+    else if (missed.includes(yo) && missed.length === 2) { rJuego.banner('¡TIEMPO!', '#FF4D5E', 1200); A.play('alert'); decir('¡Nadie disparó a tiempo! Siguiente ronda.', { pose: 'sad' }); }
+    else if (missed.includes(yo)) { rJuego.banner('¡TIEMPO!', '#FF4D5E', 1200); A.play('alert'); decir('¡Se acabó el tiempo! Perdiste tu disparo de esta ronda.', { reaccion: 'tiembla', pose: 'sad' }); }
+    else if (missed.length) decir(`¡${nombre(rival())} no disparó a tiempo! Solo vuela tu proyectil.`, { reaccion: 'salta', pose: 'cheer' });
     pintarControles();
   });
   NET.on('resolution', r => { if (st) r.hp.forEach((h, i) => { st.ships[i].hp = h; }); UI.hud(st, yo); });
-  NET.on('timeout', t => {
-    rJuego.banner('¡TIEMPO!', '#FF4D5E', 1200); A.play('alert');
-    decir(t.shooter === yo ? '¡Se acabó el tiempo! Perdiste el disparo de este turno.' : `${nombre(t.shooter)} no disparó a tiempo. ¡Nos toca!`, { reaccion: t.shooter === yo ? 'tiembla' : 'salta' });
-  });
 
   // ---------------- Bucle de dibujo ----------------
   function actualizarModelo(dt) {
@@ -400,14 +409,17 @@
       s.x = Math.abs(d) <= v ? meta : s.x + Math.sign(d) * v;
       s.hp = st.ships[i].hp;
     });
-    const enTurno = ['MOVEMENT', 'AIMING', 'PROJECTILE', 'RESOLUTION'].includes(st.phase);
-    modelo.turn = st.turn; modelo.enJuego = enTurno;
-    modelo.aim = [0, 1].map(i => (i === yo && st.phase === 'AIMING' && st.turn === yo ? aimLocal : st.aim[i]));
-    modelo.moveHint = st.phase === 'MOVEMENT' ? { slot: st.turn, min: C.ZONES[st.turn][0], max: C.ZONES[st.turn][1], x: st.ships[st.turn].x, left: st.ships[st.turn].moveLeft } : null;
-    modelo.aimGuide = st.phase === 'AIMING' && st.turn === yo && !disparoEnVuelo ? yo : null;
+    const enRonda = ['MOVEMENT', 'AIMING'].includes(st.phase);
+    modelo.turn = -1; modelo.enJuego = enRonda;
+    modelo.listos = st.phase === 'MOVEMENT' ? st.moved : st.phase === 'AIMING' ? st.locked : [false, false];
+    modelo.decidiendo = [0, 1].map(i => enRonda && !modelo.listos[i]);
+    // Tu cañón muestra tu mira (solo en tu pantalla); el del rival, su último disparo ya lanzado
+    modelo.aim = [0, 1].map(i => (i === yo && st.phase === 'AIMING' ? aimLocal : st.aim[i]));
+    modelo.moveHint = fase() === 'move' ? { slot: yo, min: C.ZONES[yo][0], max: C.ZONES[yo][1], x: st.ships[yo].x, left: st.ships[yo].moveLeft } : null;
+    modelo.aimGuide = fase() === 'aim' ? yo : null;
     modelo.poseBase = [0, 1].map(i => {
       if (st.phase === 'GAME_OVER') return i === st.winner ? 'cheer' : 'sad';
-      if (st.phase === 'AIMING' && st.turn === i) return 'point';
+      if (st.phase === 'AIMING') return st.locked[i] ? 'cheer' : 'point';
       return null;
     });
   }
@@ -415,16 +427,17 @@
   function reloj() {
     const el = $('hud-reloj'), t = $('hud-turno');
     if (!st) return;
-    const etiquetas = { WAITING: '¡A ZARPAR!', MOVEMENT: 'MOVIMIENTO', AIMING: 'ATAQUE', PROJECTILE: '¡FUEGO!', RESOLUTION: 'DAÑOS', PAUSED: 'PAUSA', GAME_OVER: 'FIN', NEXT_TURN: '…' };
-    const quien = st.turn === yo ? 'TU TURNO' : 'RIVAL';
-    t.textContent = ['MOVEMENT', 'AIMING'].includes(st.phase) ? `${quien} · ${etiquetas[st.phase]}` : etiquetas[st.phase] || '';
+    const etiquetas = { WAITING: '¡A ZARPAR!', PROJECTILE: '¡FUEGO!', RESOLUTION: 'DAÑOS', PAUSED: 'PAUSA', GAME_OVER: 'FIN', NEXT_TURN: '…' };
+    if (st.phase === 'MOVEMENT') t.textContent = `RONDA ${st.round} · ${st.moved[yo] ? 'ESPERANDO' : 'MOVIMIENTO'}`;
+    else if (st.phase === 'AIMING') t.textContent = `RONDA ${st.round} · ${st.locked[yo] ? 'LISTO' : 'ATAQUE'}`;
+    else t.textContent = etiquetas[st.phase] || '';
     let seg = '';
     if (st.phaseEndsAt && ['MOVEMENT', 'AIMING', 'WAITING'].includes(st.phase)) {
       const s = Math.max(0, Math.ceil((st.phaseEndsAt - ahoraServidor()) / 1000));
       seg = String(s).padStart(2, '0');
       const urgente = s <= 5 && st.phase !== 'WAITING';
       el.classList.toggle('urgente', urgente);
-      if (urgente && st.turn === yo && s !== ultimoTick && s > 0) { ultimoTick = s; A.play('tick'); }
+      if (urgente && fase() && s !== ultimoTick && s > 0) { ultimoTick = s; A.play('tick'); }
     } else if (st.phase === 'PAUSED') { seg = '❚❚'; el.classList.remove('urgente'); }
     else { seg = '--'; el.classList.remove('urgente'); }
     el.textContent = seg;
@@ -451,7 +464,7 @@
   requestAnimationFrame(cuadro);
 
   // Solo lectura, para pruebas manuales/automáticas desde la consola (no cambia nada del juego)
-  window.__debug = () => ({ yo, codigo, phase: st && st.phase, turn: st && st.turn, ships: st ? st.ships.map(s => ({ x: s.x, hp: s.hp, moveLeft: s.moveLeft })) : [] });
+  window.__debug = () => ({ yo, codigo, phase: st && st.phase, round: st && st.round, moved: st && st.moved, locked: st && st.locked, ships: st ? st.ships.map(s => ({ x: s.x, hp: s.hp, moveLeft: s.moveLeft })) : [] });
 
   // ---------------- Arranque ----------------
   const salaURL = new URLSearchParams(location.search).get('sala');

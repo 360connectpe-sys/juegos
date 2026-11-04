@@ -4,7 +4,7 @@
 Batalla naval de artillería 1 contra 1, online y por turnos, en pixel art de 8 bits, con **Conecti** (la mascota de 360 Connect) como capitán.
 
 - Dos barcos enfrentados en vista lateral, sobre el mar de la costa de Trujillo (cerros, muelle de Huanchaco y caballitos de totora al fondo).
-- Cada turno: **mover** el barco (máx. 24 px, 15 s) → **apuntar** ángulo (15°–80°) y potencia (20 %–100 %) → **disparar** (20 s).
+- **Turnos simultáneos:** en cada ronda los dos **mueven** su barco a la vez (máx. 24 px, 15 s), luego los dos **apuntan en secreto** ángulo (15°–80°) y potencia (20 %–100 %) y **disparan** (20 s). Los dos proyectiles salen juntos y el daño se aplica a la vez; si los dos barcos se hunden en la misma ronda, es **empate**.
 - Proyectiles pixelados de **TikTok** e **Instagram** (misma física y daño; solo cambia el dibujo y la estela).
 - Daño por zona del casco: **proa y popa −20 HP**, **centro blindado −8 HP**. Cada barco tiene 100 HP.
 - Conecti en **morado #8A2BE2**, **azul #00BFFF** o **verde #32CD32**; el color del barco se elige aparte.
@@ -123,7 +123,7 @@ conecti-naval-battle/
 └── tests/                    physics · collisions · rooms · multiplayer (servidor real + 2 clientes)
 ```
 
-**Máquina de estados:** `LOBBY → WAITING → MOVEMENT → AIMING → PROJECTILE → RESOLUTION → NEXT_TURN → … → GAME_OVER` (más `PAUSED` si alguien se desconecta).
+**Máquina de estados (turnos simultáneos):** `LOBBY → WAITING → MOVEMENT → AIMING → PROJECTILE → RESOLUTION → NEXT_TURN → … → GAME_OVER` (más `PAUSED` si alguien se desconecta). `MOVEMENT` termina cuando los dos confirman o a los 15 s; `AIMING` cuando los dos disparan o a los 20 s (quien no disparó pierde ese tiro). Mientras apuntan, el rival solo ve que ya disparaste (`locked`), nunca tu ángulo ni tu potencia: el servidor guarda los disparos en secreto y los lanza juntos (evento `shots`).
 
 **El servidor es la única autoridad** sobre posición, turnos, tiempos, física, colisiones, daño, vida, victoria y desconexiones. El cliente envía solo intenciones (`move {dx}`, `endMove`, `aim`, `fire {angle, power, projectile}`); si manda valores de daño o vida, se ignoran. El disparo se simula completo en el servidor y se envía la trayectoria ya calculada (`shot`), así los dos teléfonos ven exactamente lo mismo.
 

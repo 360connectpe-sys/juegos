@@ -60,7 +60,7 @@
     const parts = [];        // partículas cuadradas
     const textos = [];       // números flotantes
     let banner = null, shake = 0, flash = 0;
-    let proyectil = null;    // { path, flightMs, t0, tipo, onEnd }
+    const proyectiles = [];  // { path, flightMs, t0, tipo, onEnd } — pueden volar dos a la vez
     const capitan = [{ pose: null, hasta: 0 }, { pose: null, hasta: 0 }];
     const golpeBarco = [0, 0];
     const nubes = Array.from({ length: 6 }, (_, i) => ({ x: i * 90 + Math.random() * 40, y: 18 + (i % 3) * 22 + Math.random() * 8, v: 3 + Math.random() * 4, w: 26 + Math.random() * 22 }));
@@ -93,15 +93,15 @@
       texto(txt, x, y, color = '#FFD84A') { textos.push({ txt, x, y, t: 0, color }); },
       banner(txt, color = '#FFD84A', ms = 1500) { banner = { txt, color, t: 0, ms }; },
       disparo({ path, flightMs, projectile, shooter }, onEnd) {
-        proyectil = { path, flightMs, t0: performance.now(), tipo: projectile, onEnd, shooter, rot: 0 };
+        proyectiles.push({ path, flightMs, t0: performance.now(), tipo: projectile, onEnd, shooter, rot: 0 });
         const p0 = path[0];
         for (let i = 0; i < 12; i++) particula(p0[0], p0[1], C.FACING[shooter] * (20 + Math.random() * 40), -10 - Math.random() * 30, 0.4, i % 2 ? '#FFFFFF' : '#C8CCD6', 3, -20);
         golpeBarco[shooter] = -0.2;
       },
-      terminarDisparo() { if (proyectil) { const p = proyectil; proyectil = null; p.onEnd && p.onEnd(); } },
+      terminarDisparo() { for (const p of proyectiles.splice(0)) p.onEnd && p.onEnd(); },
       pose(slot, pose, ms = 1200) { capitan[slot] = { pose, hasta: performance.now() + ms }; },
       golpe(slot) { golpeBarco[slot] = 0.5; },
-      reset() { parts.length = 0; textos.length = 0; banner = null; proyectil = null; anillos.length = 0; capitan[0] = { pose: null, hasta: 0 }; capitan[1] = { pose: null, hasta: 0 }; },
+      reset() { parts.length = 0; textos.length = 0; banner = null; proyectiles.length = 0; anillos.length = 0; capitan[0] = { pose: null, hasta: 0 }; capitan[1] = { pose: null, hasta: 0 }; },
       draw,
     };
     const anillos = [];
@@ -208,7 +208,7 @@
     // ---------- barco ----------
     function barco(slot, s, m, t) {
       const f = C.FACING[slot];
-      const hund = m.sinking === slot ? Math.min(1, m.sinkT / 3.5) : 0;
+      const hund = (m.sinking === slot || m.sinking === 'ambos') ? Math.min(1, m.sinkT / 3.5) : 0;
       const bob = Math.round(Math.sin(t * 2 + slot * 1.7) * 1 + golpeBarco[slot] * 4 * Math.sin(t * 40));
       const cx = Math.round(s.x), dy = bob + Math.round(hund * 40);
       const col = m.colores[slot].ship, osc = tono(col, -0.35), clr = tono(col, 0.35);
@@ -277,7 +277,7 @@
     }
 
     function barraVida(slot, s, m) {
-      if (m.sinking === slot && m.sinkT > 1) return;
+      if ((m.sinking === slot || m.sinking === 'ambos') && m.sinkT > 1) return;
       const cx = Math.round(s.x), y = 140, w = 48;
       const v = Math.max(0, s.hp) / C.MAX_HP;
       ctx.fillStyle = '#0F1B3D'; ctx.fillRect(cx - w / 2 - 2, y - 2, w + 4, 8);
@@ -285,8 +285,10 @@
       ctx.fillStyle = v > 0.5 ? '#3BD16F' : v > 0.25 ? '#FFC928' : '#FF4D5E';
       ctx.fillRect(cx - w / 2, y, Math.round(w * v), 4);
       ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillRect(cx - w / 2, y, Math.round(w * v), 1);
-      texto8(m.nombres[slot], cx, y - 12, slot === m.turn && m.enJuego ? '#FFD84A' : '#FFFFFF', 'center');
-      if (slot === m.turn && m.enJuego) { // flecha de turno que rebota
+      const decide = m.enJuego && m.decidiendo && m.decidiendo[slot];
+      texto8(m.nombres[slot], cx, y - 12, decide ? '#FFD84A' : '#FFFFFF', 'center');
+      if (m.enJuego && m.listos && m.listos[slot]) texto8('LISTO', cx, y - 24, '#3BD16F', 'center');
+      else if (decide) { // flecha que rebota: todavía está decidiendo
         const b = Math.round(Math.abs(Math.sin(performance.now() / 200)) * 3);
         ctx.fillStyle = '#FFD84A';
         ctx.fillRect(cx - 3, y - 24 - b, 7, 2); ctx.fillRect(cx - 2, y - 22 - b, 5, 2); ctx.fillRect(cx - 1, y - 20 - b, 3, 2);
@@ -332,19 +334,20 @@
     }
 
     function dibujarProyectil(ahora) {
-      if (!proyectil) return;
-      const p = proyectil, k = Math.min(1, (ahora - p.t0) / p.flightMs);
-      const idx = k * (p.path.length - 1), i = Math.floor(idx), fr = idx - i;
-      const a = p.path[i], b = p.path[Math.min(i + 1, p.path.length - 1)];
-      const x = a[0] + (b[0] - a[0]) * fr, y = a[1] + (b[1] - a[1]) * fr;
-      p.rot += 0.25 * C.FACING[p.shooter];
-      // Estela
-      const est = S.ICONOS[p.tipo].estela;
-      for (let j = 0; j < 2; j++) particula(x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, 0.45, est[(Math.random() * est.length) | 0], p.tipo === 'tiktok' ? 2 : 1 + (Math.random() < 0.5), 0);
-      const ico = iconoSprite(p.tipo);
-      ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.rotate(Math.round(p.rot / (Math.PI / 8)) * (Math.PI / 8));
-      ctx.drawImage(ico, -6, -6); ctx.restore();
-      if (k >= 1) { proyectil = null; p.onEnd && p.onEnd(); }
+      for (const p of proyectiles.slice()) {
+        const k = Math.min(1, (ahora - p.t0) / p.flightMs);
+        const idx = k * (p.path.length - 1), i = Math.floor(idx), fr = idx - i;
+        const a = p.path[i], b = p.path[Math.min(i + 1, p.path.length - 1)];
+        const x = a[0] + (b[0] - a[0]) * fr, y = a[1] + (b[1] - a[1]) * fr;
+        p.rot += 0.25 * C.FACING[p.shooter];
+        // Estela
+        const est = S.ICONOS[p.tipo].estela;
+        for (let j = 0; j < 2; j++) particula(x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, 0.45, est[(Math.random() * est.length) | 0], p.tipo === 'tiktok' ? 2 : 1 + (Math.random() < 0.5), 0);
+        const ico = iconoSprite(p.tipo);
+        ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.rotate(Math.round(p.rot / (Math.PI / 8)) * (Math.PI / 8));
+        ctx.drawImage(ico, -6, -6); ctx.restore();
+        if (k >= 1) { proyectiles.splice(proyectiles.indexOf(p), 1); p.onEnd && p.onEnd(); }
+      }
     }
 
     function efectos(dt) {

@@ -14,7 +14,7 @@ function manager(extra = {}) {
   const m = createRoomManager({ timings: { ...FAST, ...extra }, random: () => 0.1, emit: (room, ev, p) => events.push([ev, p]), sync: () => {} });
   return { m, events };
 }
-/** Crea una sala con 2 jugadores listos y espera a que empiece el turno del jugador 0. */
+/** Crea una sala con 2 jugadores listos y espera a que empiece la primera ronda. */
 async function partida(extra) {
   const { m, events } = manager(extra);
   const a = m.createRoom(P('Ana'), 'A');
@@ -90,26 +90,33 @@ test('reconexión solo con el token correcto', () => {
   cleanup(m);
 });
 
-test('empieza al estar los dos listos y sortea el primer turno', async () => {
+const { publicState } = require('../server/gameState');
+const tiroA = (room, shooter, where) => findShot({ shooter, ships: room.state.ships, where });
+const alAgua = i => i.type === 'water';
+
+test('empiezan los dos a la vez, cada uno con 24 px de motor', async () => {
   const { m, room, events } = await partida();
-  assert.equal(room.state.turn, 0);             // random() = 0.1 → empieza el jugador 0
   assert.ok(events.some(([e]) => e === 'matchStart'));
-  assert.equal(room.state.ships[0].moveLeft, C.MOVE_BUDGET);
+  assert.deepEqual(room.state.ships.map(s => s.moveLeft), [C.MOVE_BUDGET, C.MOVE_BUDGET]);
+  assert.equal(room.state.round, 1);
   cleanup(m);
 });
 
-test('movimiento: solo el jugador activo, máximo 24 px y sin recuperar presupuesto', async () => {
+test('movimiento simultáneo: cada uno con su presupuesto, sin recuperarlo yendo y viniendo', async () => {
   const { m, room } = await partida();
-  assert.equal(m.engine.move(room, 1, 4), 0, 'el rival no se mueve fuera de su turno');
-  const x0 = room.state.ships[0].x;
+  const x0 = room.state.ships[0].x, x1 = room.state.ships[1].x;
   m.engine.move(room, 0, 4); m.engine.move(room, 0, -4); m.engine.move(room, 0, 4);
+  m.engine.move(room, 1, -4);
   assert.equal(room.state.ships[0].x, x0 + 4);
   assert.equal(room.state.ships[0].moveLeft, C.MOVE_BUDGET - 12, 'ir y volver también gasta');
+  assert.equal(room.state.ships[1].x, x1 - 4, 'el rival se mueve al mismo tiempo');
   for (let i = 0; i < 10; i++) m.engine.move(room, 0, 4);
-  assert.equal(room.state.ships[0].moveLeft, 0);
   assert.equal(room.state.ships[0].x, x0 + 16, '4 − 4 + 4 y luego solo 12 más hasta agotar los 24');
-  assert.ok(Math.abs(room.state.ships[0].x - x0) <= C.MOVE_BUDGET);
-  assert.equal(room.state.phase, 'AIMING', 'al agotar el presupuesto pasa a apuntar');
+  assert.equal(room.state.moved[0], true, 'al agotar el motor queda confirmado');
+  assert.equal(room.state.phase, 'MOVEMENT', 'sigue esperando al otro');
+  assert.equal(m.engine.move(room, 0, 4), 0, 'ya no se mueve más esta ronda');
+  m.engine.confirmMove(room, 1);
+  assert.equal(room.state.phase, 'AIMING', 'cuando los dos confirman, pasan a apuntar');
   cleanup(m);
 });
 
@@ -122,40 +129,68 @@ test('movimiento: no sale de su zona', async () => {
   cleanup(m);
 });
 
-test('tiempo de movimiento agotado → pasa a apuntar; tiempo de apuntar agotado → turno del rival', async () => {
+test('tiempos agotados: movimiento → ataque; ataque sin disparos → siguiente ronda', async () => {
   const { m, room, events } = await partida();
   await until(() => room.state.phase === 'AIMING', 1000);
-  await until(() => room.state.phase === 'MOVEMENT' && room.state.turn === 1, 2000);
-  assert.ok(events.some(([e, p]) => e === 'timeout' && p.shooter === 0));
+  await until(() => room.state.phase === 'MOVEMENT' && room.state.round === 2, 3000);
+  const sh = events.find(([e]) => e === 'shots')[1];
+  assert.deepEqual(sh.shots, []);
+  assert.deepEqual(sh.missed, [0, 1], 'quien no disparó pierde el tiro');
   cleanup(m);
 });
 
-test('disparo: solo en AIMING, una vez por turno, el daño lo calcula el servidor', async () => {
+test('disparo secreto: no se revela hasta que salen los dos juntos', async () => {
   const { m, room, events } = await partida({ AIM_MS: 5000 });
-  const tiro = findShot({ shooter: 0, ships: room.state.ships, where: i => i.type === 'hull' && i.target === 1 && i.zone === 'proa' });
-  assert.equal(m.engine.fire(room, 0, { angle: tiro.angle, power: tiro.power, projectile: 'tiktok' }), false, 'no dispara durante MOVEMENT');
-  m.engine.confirmMove(room, 0);
-  assert.equal(room.state.phase, 'AIMING');
-  assert.equal(m.engine.fire(room, 1, { angle: 45, power: 50, projectile: 'tiktok' }), false, 'el rival no dispara');
-  assert.equal(m.engine.fire(room, 0, { angle: tiro.angle, power: tiro.power, projectile: 'tiktok' }), true);
-  assert.equal(m.engine.fire(room, 0, { angle: tiro.angle, power: tiro.power, projectile: 'tiktok' }), false, 'sin disparos duplicados');
+  m.engine.confirmMove(room, 0); m.engine.confirmMove(room, 1);
+  const t0 = tiroA(room, 0, i => i.type === 'hull' && i.target === 1 && i.zone === 'proa');
+  assert.equal(m.engine.fire(room, 0, { angle: t0.angle, power: t0.power, projectile: 'tiktok' }), true);
+  assert.equal(m.engine.fire(room, 0, { angle: 45, power: 50, projectile: 'tiktok' }), false, 'un solo disparo por ronda');
+  const pub = publicState(room);
+  assert.deepEqual(pub.locked, [true, false], 'el rival sabe que ya disparó…');
+  assert.notEqual(pub.aim[0].angle, t0.angle, '…pero no hacia dónde');
+  assert.equal(JSON.stringify(pub).includes('pending'), false);
+  assert.equal(room.state.phase, 'AIMING', 'espera al segundo');
+  assert.ok(!events.some(([e]) => e === 'shots'));
+  const t1 = tiroA(room, 1, alAgua);
+  m.engine.fire(room, 1, { angle: t1.angle, power: t1.power, projectile: 'instagram' });
+  assert.equal(room.state.phase, 'PROJECTILE', 'salen los dos a la vez');
+  const sh = events.find(([e]) => e === 'shots')[1];
+  assert.equal(sh.shots.length, 2);
+  assert.deepEqual(sh.shots.map(x => x.shooter), [0, 1]);
   await until(() => events.some(([e]) => e === 'resolution'));
-  assert.equal(room.state.ships[1].hp, 80, 'proa: −20');
-  await until(() => room.state.turn === 1 && room.state.phase === 'MOVEMENT');
+  assert.deepEqual(room.state.ships.map(s => s.hp), [100, 80], 'proa: −20; el otro cayó al agua');
+  await until(() => room.state.phase === 'MOVEMENT' && room.state.round === 2);
   cleanup(m);
 });
 
 test('impacto en el centro blindado resta 8 y la vida nunca baja de 0', async () => {
   const { m, room, events } = await partida({ AIM_MS: 5000 });
   room.state.ships[1].hp = 5;
-  const tiro = findShot({ shooter: 0, ships: room.state.ships, where: i => i.type === 'hull' && i.target === 1 && i.zone === 'centro' });
-  m.engine.confirmMove(room, 0);
-  m.engine.fire(room, 0, { angle: tiro.angle, power: tiro.power, projectile: 'instagram' });
+  m.engine.confirmMove(room, 0); m.engine.confirmMove(room, 1);
+  const t0 = tiroA(room, 0, i => i.type === 'hull' && i.target === 1 && i.zone === 'centro');
+  const t1 = tiroA(room, 1, alAgua);
+  m.engine.fire(room, 0, { angle: t0.angle, power: t0.power, projectile: 'instagram' });
+  m.engine.fire(room, 1, { angle: t1.angle, power: t1.power, projectile: 'tiktok' });
   await until(() => room.state.phase === 'GAME_OVER');
   assert.equal(room.state.ships[1].hp, 0);
   assert.equal(room.state.winner, 0);
   assert.equal(room.state.reason, 'hp');
   assert.ok(events.some(([e]) => e === 'gameOver'));
+  cleanup(m);
+});
+
+test('si los dos barcos se hunden en la misma ronda, es empate', async () => {
+  const { m, room } = await partida({ AIM_MS: 5000 });
+  room.state.ships[0].hp = 8; room.state.ships[1].hp = 8;
+  m.engine.confirmMove(room, 0); m.engine.confirmMove(room, 1);
+  const t0 = tiroA(room, 0, i => i.type === 'hull' && i.target === 1);
+  const t1 = tiroA(room, 1, i => i.type === 'hull' && i.target === 0);
+  m.engine.fire(room, 0, { angle: t0.angle, power: t0.power, projectile: 'tiktok' });
+  m.engine.fire(room, 1, { angle: t1.angle, power: t1.power, projectile: 'tiktok' });
+  await until(() => room.state.phase === 'GAME_OVER');
+  assert.deepEqual(room.state.ships.map(s => s.hp), [0, 0]);
+  assert.equal(room.state.winner, null);
+  assert.equal(room.state.reason, 'empate');
   cleanup(m);
 });
 
@@ -186,10 +221,12 @@ test('si se van los dos, la sala se borra después del período de gracia', asyn
 test('revancha: empieza solo cuando los dos aceptan y reinicia vida y posiciones', async () => {
   const { m, room } = await partida({ AIM_MS: 5000 });
   room.state.ships[1].hp = 8; room.state.ships[0].x += 10;
-  const tiro = findShot({ shooter: 0, ships: room.state.ships, where: i => i.type === 'hull' && i.target === 1 });
-  m.engine.confirmMove(room, 0);
-  m.engine.fire(room, 0, { angle: tiro.angle, power: tiro.power, projectile: 'tiktok' });
-  await until(() => room.state.phase === 'GAME_OVER');
+  m.engine.confirmMove(room, 0); m.engine.confirmMove(room, 1);
+  const t0 = tiroA(room, 0, i => i.type === 'hull' && i.target === 1);
+  const t1 = tiroA(room, 1, alAgua);
+  m.engine.fire(room, 0, { angle: t0.angle, power: t0.power, projectile: 'tiktok' });
+  m.engine.fire(room, 1, { angle: t1.angle, power: t1.power, projectile: 'tiktok' });
+  await until(() => room.state.phase === 'GAME_OVER', 3000);
   m.engine.requestRematch(room, 0);
   assert.equal(room.state.phase, 'GAME_OVER', 'falta que acepte el otro');
   m.engine.requestRematch(room, 1);

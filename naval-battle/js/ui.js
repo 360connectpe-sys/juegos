@@ -86,8 +86,9 @@
       const el = $('hud-' + i); if (!p) { el.innerHTML = ''; return; }
       const hp = st.ships[i].hp, pct = Math.max(0, hp) / C.MAX_HP * 100;
       const cls = pct > 50 ? '' : pct > 25 ? 'media' : 'baja';
-      el.classList.toggle('activo', st.turn === i && ['MOVEMENT', 'AIMING', 'PROJECTILE'].includes(st.phase));
-      el.innerHTML = `<div class="nom"><i style="background:${C.COLORS[p.ship]}"></i><span></span></div><div class="vida"><b class="${cls}" style="width:${pct}%"></b></div><div class="hp">${hp}/${C.MAX_HP} HP${p.connected ? '' : ' · ⚠'}</div>`;
+      const listo = (st.phase === 'MOVEMENT' && st.moved && st.moved[i]) || (st.phase === 'AIMING' && st.locked && st.locked[i]);
+      el.classList.toggle('activo', ['MOVEMENT', 'AIMING'].includes(st.phase) && !listo);
+      el.innerHTML = `<div class="nom"><i style="background:${C.COLORS[p.ship]}"></i><span></span></div><div class="vida"><b class="${cls}" style="width:${pct}%"></b></div><div class="hp">${hp}/${C.MAX_HP} HP${p.connected ? '' : ' · ⚠'}${listo ? ' · ✓ LISTO' : ''}</div>`;
       el.querySelector('span').textContent = (i === yo ? 'TÚ: ' : '') + p.name;
     });
   }

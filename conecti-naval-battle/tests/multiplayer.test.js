@@ -14,7 +14,7 @@ function cliente(url) {
   const s = connect(url, { transports: ['websocket'], forceNew: true, reconnection: false });
   s.estado = null; s.eventos = [];
   s.on('state', st => { s.estado = st; });
-  for (const ev of ['shot', 'resolution', 'gameOver', 'matchStart', 'aim', 'timeout']) s.on(ev, p => s.eventos.push([ev, p]));
+  for (const ev of ['shots', 'resolution', 'gameOver', 'matchStart', 'aim', 'timeout']) s.on(ev, p => s.eventos.push([ev, p]));
   return s;
 }
 const pedir = (s, ev, p) => new Promise(r => s.emit(ev, p, r));
@@ -39,30 +39,37 @@ test('dos jugadores juegan una partida completa por red', async t => {
 
   await pedir(A, 'ready', { ready: true }); await pedir(B, 'ready', { ready: true });
   await until(() => A.estado.phase === 'MOVEMENT' && B.estado.phase === 'MOVEMENT');
-  const yo = A.estado.turn, J = yo === 0 ? A : B, R = yo === 0 ? B : A;
 
-  // Solo el jugador activo puede mover
-  assert.equal((await pedir(R, 'move', { dx: 4 })).ok && (await pedir(R, 'move', { dx: 4 })).moved > 0, false);
-  const x0 = J.estado.ships[yo].x;
-  await pedir(J, 'move', { dx: yo === 0 ? 4 : -4 });
-  await until(() => R.estado.ships[yo].x !== x0);
-  assert.equal(R.estado.ships[yo].moveLeft, 20, 'el rival ve la posición y el presupuesto sincronizados');
-  assert.equal((await pedir(J, 'move', { dx: 50 })).ok, false, 'pasos fuera de rango se rechazan');
+  // Los dos se mueven a la vez y cada uno ve el movimiento del otro
+  const x0 = A.estado.ships[0].x, x1 = A.estado.ships[1].x;
+  await pedir(A, 'move', { dx: 4 });
+  await pedir(B, 'move', { dx: -4 });
+  await until(() => B.estado.ships[0].x === x0 + 4 && A.estado.ships[1].x === x1 - 4);
+  assert.equal(A.estado.ships[1].moveLeft, 20, 'posición y presupuesto sincronizados');
+  assert.equal((await pedir(A, 'move', { dx: 50 })).ok, false, 'pasos fuera de rango se rechazan');
+  await pedir(A, 'endMove', {});
+  await until(() => B.estado.moved[0] === true);
+  assert.equal(B.estado.phase, 'MOVEMENT', 'espera a que el otro confirme');
+  await pedir(B, 'endMove', {});
+  await until(() => A.estado.phase === 'AIMING' && B.estado.phase === 'AIMING');
 
-  await pedir(J, 'endMove', {});
-  await until(() => J.estado.phase === 'AIMING');
-  await pedir(J, 'aim', { angle: 33, power: 44, projectile: 'instagram' });
-  await until(() => R.eventos.some(([e, p]) => e === 'aim' && p.angle === 33));
-
-  const tiro = findShot({ shooter: yo, ships: J.estado.ships, where: i => i.type === 'hull' && i.target === 1 - yo && i.zone !== 'centro' });
-  assert.equal((await pedir(J, 'fire', { angle: tiro.angle, power: tiro.power, projectile: 'tiktok', damage: 999 })).ok, true);
-  assert.equal((await pedir(J, 'fire', { angle: tiro.angle, power: tiro.power, projectile: 'tiktok' })).ok, false, 'no hay segundo disparo');
+  // Disparos secretos y simultáneos
+  const tA = findShot({ shooter: 0, ships: A.estado.ships, where: i => i.type === 'hull' && i.target === 1 && i.zone !== 'centro' });
+  const tB = findShot({ shooter: 1, ships: A.estado.ships, where: i => i.type === 'water' });
+  assert.equal((await pedir(A, 'fire', { angle: tA.angle, power: tA.power, projectile: 'tiktok', damage: 999 })).ok, true);
+  assert.equal((await pedir(A, 'fire', { angle: tA.angle, power: tA.power, projectile: 'tiktok' })).ok, false, 'no hay segundo disparo');
+  await until(() => B.estado.locked[0] === true);
+  assert.notEqual(B.estado.aim[0].angle, tA.angle, 'el rival no ve hacia dónde apuntó');
+  assert.equal(B.eventos.some(([e]) => e === 'shots'), false, 'nada sale hasta que disparen los dos');
+  assert.equal((await pedir(B, 'fire', { angle: tB.angle, power: tB.power, projectile: 'instagram' })).ok, true);
   await until(() => A.eventos.some(([e]) => e === 'resolution') && B.eventos.some(([e]) => e === 'resolution'));
-  const shotA = A.eventos.find(([e]) => e === 'shot')[1], shotB = B.eventos.find(([e]) => e === 'shot')[1];
-  assert.deepEqual(shotA.path, shotB.path, 'los dos ven la misma trayectoria');
-  assert.equal(shotA.impact.damage, 20, 'el daño extra enviado por el cliente se ignora');
-  await until(() => A.estado.ships[1 - yo].hp === 80 && B.estado.ships[1 - yo].hp === 80);
-  await until(() => A.estado.turn === 1 - yo && A.estado.phase === 'MOVEMENT');
+  const sA = A.eventos.find(([e]) => e === 'shots')[1], sB = B.eventos.find(([e]) => e === 'shots')[1];
+  assert.equal(sA.shots.length, 2, 'salen los dos proyectiles juntos');
+  assert.deepEqual(sA.shots.map(x => x.path), sB.shots.map(x => x.path), 'los dos ven las mismas trayectorias');
+  assert.equal(sA.shots[0].impact.damage, 20, 'el daño extra enviado por el cliente se ignora');
+  await until(() => A.estado.ships[1].hp === 80 && B.estado.ships[1].hp === 80 && A.estado.ships[0].hp === 100);
+  await until(() => A.estado.phase === 'MOVEMENT' && A.estado.round === 2);
+  const yo = 0, J = A, R = B;
 
   // Desconexión y reconexión con token
   const tokenR = R === A ? ca.token : cb.token;
