@@ -242,7 +242,7 @@ function abrirElegir(j) {
   }
 }
 
-function nuevaPelea() { victorias = [0, 0]; asalto = 1; historial.length = 0; nuevoAsalto(); }
+function nuevaPelea() { if (window.CNSTATS) CNSTATS.partida('duelo'); victorias = [0, 0]; asalto = 1; historial.length = 0; nuevoAsalto(); }
 function nuevoAsalto() {
   hp = [PJ[sel[0]].vida, PJ[sel[1]].vida]; carga = [0, 0]; perdedorKo = -1;
   banner = { txt: 'ASALTO ' + asalto, sub: '¡A PELEAR!', t: 1.4 };
@@ -604,5 +604,7 @@ $('msg').textContent = 'ELIGE UN MODO PARA EMPEZAR';
 sel = ['azul', 'morado']; hp = [100, 85];
 requestAnimationFrame(bucle);
 </script>
+<script src="../stats.js"></script>
+<script>if (window.CNSTATS) CNSTATS.visita('duelo');</script>
 </body>
 </html>

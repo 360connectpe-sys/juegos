@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Estadísticas Juegos Conecti</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+  /* Tablero de control de la sala arcade: resumen arriba, ranking y días abajo, todo en un solo tono de marca. */
+  :root {
+    --fondo:#07173A; --panel:#0F1B3D; --panel2:#16264F; --borde:#3A5BB0; --texto:#F4F9FF; --tenue:#9DBBE6; --muy-tenue:#5F7BAF;
+    --serie:#1FA4F5; --serie-hover:#63C3FF; --oro:#FFD84A; --verde:#25D366; --grid:rgba(157,187,230,.16);
+    --pixel:"Press Start 2P", ui-monospace, "Courier New", monospace;
+    --cuerpo:"VT323", ui-monospace, "Courier New", monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  html { background:var(--fondo); }
+  body { margin:0; color:var(--texto); font-family:var(--cuerpo); font-size:21px; line-height:1.1; background:var(--fondo); }
+  .pagina { max-width:980px; margin:0 auto; display:grid; gap:18px; padding-block:20px 40px;
+    padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  header { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:end; gap:10px; }
+  /* La letra pixelada grande no dibuja tildes en mayúsculas: los textos con tilde usan VT323 */
+  h1 { margin:0; font-family:var(--cuerpo); font-weight:400; font-size:clamp(40px, 9vw, 56px); line-height:.9; letter-spacing:.04em; text-shadow:3px 3px 0 #2F5BEA, 6px 6px 0 #000; }
+  h1 small { display:block; font-family:var(--pixel); font-size:10px; color:var(--serie); text-shadow:none; margin-top:8px; letter-spacing:0; }
+  .act { font-size:19px; color:var(--tenue); text-align:right; }
+  .act button { font:inherit; font-size:19px; color:var(--serie); background:none; border:0; cursor:pointer; text-decoration:underline; padding:0; }
+  /* Filtros en una sola fila */
+  .filtros { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  .grupo { display:flex; border:3px solid var(--borde); box-shadow:3px 3px 0 #000; }
+  .grupo button { font-family:var(--cuerpo); font-size:22px; letter-spacing:.06em; padding:5px 12px; color:var(--tenue); background:var(--panel); border:0; cursor:pointer; }
+  .grupo button + button { border-left:2px solid var(--borde); }
+  .grupo button[aria-pressed="true"] { background:var(--serie); color:#0F1B3D; }
+  .grupo button:focus-visible, .act button:focus-visible { outline:3px solid var(--oro); outline-offset:2px; }
+  /* Cifras */
+  .cifras { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; }
+  @media (max-width: 640px) { .cifras { grid-template-columns:1fr; } }
+  .cifra { background:var(--panel); border:3px solid var(--borde); box-shadow:4px 4px 0 #000; padding:12px 14px; display:grid; gap:6px; min-width:0; }
+  .cifra span { font-size:20px; color:var(--tenue); letter-spacing:.08em; }
+  .cifra b { font-family:var(--pixel); font-weight:400; font-size:clamp(20px, 5vw, 30px); font-variant-numeric:tabular-nums; }
+  .cifra b.nombre { font-size:clamp(12px, 3vw, 16px); line-height:1.4; color:var(--oro); overflow-wrap:anywhere; }
+  .cifra small { font-size:18px; color:var(--tenue); }
+  /* Tarjetas de gráfico */
+  .tarjeta { background:var(--panel); border:3px solid var(--borde); box-shadow:4px 4px 0 #000; padding:14px; display:grid; gap:10px; min-width:0; }
+  .tarjeta h2 { margin:0; font-weight:400; font-size:24px; letter-spacing:.06em; color:var(--oro); }
+  .tarjeta p.nota { margin:0; font-size:18px; color:var(--tenue); }
+  /* Ranking: barras horizontales de un solo tono */
+  .ranking { display:grid; gap:8px; }
+  .fila-r { display:grid; grid-template-columns:minmax(110px, 30%) 1fr auto; gap:10px; align-items:center; position:relative; }
+  .fila-r .n { font-size:20px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fila-r .pista { height:18px; position:relative; }
+  .fila-r .barra { position:absolute; left:0; top:0; bottom:0; background:var(--serie); border-radius:0 4px 4px 0; min-width:2px; }
+  .fila-r:hover .barra, .fila-r:focus-visible .barra { background:var(--serie-hover); }
+  @media (max-width: 560px) { .fila-r { grid-template-columns:minmax(0, 1.4fr) minmax(50px, 1fr) auto; } .fila-r .n { white-space:normal; line-height:1; } }
+  .fila-r .v { font-family:var(--pixel); font-size:11px; font-variant-numeric:tabular-nums; min-width:3.5em; text-align:right; }
+  .fila-r:focus-visible { outline:3px solid var(--oro); outline-offset:2px; }
+  /* Gráfico por día */
+  .dias { position:relative; }
+  .dias svg { display:block; width:100%; height:auto; overflow:visible; }
+  .dias text { font-family:var(--cuerpo); font-size:15px; fill:var(--tenue); }
+  .dias .col { fill:var(--serie); }
+  .dias .col:hover, .dias .col.on { fill:var(--serie-hover); }
+  .tip { position:absolute; pointer-events:none; background:#F4F9FF; color:#0F1B3D; border:3px solid #0F1B3D; box-shadow:3px 3px 0 #000; padding:6px 9px; font-size:19px; line-height:1; white-space:nowrap; transform:translate(-50%, -110%); z-index:2; }
+  .tip b { font-family:var(--pixel); font-weight:400; font-size:10px; }
+  /* Tabla */
+  details summary { cursor:pointer; font-family:var(--pixel); font-size:9px; color:var(--serie); }
+  .tabla-caja { overflow-x:auto; margin-top:10px; }
+  table { border-collapse:collapse; width:100%; font-size:20px; font-variant-numeric:tabular-nums; }
+  th, td { padding:6px 8px; border-bottom:1px solid var(--grid); text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  th { font-family:var(--pixel); font-weight:400; font-size:8px; color:var(--tenue); }
+  .vacio { font-size:21px; color:var(--tenue); text-align:center; padding:14px; }
+  .aviso { margin:0; font-size:18px; color:var(--muy-tenue); }
+</style>
+</head>
+<body>
+<main class="pagina">
+  <header>
+    <h1>ESTADÍSTICAS<small>JUEGOS CONECTI · 360 CONNECT</small></h1>
+    <p class="act" id="act">Cargando…</p>
+  </header>
+
+  <div class="filtros" role="group" aria-label="Filtros">
+    <div class="grupo" id="f-periodo" role="group" aria-label="Periodo">
+      <button data-v="1" aria-pressed="false">HOY</button>
+      <button data-v="7" aria-pressed="true">7 DÍAS</button>
+      <button data-v="30" aria-pressed="false">30 DÍAS</button>
+      <button data-v="0" aria-pressed="false">TOTAL</button>
+    </div>
+    <div class="grupo" id="f-metrica" role="group" aria-label="Qué contar">
+      <button data-v="p" aria-pressed="true">PARTIDAS</button>
+      <button data-v="v" aria-pressed="false">VISITAS</button>
+    </div>
+  </div>
+
+  <section class="cifras" aria-label="Resumen del periodo">
+    <div class="cifra"><span>VISITAS</span><b id="c-visitas">–</b><small id="c-visitas-n">en todos los juegos y el menú</small></div>
+    <div class="cifra"><span>PARTIDAS</span><b id="c-partidas">–</b><small>jugadas en el periodo</small></div>
+    <div class="cifra"><span>EL MÁS JUGADO</span><b class="nombre" id="c-top">–</b><small id="c-top-n"></small></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2 id="t-ranking">RANKING DE JUEGOS</h2>
+    <div class="ranking" id="ranking"></div>
+  </section>
+
+  <section class="tarjeta">
+    <h2 id="t-dias">POR DÍA</h2>
+    <div class="dias" id="dias"></div>
+    <details>
+      <summary>VER TABLA</summary>
+      <div class="tabla-caja"><table id="tabla"></table></div>
+    </details>
+  </section>
+
+  <p class="aviso">Números aproximados: una visita se cuenta una vez cada 30 minutos por pestaña; en los juegos online, cada partida la cuenta quien crea la sala. No se guardan datos personales. Esta página no está enlazada en el menú.</p>
+</main>
+
+<script>
+(function () {
+  const URL = 'https://connect-juegos-4be1b-default-rtdb.firebaseio.com/salas/STATS.json';
+  const JUEGOS = [
+    ['naval-battle', 'Conecti Naval Battle'], ['naval', 'Conecti Naval'], ['duelo-online', 'Conecti Duelo Online'],
+    ['aventura', 'Conecti Aventura'], ['duelo', 'Conecti Duelo'], ['atrapa', 'Atrapa con Conecti'], ['menu', 'Menú de juegos'],
+  ];
+  const NOMBRE = Object.fromEntries(JUEGOS);
+  const $ = id => document.getElementById(id);
+  const fmt = n => n.toLocaleString('es-PE');
+  let datos = null, periodo = 7, metrica = 'p';
+
+  // Día de hoy en Lima como AAMMDD, y los N días hacia atrás
+  function claveDia(fecha) { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(fecha).replace(/-/g, '').slice(2); }
+  function ultimosDias(n) { const r = []; for (let i = n - 1; i >= 0; i--) r.push(claveDia(new Date(Date.now() - i * 86400000))); return r; }
+  const etiqueta = k => `${k.slice(4, 6)}/${k.slice(2, 4)}`;
+
+  /** Suma por juego {v, p} en el periodo elegido. */
+  function sumas() {
+    const out = {};
+    JUEGOS.forEach(([id]) => { out[id] = { v: 0, p: 0 }; });
+    if (!datos) return out;
+    if (periodo === 0) {
+      for (const [id, x] of Object.entries(datos.t || {})) { out[id] = out[id] || { v: 0, p: 0 }; out[id].v += x.v || 0; out[id].p += x.p || 0; }
+    } else {
+      for (const k of ultimosDias(periodo)) for (const [id, x] of Object.entries((datos.d || {})[k] || {})) { out[id] = out[id] || { v: 0, p: 0 }; out[id].v += x.v || 0; out[id].p += x.p || 0; }
+    }
+    return out;
+  }
+
+  function pintar() {
+    const s = sumas();
+    const visitas = Object.values(s).reduce((a, x) => a + x.v, 0);
+    const partidas = Object.values(s).reduce((a, x) => a + x.p, 0);
+    $('c-visitas').textContent = fmt(visitas);
+    $('c-partidas').textContent = fmt(partidas);
+    const juegos = JUEGOS.filter(([id]) => id !== 'menu');
+    const top = juegos.map(([id]) => [id, s[id].p]).sort((a, b) => b[1] - a[1])[0];
+    $('c-top').textContent = top && top[1] > 0 ? NOMBRE[top[0]] : '–';
+    $('c-top-n').textContent = top && top[1] > 0 ? `${fmt(top[1])} partida${top[1] === 1 ? '' : 's'}` : 'todavía sin partidas';
+    // Ranking (las partidas no incluyen el menú)
+    const lista = (metrica === 'p' ? juegos : JUEGOS).map(([id, n]) => ({ id, n, val: s[id][metrica], v: s[id].v, p: s[id].p })).sort((a, b) => b.val - a.val);
+    const max = Math.max(1, ...lista.map(x => x.val));
+    $('t-ranking').textContent = `RANKING DE JUEGOS · ${metrica === 'p' ? 'PARTIDAS' : 'VISITAS'}`;
+    const rk = $('ranking');
+    if (!datos || lista.every(x => x.val === 0)) rk.innerHTML = '<p class="vacio">Todavía no hay datos en este periodo. Los números aparecen cuando alguien abre un juego.</p>';
+    else rk.innerHTML = lista.map(x => `<div class="fila-r" tabindex="0" title="${x.n}: ${fmt(x.v)} visitas · ${fmt(x.p)} partidas"><span class="n">${x.n}</span><span class="pista"><i class="barra" style="width:${x.val / max * 100}%"></i></span><span class="v">${fmt(x.val)}</span></div>`).join('');
+    pintarDias();
+    pintarTabla(s);
+  }
+
+  // Columnas por día: una sola serie (la métrica elegida, sumando todos los juegos)
+  function pintarDias() {
+    const angosto = $('dias').clientWidth < 520;
+    const dias = ultimosDias(angosto ? 7 : 14);
+    const vals = dias.map(k => Object.values((datos && datos.d && datos.d[k]) || {}).reduce((a, x) => a + (x[metrica] || 0), 0));
+    $('t-dias').textContent = `${metrica === 'p' ? 'PARTIDAS' : 'VISITAS'} POR DÍA · ÚLTIMOS ${dias.length} DÍAS`;
+    const W = angosto ? 360 : 700, H = angosto ? 200 : 220, izq = 34, abajo = 26, arriba = 10, ancho = (W - izq) / dias.length;
+    const max = Math.max(4, ...vals);
+    const paso = Math.ceil(max / 4), techo = paso * 4;
+    const y = v => arriba + (H - abajo - arriba) * (1 - v / techo);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${metrica === 'p' ? 'Partidas' : 'Visitas'} por día en los últimos 14 días">`;
+    for (let i = 0; i <= 4; i++) {
+      const v = paso * i, yy = y(v);
+      svg += `<line x1="${izq}" x2="${W}" y1="${yy}" y2="${yy}" stroke="var(--grid)" stroke-width="${i === 0 ? 2 : 1}"/><text x="${izq - 6}" y="${yy + 5}" text-anchor="end">${v}</text>`;
+    }
+    dias.forEach((k, i) => {
+      const x = izq + i * ancho + 3, w = ancho - 6, v = vals[i], yy = y(v), h = (H - abajo) - yy;
+      if (v > 0) svg += `<path class="col" data-i="${i}" d="M${x},${H - abajo} V${yy + 4} Q${x},${yy} ${x + 4},${yy} H${x + w - 4} Q${x + w},${yy} ${x + w},${yy + 4} V${H - abajo} Z"/>`;
+      svg += `<rect data-i="${i}" x="${x - 3}" y="${arriba}" width="${ancho}" height="${H - abajo - arriba}" fill="transparent" class="hit"/>`;
+      if (i % 2 === 1 || dias.length <= 7) svg += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${etiqueta(k)}</text>`;
+    });
+    svg += '</svg><div class="tip" id="tip" hidden></div>';
+    const cont = $('dias'); cont.innerHTML = svg;
+    const tip = $('tip');
+    cont.querySelectorAll('.hit').forEach(r => {
+      const i = +r.dataset.i;
+      const mostrar = () => {
+        const b = r.getBoundingClientRect(), c = cont.getBoundingClientRect();
+        tip.innerHTML = `${etiqueta(dias[i])} · <b>${fmt(vals[i])}</b> ${metrica === 'p' ? 'partidas' : 'visitas'}`;
+        tip.style.left = (b.left - c.left + b.width / 2) + 'px'; tip.style.top = (y(vals[i]) / H * c.height) + 'px'; tip.hidden = false;
+        cont.querySelectorAll('.col').forEach(cl => cl.classList.toggle('on', +cl.dataset.i === i));
+      };
+      r.addEventListener('pointerenter', mostrar); r.addEventListener('pointerdown', mostrar);
+      r.addEventListener('pointerleave', () => { tip.hidden = true; cont.querySelectorAll('.col').forEach(cl => cl.classList.remove('on')); });
+    });
+  }
+
+  function pintarTabla(s) {
+    const filas = JUEGOS.map(([id, n]) => `<tr><td>${n}</td><td>${fmt(s[id].v)}</td><td>${id === 'menu' ? '—' : fmt(s[id].p)}</td></tr>`).join('');
+    $('tabla').innerHTML = `<thead><tr><th>JUEGO</th><th>VISITAS</th><th>PARTIDAS</th></tr></thead><tbody>${filas}</tbody>`;
+  }
+
+  async function cargar() {
+    try {
+      const r = await fetch(URL, { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      datos = (await r.json()) || { t: {}, d: {} };
+      $('act').innerHTML = `Actualizado ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })} · <button id="b-recargar">Actualizar</button>`;
+    } catch (e) {
+      $('act').innerHTML = 'No se pudo cargar. Revisa tu internet · <button id="b-recargar">Reintentar</button>';
+    }
+    $('b-recargar').onclick = cargar;
+    pintar();
+  }
+
+  function grupo(id, alCambiar) {
+    document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => {
+      document.querySelectorAll(`#${id} button`).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      alCambiar(b.dataset.v); pintar();
+    });
+  }
+  grupo('f-periodo', v => { periodo = +v; });
+  grupo('f-metrica', v => { metrica = v; });
+  pintar();
+  cargar();
+  setInterval(cargar, 30000);
+})();
+</script>
+</body>
+</html>

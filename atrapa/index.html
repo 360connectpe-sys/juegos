@@ -77,6 +77,7 @@ let record = 0;
 try { record = +localStorage.getItem('conectiRecord') || 0; } catch (e) {}
 
 function iniciar() {
+  if (window.CNSTATS) CNSTATS.partida('atrapa');
   puntos = 0; vidas = 3; objetos = []; particulas = []; tiempo = 0; proxima = 0.6; golpe = 0;
   conecti = { x: W / 2, destino: W / 2, salto: 0 };
   jugando = true;
@@ -296,5 +297,7 @@ function bucle(ahora) {
 }
 requestAnimationFrame(bucle);
 </script>
+<script src="../stats.js"></script>
+<script>if (window.CNSTATS) CNSTATS.visita('atrapa');</script>
 </body>
 </html>

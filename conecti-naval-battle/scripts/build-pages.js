@@ -25,6 +25,9 @@ fs.copyFileSync(path.join(RAIZ, 'shared/constants.js'), path.join(DESTINO, 'shar
 fs.copyFileSync(path.join(RAIZ, 'shared/extras.js'), path.join(DESTINO, 'shared/extras.js'));
 fs.rmSync(path.join(DESTINO, 'js/network.js'));
 fs.copyFileSync(path.join(RAIZ, 'pages/net-firebase.js'), path.join(DESTINO, 'js/net-firebase.js'));
+// Contador de visitas y partidas compartido por todos los juegos (juegos/stats.js)
+const statsComun = path.join(RAIZ, '..', 'stats.js');
+if (fs.existsSync(statsComun)) { fs.copyFileSync(statsComun, path.join(DESTINO, 'js/stats.js')); fs.copyFileSync(statsComun, path.join(RAIZ, 'public/js/stats.js')); }
 
 // ---- Motor del servidor como un solo archivo para el navegador ----
 const modulos = {

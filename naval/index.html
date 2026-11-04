@@ -675,6 +675,7 @@ function pintarTablero(cont, { flota: f, marcas = {}, hundidos = {}, sel = null,
 
 // ================== Combate ==================
 function empezarCombate() {
+  if (window.CNSTATS && yo === 0) CNSTATS.partida('naval');   // una vez por partida (lo cuenta quien creó la sala)
   flota = cargarFlota() || flota;
   animados = 0; animando = false; finMostrado = false; mira = null; armaSel = 'whatsapp';
   mostrar('pCombate');
@@ -838,5 +839,7 @@ if (!db) $('errInicio').textContent = SIN_RED;
 const salaURL = new URLSearchParams(location.search).get('sala');
 if (salaURL && db) { $('inputCodigo').value = salaURL.toUpperCase().slice(0, 5); mostrar('pUnirse'); unirse(salaURL); }
 </script>
+<script src="../stats.js"></script>
+<script>if (window.CNSTATS) CNSTATS.visita('naval');</script>
 </body>
 </html>

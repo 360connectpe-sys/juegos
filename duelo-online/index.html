@@ -386,6 +386,7 @@ function abrirElegir() {
 
 // ================== Pelea ==================
 function iniciarPartida() {
+  if (window.CNSTATS && yo === 0) CNSTATS.partida('duelo-online');   // una vez por partida (lo cuenta quien creó la sala)
   sel = [jug(0).pj, jug(1).pj];
   victorias = [0, 0]; asalto = 1; ronda = 0;
   $('finEspera').textContent = '';
@@ -767,5 +768,7 @@ const salaURL = new URLSearchParams(location.search).get('sala');
 if (salaURL && db) { $('inputCodigo').value = salaURL.toUpperCase().slice(0, 4); mostrarCapa('capaUnirse'); unirse(salaURL); }
 requestAnimationFrame(bucle);
 </script>
+<script src="../stats.js"></script>
+<script>if (window.CNSTATS) CNSTATS.visita('duelo-online');</script>
 </body>
 </html>

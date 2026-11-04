@@ -339,6 +339,7 @@ function nuevoJugador() {
   J = { x: inicioX * T, y: 11 * T - 16, w: 12, h: 16, vx: 0, vy: 0, suelo: false, dir: 1, anim: 0, coyote: 0, buffer: 0, visible: true };
 }
 function nuevaPartida() {
+  if (window.CNSTATS) CNSTATS.partida('aventura');
   puntos = 0; conexiones = 0; vidas = 3; nivel = 1; inicioX = 2;
   presentarNivel();
 }
@@ -758,5 +759,7 @@ function bucle(ahora) {
 }
 requestAnimationFrame(bucle);
 </script>
+<script src="../stats.js"></script>
+<script>if (window.CNSTATS) CNSTATS.visita('aventura');</script>
 </body>
 </html>

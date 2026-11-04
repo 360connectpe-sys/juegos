@@ -317,6 +317,7 @@
     ultimaClave = clave;
     switch (st.phase) {
       case 'WAITING':
+        if (yo === 0 && window.CNSTATS) CNSTATS.partida('naval-battle');   // una vez por partida (lo cuenta quien creó la sala)
         rJuego.reset(); modelo.sinking = null; modelo.sinkT = 0; modelo.winner = null; revelando = null;
         modelo.ships.forEach((s, i) => { s.x = st.ships[i].x; });
         A.play('start');
@@ -664,6 +665,7 @@
   window.__apuntar = (angle, power, projectile) => setMira({ angle, power, projectile: projectile || aimLocal.projectile });
 
   // ---------------- Arranque ----------------
+  if (window.CNSTATS) CNSTATS.visita('naval-battle');
   const salaURL = params.get('sala'), torneoURL = params.get('torneo'), nombreURL = params.get('nombre');
   if (nombreURL) { perfil.name = nombreURL.slice(0, C.NAME_MAX); guardarPerfil(); $('i-nombre').value = perfil.name; colorearDemo(); }
   const ses = NET.session.get();
