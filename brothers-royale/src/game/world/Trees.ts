@@ -17,20 +17,24 @@ import { merge, paint, transform } from './geometry';
 
 /**
  * Árboles con InstancedMesh: cientos de árboles en 3 draw calls
- * (tronco, copa de pino, copa redonda).
+ * (pinos y árboles redondos, cada uno con su tronco).
  */
 export function createTrees(trees: TreePlacement[], seed: number, castShadow: boolean): Group {
   const group = new Group();
   group.name = 'trees';
   const material = new MeshLambertMaterial({ vertexColors: true });
 
-  const trunkGeo = transform(paint(new CylinderGeometry(0.18, 0.28, 1.6, 6), '#8b5a2b'), 0, 0.8, 0);
+  // Fase 3.2: tronco y copa en la MISMA geometría (colores horneados) → 2 draw
+  // calls para todos los árboles en lugar de 3. El color por instancia es un
+  // multiplicador cercano a blanco que solo varía un poco tono y brillo.
+  const trunk = () => transform(paint(new CylinderGeometry(0.18, 0.28, 1.6, 6), '#8b5a2b'), 0, 0.8, 0);
   const pineGeo = merge([
-    transform(paint(new ConeGeometry(1.3, 2, 6), '#ffffff'), 0, 2.2, 0),
-    transform(paint(new ConeGeometry(1, 1.6, 6), '#ffffff'), 0, 3.1, 0),
-    transform(paint(new ConeGeometry(0.65, 1.2, 6), '#ffffff'), 0, 3.9, 0),
+    trunk(),
+    transform(paint(new ConeGeometry(1.3, 2, 6), '#2f7d4a'), 0, 2.2, 0),
+    transform(paint(new ConeGeometry(1, 1.6, 6), '#2f7d4a'), 0, 3.1, 0),
+    transform(paint(new ConeGeometry(0.65, 1.2, 6), '#2f7d4a'), 0, 3.9, 0),
   ]);
-  const roundGeo = transform(paint(new IcosahedronGeometry(1.35, 0), '#ffffff'), 0, 2.6, 0);
+  const roundGeo = merge([trunk(), transform(paint(new IcosahedronGeometry(1.35, 0), '#6cbf3f'), 0, 2.6, 0)]);
 
   const pines = trees.filter((t) => t.variant === 0);
   const rounds = trees.filter((t) => t.variant === 1);
@@ -63,12 +67,12 @@ export function createTrees(trees: TreePlacement[], seed: number, castShadow: bo
   };
 
   const rng = createRng(seed ^ 0x9e3779b9);
-  const pineBase = new Color('#2f7d4a');
-  const roundBase = new Color('#6cbf3f');
-  const varied = (base: Color) => () => base.clone().offsetHSL((rng() - 0.5) * 0.04, (rng() - 0.5) * 0.1, (rng() - 0.5) * 0.08);
+  const varied = () => {
+    const k = 0.9 + rng() * 0.18; // brillo
+    return new Color(k * (0.97 + rng() * 0.06), k * (0.97 + rng() * 0.06), k * (0.97 + rng() * 0.06));
+  };
 
-  make(trunkGeo, trees, () => null, 'tree-trunks');
-  make(pineGeo, pines, varied(pineBase), 'tree-pines');
-  make(roundGeo, rounds, varied(roundBase), 'tree-rounds');
+  make(pineGeo, pines, varied, 'tree-pines');
+  make(roundGeo, rounds, varied, 'tree-rounds');
   return group;
 }

@@ -2,7 +2,8 @@ import { EventBus } from '@/core/EventBus';
 import { Engine } from '@/engine/Engine';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
 import { Lighting } from '@/engine/Lighting';
-import type { QualitySettings } from '@/engine/quality';
+import type { ContextStatus } from '@/engine/ContextLossMonitor';
+import { buildQuality, saveQuality, type QualitySettings, type QualityTier } from '@/engine/quality';
 import type { GameSession } from '@/net/GameSession';
 import { OfflineSession } from '@/net/OfflineSession';
 // Solo tipos: el SDK de Colyseus se descarga cuando el jugador pide jugar en línea.
@@ -13,10 +14,11 @@ import type { InsideState } from '@shared/world/prefab';
 import { worldColliders } from '@shared/world/colliders';
 import { generateWorldLayout, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
-import { paletteColors, PlayerAvatar } from './entities/PlayerAvatar';
+import { Frustum, Matrix4, Sphere, type Group, type Object3D } from 'three';
+import { BlobShadows, disposeAvatarResources, PlayerAvatar } from './entities/PlayerAvatar';
 import { InputManager } from './input/InputManager';
 import type { InputDevice } from './input/sources';
-import { PrefabView } from './world/PrefabView';
+import { createStaticPrefabBatch, PrefabView } from './world/PrefabView';
 import { createTerrainMesh, createWater } from './world/Terrain';
 import { createTrees } from './world/Trees';
 
@@ -24,6 +26,9 @@ export interface GameStats {
   fps: number;
   frameMs: number;
   worstMs: number;
+  /** CPU por frame (lógica + envío a GPU), ms. */
+  cpuMs: number;
+  refreshHz: number;
   tier: QualitySettings['tier'];
   pixelRatio: number;
   drawCalls: number;
@@ -45,6 +50,9 @@ export interface OnlineRequest {
 
 export type GameEvents = {
   net: NetEvent;
+  /** Estado del contexto WebGL (pérdida/recuperación). */
+  graphics: ContextStatus;
+  quality: QualityTier;
   progress: { value: number; label: string };
   ready: undefined;
   stats: GameStats;
@@ -68,15 +76,26 @@ export class Game {
   private loop: FixedStepLoop | null = null;
   private layout: WorldLayout | null = null;
   private readonly structures: PrefabView[] = [];
+  /** Objetos que proyectan sombra en calidad Normal (se activan/desactivan en vivo). */
+  private readonly shadowCasters: Object3D[] = [];
+  private readonly blobs = new BlobShadows();
+  private readonly seenRemotes = new Set<string>();
+  private readonly frustum = new Frustum();
+  private readonly projScreen = new Matrix4();
+  private readonly cullSphere = new Sphere();
   private statsTimer = 0;
   private disposed = false;
 
   constructor(
     canvas: HTMLCanvasElement,
-    private readonly quality: QualitySettings,
+    private quality: QualitySettings,
     initialDevice: InputDevice = 'keyboard',
+    private readonly isTouch = initialDevice === 'touch',
   ) {
     this.engine = new Engine(canvas, quality);
+    this.engine.onContextChange = (s) => this.events.emit('graphics', s);
+    this.blobs.visible = quality.blobShadows;
+    this.engine.scene.add(this.blobs.mesh);
     this.input = new InputManager(window, undefined, initialDevice);
     this.input.onDeviceChange = (d) => this.events.emit('device', d);
   }
@@ -102,7 +121,7 @@ export class Game {
       report(0.8, 'Llamando a tu personaje');
       const spawn = { x: layout.spawn.x, y: terrainHeight(layout.spawn.x, layout.spawn.z, layout.terrain) + 0.1, z: layout.spawn.z };
       this.session = new OfflineSession(physics, spawn);
-      this.avatar = new PlayerAvatar(undefined, this.quality.shadows, !this.quality.shadows);
+      this.avatar = new PlayerAvatar(0, this.quality.shadows);
       this.engine.scene.add(this.avatar.root);
       const first = this.session.localPlayer();
       if (first) this.avatar.pushState(first, true);
@@ -127,12 +146,21 @@ export class Game {
     const scene = this.engine.scene;
     scene.add(createWater(layout.terrain.size));
     scene.add(createTerrainMesh(layout.terrain));
-    for (const placed of layout.structures) {
+    // Edificios con interior: vista propia (techos que se ocultan). El resto, en un solo lote.
+    for (const placed of layout.structures.filter((p) => p.def.interior)) {
       const view = new PrefabView(placed, this.quality.shadows);
       this.structures.push(view);
       scene.add(view.root);
+      this.shadowCasters.push(...view.root.children);
     }
-    scene.add(createTrees(layout.trees, layout.seed, this.quality.shadows));
+    const batch = createStaticPrefabBatch(layout.structures.filter((p) => !p.def.interior), this.quality.shadows);
+    if (batch) {
+      scene.add(batch);
+      this.shadowCasters.push(batch);
+    }
+    const trees: Group = createTrees(layout.trees, layout.seed, this.quality.shadows);
+    scene.add(trees);
+    this.shadowCasters.push(...trees.children);
   }
 
   private step(dt: number): void {
@@ -143,7 +171,14 @@ export class Game {
       this.goOffline(reason);
     }
     const session = this.session;
-    session.tick(this.input.sample(), dt);
+    const input = this.input.sample();
+    if (this.engine.contextLost) {
+      // Sin gráficos no se juega a ciegas: entrada neutra (la conexión y la gravedad siguen).
+      input.moveX = 0;
+      input.moveZ = 0;
+      input.buttons = 0;
+    }
+    session.tick(input, dt);
     const local = session.localPlayer();
     if (local) this.avatar.pushState(local);
     this.syncRemotes(session);
@@ -153,7 +188,16 @@ export class Game {
     const avatar = this.avatar;
     if (!avatar) return;
     avatar.render(alpha, dt);
-    for (const r of this.remotes.values()) r.render(alpha, dt);
+    // Los remotos fuera de cámara solo se mueven: no se calcula su animación.
+    const cam = this.engine.iso.camera;
+    this.projScreen.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.projScreen);
+    for (const r of this.remotes.values()) {
+      this.cullSphere.set(r.position, 1.5);
+      this.cullSphere.center.y += 1;
+      r.render(alpha, dt, this.frustum.intersectsSphere(this.cullSphere));
+    }
+    if (this.quality.blobShadows) this.blobs.update(this.allAvatars());
     const p = avatar.position;
     const zoom = this.input.consumeZoom();
     if (zoom !== 0) this.engine.iso.addZoom(zoom);
@@ -169,6 +213,8 @@ export class Game {
         fps: f.fps,
         frameMs: f.frameMs,
         worstMs: f.worstMs,
+        cpuMs: f.cpuMs,
+        refreshHz: f.refreshHz,
         tier: this.quality.tier,
         pixelRatio: f.pixelRatio,
         drawCalls: f.drawCalls,
@@ -179,14 +225,41 @@ export class Game {
   }
 
   /** Crea, actualiza y retira los avatares de los demás jugadores. */
+  private *allAvatars(): Generator<PlayerAvatar> {
+    if (this.avatar) yield this.avatar;
+    yield* this.remotes.values();
+  }
+
+  get qualityTier(): QualityTier {
+    return this.quality.tier;
+  }
+
+  /**
+   * Cambia la calidad en vivo (sin recargar). Solo cambia el render: el mundo,
+   * las colisiones y la cámara siguen idénticos.
+   */
+  setQuality(tier: QualityTier): void {
+    if (tier === this.quality.tier) return;
+    const q = buildQuality(tier, window.devicePixelRatio || 1, this.isTouch);
+    this.quality = q;
+    this.engine.setQuality(q);
+    this.lighting?.setShadows(q);
+    for (const o of this.shadowCasters) o.castShadow = q.shadows;
+    for (const a of this.allAvatars()) a.castShadow = q.shadows;
+    this.blobs.visible = q.blobShadows;
+    saveQuality(tier);
+    this.events.emit('quality', tier);
+  }
+
   private syncRemotes(session: GameSession): void {
-    const seen = new Set<string>();
+    const seen = this.seenRemotes;
+    seen.clear();
     for (const st of session.players()) {
       if (st.id === session.localPlayerId) continue;
       seen.add(st.id);
       let av = this.remotes.get(st.id);
       if (!av) {
-        av = new PlayerAvatar(paletteColors(session.identity(st.id).color), this.quality.shadows, !this.quality.shadows);
+        av = new PlayerAvatar(session.identity(st.id).color, this.quality.shadows);
         av.root.name = `remote:${st.id}`;
         this.engine.scene.add(av.root);
         this.remotes.set(st.id, av);
@@ -212,7 +285,7 @@ export class Game {
     const local = this.session?.localPlayer();
     if (!local) return;
     this.avatar?.dispose();
-    this.avatar = new PlayerAvatar(paletteColors(color), this.quality.shadows, !this.quality.shadows);
+    this.avatar = new PlayerAvatar(color, this.quality.shadows);
     this.engine.scene.add(this.avatar.root);
     this.avatar.pushState(local, true);
     this.avatar.render(1, 0);
@@ -318,6 +391,7 @@ export class Game {
     this.input.dispose();
     this.session?.dispose();
     this.physics?.dispose();
+    disposeAvatarResources();
     this.events.clear();
   }
 }

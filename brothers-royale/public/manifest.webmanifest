@@ -1,0 +1,12 @@
+{
+  "name": "BROTHERS ROYALE",
+  "short_name": "Brothers",
+  "description": "Battle royale low poly para celular y computadora.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#231f5c",
+  "theme_color": "#231f5c",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

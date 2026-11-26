@@ -36,6 +36,7 @@ export class BrothersRoom extends Room {
   code = '';
   private loop!: FixedStepLoop;
   private readonly meta = new Map<string, ClientMeta>();
+  private readonly skipScratch: Client[] = [];
 
   async onCreate(options: CreateOptions = {}): Promise<void> {
     this.code = sanitizeRoomCode(options.code);
@@ -129,13 +130,20 @@ export class BrothersRoom extends Room {
   private tick(): void {
     this.world.step();
     if (this.clients.length === 0) return;
-    const snapshot = this.world.snapshot();
+    // Fase 3.2: el snapshot se codifica UNA vez y se difunde; antes se codificaba
+    // una vez por cliente. Se excluye a quien aún no está listo o va saturado.
+    const skip = this.skipScratch;
+    skip.length = 0;
     for (const client of this.clients) {
       if ((client as WebSocketClient).ref.bufferedAmount > 256 * 1024) {
         client.leave(CloseCodes.SLOW_CONSUMER, 'Conexión saturada');
-        continue;
+        skip.push(client);
+      } else if (!this.meta.get(client.sessionId)?.ready) {
+        skip.push(client);
       }
-      if (this.meta.get(client.sessionId)?.ready) client.send('snapshot', snapshot);
+    }
+    if (skip.length < this.clients.length) {
+      this.broadcast('snapshot', this.world.snapshot(), skip.length ? { except: skip } : undefined);
     }
     for (const client of this.clients) {
       if (!this.meta.get(client.sessionId)?.ready) continue;

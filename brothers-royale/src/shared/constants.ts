@@ -60,6 +60,12 @@ export const CAMERA = {
   viewHeight: 20,
   /** Ancho mínimo visible en pantallas verticales (móvil en retrato). */
   minViewWidth: 15,
+  /**
+   * Ancho máximo visible: el de una pantalla 16:9. En pantallas más anchas
+   * (celular en horizontal, ~2,16:1) se acerca la cámara en vez de mostrar más
+   * mundo: personajes más grandes y nadie ve más que otro por su pantalla.
+   */
+  maxViewWidth: 36,
   distance: 40,
   /** Suavizado del seguimiento horizontal y vertical (mayor = más rígido). */
   followLerp: 7,

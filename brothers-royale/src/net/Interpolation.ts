@@ -50,6 +50,11 @@ export class SnapshotInterpolator {
     this.buffers.delete(netId);
   }
 
+  /** Iterador sin copiar (para el bucle por tick). */
+  keys(): IterableIterator<number> {
+    return this.buffers.keys();
+  }
+
   ids(): number[] {
     return [...this.buffers.keys()];
   }

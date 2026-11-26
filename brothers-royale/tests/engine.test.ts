@@ -13,8 +13,9 @@ describe('calidad', () => {
   const phone = { devicePixelRatio: 3, isTouch: true, shortSide: 390, hardwareConcurrency: 8, deviceMemory: 4 };
   const weak = { devicePixelRatio: 2, isTouch: true, shortSide: 360, hardwareConcurrency: 4, deviceMemory: 2 };
   it('elige nivel por dispositivo', () => {
-    expect(pickTier(desktop)).toBe('high');
-    expect(pickTier(phone)).toBe('medium');
+    // Fase 3.2: solo dos calidades (Baja y Normal).
+    expect(pickTier(desktop)).toBe('normal');
+    expect(pickTier(phone)).toBe('normal');
     expect(pickTier(weak)).toBe('low');
   });
   it('limita el pixel ratio en móvil y apaga sombras en bajo', () => {

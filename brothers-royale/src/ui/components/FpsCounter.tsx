@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { EventBus } from '@/core/EventBus';
 import type { GameEvents } from '@/game/Game';
 
-const TIER_LABEL = { low: 'calidad baja', medium: 'calidad media', high: 'calidad alta' } as const;
+const TIER_LABEL = { low: 'calidad baja', normal: 'calidad normal' } as const;
 
 /**
  * Contador de FPS. Escribe directamente en el DOM al recibir estadísticas
@@ -24,8 +24,8 @@ export function FpsCounter({ events }: { events: EventBus<GameEvents> }) {
         if (rootRef.current) rootRef.current.dataset.level = s.fps >= 50 ? 'good' : s.fps >= 30 ? 'ok' : 'bad';
         if (detailRef.current)
           detailRef.current.textContent =
-            `${s.frameMs.toFixed(1)} ms por frame (peor ${s.worstMs.toFixed(0)} ms), ` +
-            `${s.drawCalls} draw calls, ${(s.triangles / 1000).toFixed(1)}k triángulos, resolución ×${s.pixelRatio.toFixed(2)}`;
+            `${s.frameMs.toFixed(1)} ms por frame (peor ${s.worstMs.toFixed(0)} ms, CPU ${s.cpuMs.toFixed(1)} ms), ` +
+            `${s.drawCalls} draw calls, ${(s.triangles / 1000).toFixed(1)}k triángulos, resolución ×${s.pixelRatio.toFixed(2)}, pantalla ${s.refreshHz} Hz`;
       }),
     [events],
   );

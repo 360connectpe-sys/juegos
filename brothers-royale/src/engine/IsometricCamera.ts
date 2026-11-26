@@ -8,11 +8,20 @@ export interface Frustum {
 }
 
 /** Calcula el frustum ortográfico: altura fija, y ancho mínimo en pantallas verticales. */
-export function computeFrustum(aspect: number, viewHeight: number = CAMERA.viewHeight, minViewWidth: number = CAMERA.minViewWidth): Frustum {
+export function computeFrustum(
+  aspect: number,
+  viewHeight: number = CAMERA.viewHeight,
+  minViewWidth: number = CAMERA.minViewWidth,
+  maxViewWidth: number = CAMERA.maxViewWidth,
+): Frustum {
   let halfHeight = viewHeight / 2;
   let halfWidth = halfHeight * aspect;
   if (halfWidth * 2 < minViewWidth) {
     halfWidth = minViewWidth / 2;
+    halfHeight = halfWidth / aspect;
+  } else if (halfWidth * 2 > maxViewWidth) {
+    // Pantalla más ancha que 16:9 (celular en horizontal): acercar en lugar de ver más.
+    halfWidth = maxViewWidth / 2;
     halfHeight = halfWidth / aspect;
   }
   return { halfWidth, halfHeight };
@@ -61,7 +70,7 @@ export class IsometricCamera {
   }
 
   private applyFrustum(): void {
-    const f = computeFrustum(this.aspect, CAMERA.viewHeight * this.zoom, CAMERA.minViewWidth * this.zoom);
+    const f = computeFrustum(this.aspect, CAMERA.viewHeight * this.zoom, CAMERA.minViewWidth * this.zoom, CAMERA.maxViewWidth * this.zoom);
     this.camera.left = -f.halfWidth;
     this.camera.right = f.halfWidth;
     this.camera.top = f.halfHeight;

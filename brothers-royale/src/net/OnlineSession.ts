@@ -3,7 +3,7 @@ import { CharacterBody } from '@/physics/CharacterBody';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { SIMULATION } from '@shared/constants';
 import { isValidPlayerInput } from '@shared/inputValidation';
-import { toPlayerState, unpackPlayers, type PublicPlayer } from '@shared/netcodec';
+import { toPlayerState, unpackPlayers, writePlayerState, type PublicPlayer } from '@shared/netcodec';
 import {
   closeReason,
   CloseCodes,
@@ -73,6 +73,7 @@ export class OnlineSession implements GameSession {
   private readonly interp = new SnapshotInterpolator();
   private readonly roster = new Map<number, RosterEntry>();
   private readonly remoteStates = new Map<number, PlayerState>();
+  private readonly aliveScratch = new Set<number>();
   private readonly list: PlayerState[] = [];
   private pendingCorrection: CorrectionMessage | null = null;
   private lastSentSeq = 0;
@@ -289,20 +290,26 @@ export class OnlineSession implements GameSession {
   /** Muestrea a los remotos en el pasado reciente y actualiza la lista visible. */
   private updateRemotes(_dt: number): void {
     const target = Math.min(this.interp.latestTick, this.interp.latestTick - NET.interpolationDelayTicks + this.ticksSinceSnapshot);
-    const ids = this.interp.ids();
-    for (const netId of ids) {
+    // Sin asignaciones por tick: se reutilizan los PlayerState de cada remoto.
+    const alive = this.aliveScratch;
+    alive.clear();
+    for (const netId of this.interp.keys()) {
       const p = this.interp.sample(netId, target, this.scratch);
-      if (!p) continue;
       const r = this.roster.get(netId);
-      if (!r) continue;
-      const prev = this.remoteStates.get(netId);
-      const s = toPlayerState(p, r.id, r.name);
-      if (prev) Object.assign(prev, s);
-      else this.remoteStates.set(netId, s);
+      if (!p || !r) continue;
+      alive.add(netId);
+      let s = this.remoteStates.get(netId);
+      if (!s) {
+        s = toPlayerState(p, r.id, r.name);
+        this.remoteStates.set(netId, s);
+      } else {
+        writePlayerState(s, p, r.id, r.name);
+      }
     }
-    for (const id of [...this.remoteStates.keys()]) if (!ids.includes(id)) this.remoteStates.delete(id);
-    this.list.length = 0;
-    this.list.push(this.body.state, ...this.remoteStates.values());
+    for (const id of this.remoteStates.keys()) if (!alive.has(id)) this.remoteStates.delete(id);
+    this.list.length = 1;
+    this.list[0] = this.body.state;
+    for (const s of this.remoteStates.values()) this.list.push(s);
   }
 
   private startPing(): void {

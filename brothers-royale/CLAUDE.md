@@ -10,7 +10,7 @@ Rapier (`@dimforge/rapier3d-compat`, física) · Colyseus 0.18 (`@colyseus/core`
 servidor, `@colyseus/sdk` en el cliente, cargado de forma diferida) · Vitest.
 
 ## Comandos (desde `brothers-royale/`)
-- `npm run dev` — servidor de desarrollo (`?q=low|medium|high` fuerza calidad, `?debug` expone `window.__BR_GAME__`).
+- `npm run dev` — servidor de desarrollo (`?q=low|normal` fuerza calidad, `?debug` expone `window.__BR_GAME__`).
 - `npm run check` — typecheck + tests + build del cliente + build del servidor. **Ejecutarlo antes de cada commit; debe pasar.**
 - `npm run server` — compila (`vite.server.config.ts` → `dist-server/`) y arranca el servidor Colyseus en
   `ws://localhost:2567` (`PORT`, `HOST` configurables). `npm run build:server` solo compila.
@@ -62,9 +62,19 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    - Fusionar geometría estática (`game/world/geometry.ts` → 1 draw call por objeto) e
      `InstancedMesh` para elementos repetidos. Objetivo: < 50 draw calls en escena de prueba.
    - Materiales `MeshLambertMaterial` con color por vértice; sin texturas salvo necesidad.
-   - Respetar `QualitySettings` (pixel ratio limitado, sombras solo medium/high, densidad).
+   - Solo DOS calidades: Baja y Normal (`engine/quality.ts`). La calidad SOLO puede tocar render (resolución,
+     sombras, manchas de sombra): nunca el mundo, la física, los oclusores ni la cámara (ventaja competitiva).
+     Se cambia en vivo con `Game.setQuality`.
+   - Presupuesto: < 30 draw calls con 8 jugadores en Normal (hoy 26) y < 20 en Baja (hoy 15). Avatares =
+     una `SkinnedMesh` con geometría por paleta y material compartidos; sombras de mancha en un `InstancedMesh`;
+     prefabs sin interior en un lote estático (`createStaticPrefabBatch`); la casa es 1 malla desde fuera.
+   - Superficies grandes opacas (agua) con `renderOrder` alto para que la profundidad descarte lo cubierto.
+   - Sin límite de FPS. La resolución adaptativa (`AdaptiveResolution`) apunta a min(refresco, 60) Hz.
+   - Pérdida de contexto WebGL: `ContextLossMonitor`; la simulación sigue con entrada neutra.
+   - Prioridad: celular en horizontal. El ancho visible máximo es el de 16:9 (`CAMERA.maxViewWidth`).
    - `matrixAutoUpdate = false` en estáticos; no crear objetos por frame en bucles calientes.
    - React no se re-renderiza por frame: HUD y joystick escriben en el DOM con refs.
+   - Medir antes y después de cualquier optimización (draw calls, programas, geometrías, CPU/frame).
    - Sombras: `shadowMap.autoUpdate = false`; se re-dibujan cada `shadowUpdateInterval` frames.
    - Rapier se carga diferido en su propio chunk.
 6. **Cámara isométrica**: ortográfica desde (+1,+1,+1). Convertir entrada de pantalla a mundo con

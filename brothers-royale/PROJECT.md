@@ -9,10 +9,71 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 |------|-----------|--------|
 | 1 | Base técnica: arquitectura, escena isométrica, mapa de prueba, personaje, física, tests | ✅ Hecha |
 | 2 | Controlador de personaje, cámara, entrada (táctil/teclado/mando), edificios con plantas y escaleras, animaciones, FPS | ✅ Hecha |
-| 3 | Multijugador con Colyseus: servidor autoritativo, salas, predicción y reconciliación | 🟡 3.1 hecha (base de red) |
+| 3 | Multijugador con Colyseus: servidor autoritativo, salas, predicción y reconciliación | 🟡 3.1 (red) y 3.2 (gráficos móviles) hechas |
 | 4 | Armas y combate | Pendiente |
 | 5 | Construcción | Pendiente |
 | 6 | Tormenta, partida completa, salas, lobby | Pendiente |
+
+## Fase 3.2 — Optimización gráfica Mobile First (2026-11-26)
+**Auditoría del commit de Codex `5da1a88`** (endurecimiento de red y límite de 8 jugadores): las 138 pruebas
+pasaban y los cambios de seguridad son correctos (el `onMessage('*')` de Colyseus solo recibe tipos sin
+manejador). Hallazgo corregido: el snapshot se codificaba **una vez por cliente** (`client.send` en bucle); vuelve
+a generarse una sola vez por tick y se difunde excluyendo a quien no está listo o va saturado.
+
+**Hecho**
+- **Dos calidades, Baja y Normal** (`engine/quality.ts`). Solo cambian resolución, sombras reales/de mancha y
+  frecuencia del mapa de sombras. Mundo, física, colisiones, árboles, techos y cámara son idénticos (prueba que
+  compara campo a campo). Selector en el HUD con cambio **en vivo** y recordado; `?q=low|baja|normal`
+  (`medium`/`high` siguen valiendo como Normal). Sin MSAA en ninguna: en móvil es caro.
+- **Avatares**: cada personaje es **una `SkinnedMesh` rígida de 6 huesos** (antes 6 mallas): 1 draw call (+1 de
+  sombra). Geometría cacheada por paleta y **un único material** para todos; las sombras de mancha de todos los
+  jugadores van en **un `InstancedMesh`**. Los remotos fuera de cámara no calculan su animación.
+- **Draw calls del mundo**: la casa es **1 malla vista desde fuera** (se divide en grupos solo al entrar, y esos
+  grupos solo son transparentes mientras se desvanecen); mirador y cajas en **un lote estático**; árboles en
+  **2 `InstancedMesh`** (tronco fusionado con la copa); agua **opaca y dibujada al final** de la pasada opaca.
+- **CPU**: sin asignaciones por tick en la interpolación de remotos (`writePlayerState`), ni por frame en la
+  visibilidad de edificios (tablas constantes) ni en la lista de remotos.
+- **Sin límite artificial de FPS**: se dibuja a lo que dé `requestAnimationFrame`.
+- **Resolución adaptativa nueva**: objetivo = frecuencia real de la pantalla, como mucho 60 (a 30 Hz en modo
+  ahorro no baja la nitidez; a 120 Hz no la sacrifica por perseguir 120); decide con el percentil 90 e ignora
+  tirones > 250 ms; baja rápido y sube de 0,05 en 0,05; si una subida no aguanta se revierte y la espera para
+  reintentarla se duplica (2 → 32 ventanas): no oscila. Límites: Baja 0,5-1; Normal 0,7-1,5 (móvil) o 0,7-2.
+- **Contexto WebGL** (`ContextLossMonitor`): al perderse se pide su recuperación, se muestra un aviso y el
+  personaje se queda quieto (la conexión en línea y la gravedad siguen); al volver se re-dibujan las sombras;
+  si no vuelve en 6 s se ofrece recargar.
+- **Celular en horizontal**: el ancho visible se limita al de una pantalla 16:9 (36 m), así en un celular
+  horizontal (~2,16:1) la cámara se acerca un 17 % en lugar de mostrar más mundo (personajes más grandes y nadie
+  ve más que otro por su pantalla). HUD compacto para alturas ≤ 520 px, márgenes del notch a los lados, joystick
+  en toda la mitad izquierda y botones al alcance del pulgar, botón de pantalla completa que fija la orientación
+  horizontal donde el navegador lo permite, aviso no bloqueante en vertical y `manifest.webmanifest` en horizontal.
+- Se mantienen el máximo de 8 jugadores y la simulación a 30 Hz (sin cambios en `shared/` ni en la física).
+
+**Métricas antes / después** — Chromium sin GPU (SwiftShader), 8 jugadores reales (local + 7 bots del SDK
+alrededor del jugador), resolución fija ×1 para comparar en igualdad de condiciones, 5 s por medida.
+
+| Vista | Calidad (antes → después) | Draw calls | Programas | Geometrías | CPU/frame p50 · p95 (ms) | FPS* |
+|---|---|---|---|---|---|---|
+| Celular horizontal 844×390 | Baja → Baja | 59 → **15** | 6 → 5 | 61 → **15** | 1,0 · 1,6 → **0,8 · 1,3** | 58 → 59 |
+| Celular horizontal 844×390 | Media → Normal | 104 → **26** | 11 → 10 | 53 → **14** | 1,5 · 2,2 → **1,2 · 1,9** | 30 → 32 |
+| Escritorio 1280×720 | Baja → Baja | 61 → **15** | 6 → 5 | 61 → **15** | 1,5 · 2,4 → **1,2 · 1,9** | 28 → 32 |
+| Escritorio 1280×720 | Media → Normal | 104 → **23** | 11 → 10 | 53 → **14** | 2,1 · 3,0 → **1,7 · 2,7** | 13 → 13 |
+
+\* Los FPS en SwiftShader dependen sobre todo del relleno de píxeles por CPU; no representan una GPU móvil, donde
+el coste por draw call y por cambio de estado pesa mucho más. Triángulos sin cambios (18-28 mil): el modelo es el
+mismo. Las "texturas" pasan de 0-2 a 8-10 porque cada esqueleto usa una textura de huesos diminuta (6 huesos).
+Heap JS igual (~18 MB). Bundle inicial: 20,7 → 23,8 KB gzip (+3,1 KB: selector de calidad, avisos de gráficos y orientación, nueva resolución adaptativa); three, react, red y Rapier sin cambios.
+
+**Pruebas**: 163 (las 138 anteriores + 25 nuevas). Se adaptaron 3 afirmaciones de pruebas existentes que
+comprobaban exactamente lo que esta fase cambia: `pickTier` devolviendo `'high'`/`'medium'` (ahora `'normal'`) y la
+liberación de "6 geometrías y 2 materiales" por avatar (ahora geometría y material son compartidos: retirar un
+jugador no libera nada y la limpieza final libera cada recurso una vez). E2E en navegador: cambio de calidad en
+vivo, pérdida/recuperación/fallo del contexto, horizontal y vertical, y dos clientes en línea (mismas posiciones
+que en la fase 3.1).
+
+**Pendiente**
+- Medir en celulares reales (gama baja y media) FPS, temperatura y batería.
+- El selector de calidad no cambia el tamaño del mapa de sombras a uno mayor en escritorio (1024 en Normal).
+- Instanciar los avatares (un draw call para todos) requeriría animación por shader; con 8 jugadores no compensa.
 
 ## Fase 3.1 — Servidor autoritativo con Colyseus (2026-11-26)
 
@@ -188,7 +249,7 @@ El informe AUDIT-3.1.md detalla regresiones, mediciones y límites pendientes de
 ```bash
 cd brothers-royale
 npm install
-npm run dev        # http://localhost:5173  (?q=low para simular gama baja, ?debug)
+npm run dev        # http://localhost:5173  (?q=low|normal fuerza la calidad, ?debug)
 # Controles: WASD/flechas, Shift correr, Espacio saltar, rueda o +/- zoom, F3 rendimiento.
 # Mando: stick o cruceta, A saltar, L3/LB correr. Móvil: joystick izquierdo, botones Correr y Saltar.
 npm run check      # typecheck + tests + build (cliente y servidor)

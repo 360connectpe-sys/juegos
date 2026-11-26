@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Game } from '@/game/Game';
 import type { InputDevice } from '@/game/input/sources';
-import { detectQuality, readDeviceInfo, readQualityOverride } from '@/engine/quality';
+import { detectQuality, loadSavedQuality, readDeviceInfo, readQualityOverride } from '@/engine/quality';
+import { GraphicsNotice } from './components/GraphicsNotice';
+import { OrientationHint } from './components/OrientationHint';
+import { QualityToggle } from './components/QualityToggle';
 import { Hud } from './components/Hud';
 import { OnlinePanel } from './components/OnlinePanel';
 import { loadSavedName, readOnlineParams } from '@/net/config';
@@ -31,7 +34,8 @@ export function App() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const info = readDeviceInfo();
-    const quality = detectQuality(info, readQualityOverride(window.location.search));
+    // Prioridad: ?q= de la URL > elección guardada del jugador > detección automática.
+    const quality = detectQuality(info, readQualityOverride(window.location.search) ?? loadSavedQuality());
     let g: Game;
     try {
       g = new Game(canvas, quality, info.isTouch ? 'touch' : 'keyboard');
@@ -78,6 +82,7 @@ export function App() {
           events={game.events}
           device={device}
           showHint={hint}
+          quality={<QualityToggle events={game.events} initial={game.qualityTier} onChange={(t) => game.setQuality(t)} />}
           online={
             <OnlinePanel
               events={game.events}
@@ -89,6 +94,8 @@ export function App() {
         />
       )}
       {showTouch && <TouchControls touch={game.input.touch} />}
+      {ready && game && <GraphicsNotice events={game.events} />}
+      {ready && isTouch && <OrientationHint />}
       <LoadingScreen progress={progress.value} label={progress.label} error={error} hidden={ready} />
     </main>
   );

@@ -78,8 +78,12 @@ export function createTerrainMesh(params: TerrainParams, segments: number = WORL
 export function createWater(size: number): Mesh {
   const geo = new PlaneGeometry(size * 4, size * 4);
   geo.rotateX(-Math.PI / 2);
-  const mesh = new Mesh(geo, new MeshLambertMaterial({ color: '#3fa7d6', transparent: true, opacity: 0.92 }));
+  // Opaca (fase 3.2): sin mezcla alfa sobre media pantalla. Color = el de antes ya mezclado con la arena.
+  const mesh = new Mesh(geo, new MeshLambertMaterial({ color: '#4aa8d0' }));
   mesh.name = 'water';
+  // Se dibuja al FINAL de la pasada opaca: así la prueba de profundidad descarta
+  // todo lo que ya cubre el terreno y no se pinta la pantalla dos veces.
+  mesh.renderOrder = 1;
   mesh.position.y = -0.55;
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();

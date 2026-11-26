@@ -1,8 +1,15 @@
 /**
- * Detección de calidad gráfica. Pura y testeable: recibe las capacidades del
- * dispositivo y devuelve la configuración. El móvil es el caso prioritario.
+ * Calidad gráfica: solo DOS niveles, Baja y Normal. Pura y testeable.
+ *
+ * REGLA: la calidad solo cambia cómo se dibuja (resolución, sombras). El mundo,
+ * la física, las colisiones, los oclusores (árboles, techos) y la cámara son
+ * idénticos en ambas: ninguna calidad da ventaja competitiva.
  */
-export type QualityTier = 'low' | 'medium' | 'high';
+export type QualityTier = 'low' | 'normal';
+/** Nombres de fases anteriores; se aceptan como alias de 'normal'. */
+export type LegacyQualityTier = 'medium' | 'high';
+
+export const QUALITY_LABEL: Record<QualityTier, string> = { low: 'Baja', normal: 'Normal' };
 
 export interface DeviceInfo {
   devicePixelRatio: number;
@@ -16,37 +23,61 @@ export interface DeviceInfo {
 
 export interface QualitySettings {
   tier: QualityTier;
+  /** Pixel ratio inicial (= máximo de la resolución adaptativa). */
   pixelRatio: number;
   /** Límite inferior para la resolución adaptativa. */
   minPixelRatio: number;
-  antialias: boolean;
+  /** MSAA desactivado siempre: en móvil es caro y la resolución nativa ya suaviza. */
+  antialias: false;
   shadows: boolean;
   shadowMapSize: number;
   /** Cada cuántos frames se re-dibuja el mapa de sombras (1 = siempre). */
   shadowUpdateInterval: number;
+  /** Sombra de mancha barata bajo los personajes (cuando no hay sombras reales). */
+  blobShadows: boolean;
 }
 
-const PRESETS: Record<QualityTier, Omit<QualitySettings, 'tier' | 'pixelRatio'> & { maxPixelRatio: number }> = {
-  low: { maxPixelRatio: 1, minPixelRatio: 0.6, antialias: false, shadows: false, shadowMapSize: 512, shadowUpdateInterval: 1 },
-  medium: { maxPixelRatio: 1.5, minPixelRatio: 0.75, antialias: false, shadows: true, shadowMapSize: 1024, shadowUpdateInterval: 2 },
-  high: { maxPixelRatio: 2, minPixelRatio: 1, antialias: true, shadows: true, shadowMapSize: 2048, shadowUpdateInterval: 1 },
-};
+export function normalizeTier(t: QualityTier | LegacyQualityTier): QualityTier {
+  return t === 'low' ? 'low' : 'normal';
+}
 
+/** Gama baja: pocos núcleos o poca memoria (cuando el navegador lo expone). */
 export function pickTier(d: DeviceInfo): QualityTier {
   const mem = d.deviceMemory ?? 4;
-  const isPhone = d.isTouch && d.shortSide < 600;
-  if (d.hardwareConcurrency <= 4 || mem <= 2) return 'low';
-  if (isPhone || d.isTouch) return 'medium';
-  return 'high';
+  return d.hardwareConcurrency <= 4 || mem <= 2 ? 'low' : 'normal';
 }
 
-export function buildQuality(tier: QualityTier, devicePixelRatio: number): QualitySettings {
-  const { maxPixelRatio, ...rest } = PRESETS[tier];
-  return { tier, pixelRatio: Math.min(devicePixelRatio, maxPixelRatio), ...rest };
+export function buildQuality(tier: QualityTier | LegacyQualityTier, devicePixelRatio: number, isTouch = true): QualitySettings {
+  const t = normalizeTier(tier);
+  const dpr = devicePixelRatio > 0 ? devicePixelRatio : 1;
+  if (t === 'low') {
+    return {
+      tier: 'low',
+      pixelRatio: Math.min(dpr, 1),
+      minPixelRatio: 0.5,
+      antialias: false,
+      shadows: false,
+      shadowMapSize: 0,
+      shadowUpdateInterval: 1,
+      blobShadows: true,
+    };
+  }
+  return {
+    tier: 'normal',
+    // En móvil 1,5 basta para pantallas de 3x; en escritorio hasta 2 (sin MSAA).
+    pixelRatio: Math.min(dpr, isTouch ? 1.5 : 2),
+    minPixelRatio: 0.7,
+    antialias: false,
+    shadows: true,
+    shadowMapSize: 1024,
+    // En móvil las sombras se re-dibujan cada 2 frames (casi imperceptible, mitad de coste).
+    shadowUpdateInterval: isTouch ? 2 : 1,
+    blobShadows: false,
+  };
 }
 
-export function detectQuality(d: DeviceInfo, override?: QualityTier | null): QualitySettings {
-  return buildQuality(override ?? pickTier(d), d.devicePixelRatio);
+export function detectQuality(d: DeviceInfo, override?: QualityTier | LegacyQualityTier | null): QualitySettings {
+  return buildQuality(override ?? pickTier(d), d.devicePixelRatio, d.isTouch);
 }
 
 export function readDeviceInfo(): DeviceInfo {
@@ -61,8 +92,29 @@ export function readDeviceInfo(): DeviceInfo {
   return info;
 }
 
-/** Permite forzar calidad con ?q=low|medium|high (útil para pruebas en móvil). */
+/** ?q=low|baja|normal (medium y high siguen valiendo como "normal"). */
 export function readQualityOverride(search: string): QualityTier | null {
-  const q = new URLSearchParams(search).get('q');
-  return q === 'low' || q === 'medium' || q === 'high' ? q : null;
+  const q = new URLSearchParams(search).get('q')?.toLowerCase();
+  if (q === 'low' || q === 'baja') return 'low';
+  if (q === 'normal' || q === 'medium' || q === 'high') return 'normal';
+  return null;
+}
+
+const QUALITY_KEY = 'br.quality';
+
+export function loadSavedQuality(): QualityTier | null {
+  try {
+    const v = localStorage.getItem(QUALITY_KEY);
+    return v === 'low' || v === 'normal' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveQuality(t: QualityTier): void {
+  try {
+    localStorage.setItem(QUALITY_KEY, t);
+  } catch {
+    /* sin almacenamiento: se usa la detección automática */
+  }
 }

@@ -11,6 +11,8 @@ interface Props {
   showHint: boolean;
   /** Panel de juego en línea (debajo del logo). */
   online?: ReactNode;
+  /** Selector de calidad (debajo del contador de FPS). */
+  quality?: ReactNode;
 }
 
 function Hint({ device }: { device: InputDevice }) {
@@ -32,14 +34,17 @@ function Hint({ device }: { device: InputDevice }) {
   return null;
 }
 
-export function Hud({ events, device, showHint, online }: Props) {
+export function Hud({ events, device, showHint, online, quality }: Props) {
   return (
     <div className="hud">
       <div className="hud__corner">
         <Logo size="small" />
         {online}
       </div>
-      <FpsCounter events={events} />
+      <div className="hud__right">
+        <FpsCounter events={events} />
+        {quality}
+      </div>
       {showHint && <Hint device={device} />}
     </div>
   );

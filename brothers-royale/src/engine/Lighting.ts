@@ -29,19 +29,27 @@ export class Lighting {
     this.sun.target = this.sunTarget;
     scene.add(this.sun, this.sunTarget);
 
-    if (quality.shadows) {
-      this.sun.castShadow = true;
-      const s = this.sun.shadow;
-      s.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
-      const r = 22;
-      s.camera.left = -r;
-      s.camera.right = r;
-      s.camera.top = r;
-      s.camera.bottom = -r;
-      s.camera.near = 1;
-      s.camera.far = 80;
-      s.bias = -0.0005;
-      s.normalBias = 0.03;
+    const s = this.sun.shadow;
+    const r = 22;
+    s.camera.left = -r;
+    s.camera.right = r;
+    s.camera.top = r;
+    s.camera.bottom = -r;
+    s.camera.near = 1;
+    s.camera.far = 80;
+    s.bias = -0.0005;
+    s.normalBias = 0.03;
+    this.setShadows(quality);
+  }
+
+  /** Activa/desactiva la sombra del sol (cambio de calidad en vivo). */
+  setShadows(quality: QualitySettings): void {
+    this.sun.castShadow = quality.shadows;
+    if (quality.shadows && this.sun.shadow.mapSize.x !== quality.shadowMapSize) {
+      this.sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
+      // El mapa se re-crea con el tamaño nuevo en el siguiente render.
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
     }
   }
 

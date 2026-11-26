@@ -1,4 +1,19 @@
-import { CircleGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Vector3 } from 'three';
+import {
+  Bone,
+  type BufferGeometry,
+  CircleGeometry,
+  Float32BufferAttribute,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  MeshBasicMaterial,
+  MeshLambertMaterial,
+  Skeleton,
+  SkinnedMesh,
+  Sphere,
+  Uint16BufferAttribute,
+  Vector3,
+} from 'three';
 import { PLAYER } from '@shared/constants';
 import { damp, wrapAngle } from '@shared/math';
 import type { Locomotion, PlayerState } from '@shared/types';
@@ -49,21 +64,89 @@ const POSES: Record<Locomotion, Pose> = {
   fall: { armSwing: 0, legSwing: 0, cadence: 0, lean: -0.05, armsUp: 1.3, legsTuck: 0.25, bob: 0 },
 };
 
+// ---------------------------------------------------------------------------
+// Recursos compartidos por TODOS los avatares (fase 3.2)
+// ---------------------------------------------------------------------------
+
+/** Huesos del esqueleto rígido (índice = skinIndex de los vértices). */
+const BONE = { root: 0, body: 1, armL: 2, armR: 3, legL: 4, legR: 5 } as const;
+
+/** Un solo material para todos los avatares: un único programa de shader. */
+let sharedMaterial: MeshLambertMaterial | null = null;
+const geometryCache = new Map<string, BufferGeometry>();
+
+function avatarMaterial(): MeshLambertMaterial {
+  sharedMaterial ??= new MeshLambertMaterial({ vertexColors: true });
+  return sharedMaterial;
+}
+
+/** Asigna todos los vértices de una pieza a un hueso (peso 1: piezas rígidas). */
+function bind(geo: BufferGeometry, bone: number): BufferGeometry {
+  const n = geo.getAttribute('position').count;
+  const idx = new Uint16Array(n * 4);
+  const w = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    idx[i * 4] = bone;
+    w[i * 4] = 1;
+  }
+  geo.setAttribute('skinIndex', new Uint16BufferAttribute(idx, 4));
+  geo.setAttribute('skinWeight', new Float32BufferAttribute(w, 4));
+  return geo;
+}
+
 /**
- * Personaje provisional low poly (cajas) con animación procedural por
- * locomoción. Solo es la VISTA: el estado viene de un PlayerState (local hoy,
- * del servidor mañana) y se interpola entre ticks. Valdrá tal cual para los
- * jugadores remotos.
+ * Geometría del personaje en pose de reposo, con todas las piezas fusionadas
+ * en UNA malla (1 draw call) y cada pieza ligada a su hueso. Se cachea por
+ * paleta: 8 jugadores con 8 colores = como mucho 8 geometrías pequeñas.
+ */
+export function avatarGeometry(colors: AvatarColors): BufferGeometry {
+  const key = `${colors.shirt}|${colors.pants}|${colors.skin}|${colors.hair}`;
+  const cached = geometryCache.get(key);
+  if (cached) return cached;
+  const torsoY = 0.8; // cadera
+  const parts = [
+    // Torso, cabeza, pelo, ojos y mochila → hueso "body"
+    bind(box(0.62, 0.7, 0.36, colors.shirt, 0, torsoY + 0.35, 0), BONE.body),
+    bind(box(0.5, 0.48, 0.46, colors.skin, 0, torsoY + 0.96, 0), BONE.body),
+    bind(box(0.54, 0.16, 0.5, colors.hair, 0, torsoY + 1.24, -0.02), BONE.body),
+    bind(box(0.54, 0.3, 0.12, colors.hair, 0, torsoY + 1.06, -0.21), BONE.body),
+    bind(box(0.08, 0.08, 0.02, '#1d1d1d', -0.12, torsoY + 1.0, 0.235), BONE.body),
+    bind(box(0.08, 0.08, 0.02, '#1d1d1d', 0.12, torsoY + 1.0, 0.235), BONE.body),
+    bind(box(0.46, 0.5, 0.2, '#4c8c4a', 0, torsoY + 0.35, -0.27), BONE.body),
+  ];
+  // Brazos (hombro en y = 1,45) y piernas (cadera en y = 0,8)
+  for (const [sx, bone] of [[-1, BONE.armL], [1, BONE.armR]] as const) {
+    parts.push(bind(box(0.18, 0.55, 0.2, colors.shirt, sx * 0.41, 1.45 - 0.27, 0), bone));
+    parts.push(bind(box(0.16, 0.16, 0.18, colors.skin, sx * 0.41, 1.45 - 0.62, 0), bone));
+  }
+  for (const [sx, bone] of [[-1, BONE.legL], [1, BONE.legR]] as const) {
+    parts.push(bind(box(0.24, 0.8, 0.28, colors.pants, sx * 0.15, 0.4, 0), bone));
+  }
+  const geo = merge(parts);
+  geometryCache.set(key, geo);
+  return geo;
+}
+
+/** Libera los recursos compartidos (al destruir el juego). Se recrean si hacen falta. */
+export function disposeAvatarResources(): void {
+  for (const g of geometryCache.values()) g.dispose();
+  geometryCache.clear();
+  sharedMaterial?.dispose();
+  sharedMaterial = null;
+}
+
+/** Radio generoso para el recorte por frustum (incluye brazos levantados). */
+const CULL_SPHERE = new Sphere(new Vector3(0, 1, 0), 1.5);
+
+/**
+ * Personaje provisional low poly como SkinnedMesh rígida: 1 draw call (+1 en
+ * el pase de sombras) en lugar de 6. Solo es la VISTA: el estado viene de un
+ * PlayerState (local o remoto) y se interpola entre ticks.
  */
 export class PlayerAvatar {
   readonly root = new Group();
-  private readonly pivot = new Group();
-  private readonly body = new Group();
-  private readonly legL: Mesh;
-  private readonly legR: Mesh;
-  private readonly armL: Mesh;
-  private readonly armR: Mesh;
-  private readonly blob: Mesh;
+  readonly mesh: SkinnedMesh;
+  private readonly bones: Bone[];
   private readonly prev = new Vector3();
   private readonly curr = new Vector3();
   private prevYaw = 0;
@@ -77,53 +160,36 @@ export class PlayerAvatar {
   private readonly pose: Pose = { ...POSES.idle };
   readonly velocity = new Vector3();
 
-  constructor(colors: AvatarColors = DEFAULT_COLORS, castShadow = true, useBlobShadow = false) {
-    const mat = new MeshLambertMaterial({ vertexColors: true });
-    const limb = (geo: ReturnType<typeof box>) => {
-      const m = new Mesh(geo, mat);
-      m.castShadow = castShadow;
-      return m;
-    };
+  /**
+   * @param colors Colores del personaje (o índice de la paleta).
+   * @param castShadow Proyecta sombra real (calidad Normal).
+   */
+  constructor(colors: AvatarColors | number = DEFAULT_COLORS, castShadow = true) {
+    const c = typeof colors === 'number' ? paletteColors(colors) : colors;
+    const bones = Array.from({ length: 6 }, () => new Bone());
+    const [root, body, armL, armR, legL, legR] = bones as [Bone, Bone, Bone, Bone, Bone, Bone];
+    body.position.set(0, 0.8, 0);
+    armL.position.set(-0.41, 0.65, 0);
+    armR.position.set(0.41, 0.65, 0);
+    legL.position.set(-0.15, 0.8, 0);
+    legR.position.set(0.15, 0.8, 0);
+    root.add(body, legL, legR);
+    body.add(armL, armR);
+    this.bones = bones;
 
-    // Torso + cabeza + pelo + ojos + mochila en una sola malla
-    const torso = new Mesh(
-      merge([
-        box(0.62, 0.7, 0.36, colors.shirt, 0, 0.35, 0),
-        box(0.5, 0.48, 0.46, colors.skin, 0, 0.96, 0),
-        box(0.54, 0.16, 0.5, colors.hair, 0, 1.24, -0.02),
-        box(0.54, 0.3, 0.12, colors.hair, 0, 1.06, -0.21),
-        box(0.08, 0.08, 0.02, '#1d1d1d', -0.12, 1.0, 0.235),
-        box(0.08, 0.08, 0.02, '#1d1d1d', 0.12, 1.0, 0.235),
-        box(0.46, 0.5, 0.2, '#4c8c4a', 0, 0.35, -0.27),
-      ]),
-      mat,
-    );
-    torso.castShadow = castShadow;
-
-    // El cuerpo pivota en la cadera (y = 0.8) para inclinarse al correr.
-    this.legL = limb(box(0.24, 0.8, 0.28, colors.pants, 0, -0.4, 0));
-    this.legR = limb(box(0.24, 0.8, 0.28, colors.pants, 0, -0.4, 0));
-    this.legL.position.set(-0.15, 0.8, 0);
-    this.legR.position.set(0.15, 0.8, 0);
-    const armGeo = () => merge([box(0.18, 0.55, 0.2, colors.shirt, 0, -0.27, 0), box(0.16, 0.16, 0.18, colors.skin, 0, -0.62, 0)]);
-    this.armL = limb(armGeo());
-    this.armR = limb(armGeo());
-    this.armL.position.set(-0.41, 0.65, 0);
-    this.armR.position.set(0.41, 0.65, 0);
-
-    this.body.position.y = 0.8;
-    this.body.add(torso, this.armL, this.armR);
-    this.pivot.add(this.body, this.legL, this.legR);
-    this.root.add(this.pivot);
-
-    // Sombra de mancha: alternativa barata cuando las sombras reales están apagadas
-    const blobGeo = new CircleGeometry(PLAYER.radius * 1.4, 12);
-    blobGeo.rotateX(-Math.PI / 2);
-    this.blob = new Mesh(blobGeo, new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
-    this.blob.position.y = 0.03;
-    this.blob.visible = useBlobShadow;
-    this.root.add(this.blob);
+    this.mesh = new SkinnedMesh(avatarGeometry(c), avatarMaterial());
+    this.mesh.add(root);
+    this.mesh.updateMatrixWorld(true);
+    this.mesh.bind(new Skeleton(bones));
+    this.mesh.boundingSphere = CULL_SPHERE.clone();
+    this.mesh.castShadow = castShadow;
+    this.mesh.name = 'avatar';
+    this.root.add(this.mesh);
     this.root.name = 'player-avatar';
+  }
+
+  set castShadow(v: boolean) {
+    this.mesh.castShadow = v;
   }
 
   /** Recibe el estado tras un tick de simulación. */
@@ -143,17 +209,23 @@ export class PlayerAvatar {
     if (landed && impactSpeed > 4) this.landTimer = Math.min(0.22, 0.08 + impactSpeed * 0.012);
   }
 
-  /** Interpola entre los dos últimos ticks y anima. */
-  render(alpha: number, dt: number): void {
+  /**
+   * Interpola entre los dos últimos ticks y anima.
+   * @param animate false si está fuera de cámara: solo se mueve, no se calcula la pose.
+   */
+  render(alpha: number, dt: number, animate = true): void {
     this.root.position.lerpVectors(this.prev, this.curr, alpha);
     this.root.rotation.y = this.prevYaw + wrapAngle(this.currYaw - this.prevYaw) * alpha;
     this.time += dt;
+    if (!animate) {
+      this.landTimer = 0;
+      return;
+    }
 
     // Mezcla suave hacia la pose de la locomoción actual.
     const target = POSES[this.locomotion];
     const p = this.pose;
-    const k = 12;
-    for (const key of POSE_KEYS) p[key] = damp(p[key], target[key], k, dt);
+    for (const key of POSE_KEYS) p[key] = damp(p[key], target[key], 12, dt);
 
     this.phase += dt * this.speed * p.cadence;
     const s = Math.sin(this.phase);
@@ -161,14 +233,15 @@ export class PlayerAvatar {
     const legSwing = s * p.legSwing * amp;
     const armSwing = s * p.armSwing * amp;
     const idleBreath = this.locomotion === 'idle' ? Math.sin(this.time * 2.2) : 0;
+    const [root, body, armL, armR, legL, legR] = this.bones as [Bone, Bone, Bone, Bone, Bone, Bone];
 
-    this.legL.rotation.x = legSwing - p.legsTuck;
-    this.legR.rotation.x = -legSwing - p.legsTuck * 0.4;
-    this.armL.rotation.x = -armSwing - p.armsUp;
-    this.armR.rotation.x = armSwing - p.armsUp;
-    this.armL.rotation.z = -0.05 - idleBreath * 0.03 - p.armsUp * 0.12;
-    this.armR.rotation.z = 0.05 + idleBreath * 0.03 + p.armsUp * 0.12;
-    this.body.rotation.x = p.lean;
+    legL.rotation.x = legSwing - p.legsTuck;
+    legR.rotation.x = -legSwing - p.legsTuck * 0.4;
+    armL.rotation.x = -armSwing - p.armsUp;
+    armR.rotation.x = armSwing - p.armsUp;
+    armL.rotation.z = -0.05 - idleBreath * 0.03 - p.armsUp * 0.12;
+    armR.rotation.z = 0.05 + idleBreath * 0.03 + p.armsUp * 0.12;
+    body.rotation.x = p.lean;
 
     // Rebote al caminar/correr + respiración en reposo.
     let bob = Math.abs(Math.cos(this.phase)) * p.bob * amp + idleBreath * p.bob * 0.5;
@@ -180,25 +253,55 @@ export class PlayerAvatar {
       squash = 1 - Math.sin(t * Math.PI) * 0.18;
       bob -= (1 - squash) * 0.5;
     }
-    this.pivot.position.y = bob;
-    this.pivot.scale.set(2 - squash, squash, 2 - squash);
+    root.position.y = bob;
+    root.scale.set(2 - squash, squash, 2 - squash);
   }
 
   get position(): Vector3 {
     return this.root.position;
   }
 
-  /** Libera geometrías y materiales (al salir un jugador remoto). */
+  /** Retira el avatar de la escena. La geometría y el material son compartidos: no se liberan aquí. */
   dispose(): void {
     this.root.removeFromParent();
-    const materials = new Set<MeshLambertMaterial | MeshBasicMaterial>();
-    this.root.traverse((o) => {
-      const m = o as Mesh;
-      if (!m.isMesh) return;
-      m.geometry.dispose();
-      const mat = m.material;
-      (Array.isArray(mat) ? mat : [mat]).forEach((x) => materials.add(x as MeshLambertMaterial | MeshBasicMaterial));
-    });
-    for (const material of materials) material.dispose();
+    this.mesh.skeleton.dispose();
+  }
+}
+
+/**
+ * Sombras de mancha de TODOS los personajes en un único InstancedMesh
+ * (1 draw call). Se usan en calidad Baja, sin sombras reales.
+ */
+export class BlobShadows {
+  static readonly MAX = 16;
+  readonly mesh: InstancedMesh;
+  private readonly m = new Matrix4();
+
+  constructor() {
+    const geo = new CircleGeometry(PLAYER.radius * 1.4, 12);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false });
+    this.mesh = new InstancedMesh(geo, mat, BlobShadows.MAX);
+    this.mesh.count = 0;
+    this.mesh.frustumCulled = false; // se reubica cada frame; su esfera no sirve
+    this.mesh.name = 'blob-shadows';
+    this.mesh.renderOrder = 1;
+  }
+
+  /** Coloca una mancha bajo cada avatar. */
+  update(avatars: Iterable<PlayerAvatar>): void {
+    let i = 0;
+    for (const a of avatars) {
+      if (i >= BlobShadows.MAX) break;
+      const p = a.position;
+      this.m.makeTranslation(p.x, p.y + 0.03, p.z);
+      this.mesh.setMatrixAt(i++, this.m);
+    }
+    this.mesh.count = i;
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  set visible(v: boolean) {
+    this.mesh.visible = v;
   }
 }

@@ -87,3 +87,20 @@ export function toPlayerState(p: PublicPlayer, id: string, name: string): Player
     lastProcessedSeq: p.lastSeq,
   };
 }
+
+/** Igual que toPlayerState pero escribiendo en un objeto existente (sin asignaciones). */
+export function writePlayerState(out: PlayerState, p: PublicPlayer, id: string, name: string): PlayerState {
+  out.id = id;
+  out.name = name;
+  out.position.x = p.x;
+  out.position.y = p.y;
+  out.position.z = p.z;
+  out.velocity.x = p.vx;
+  out.velocity.y = p.vy;
+  out.velocity.z = p.vz;
+  out.yaw = p.yaw;
+  out.grounded = p.grounded;
+  out.locomotion = p.locomotion;
+  out.lastProcessedSeq = p.lastSeq;
+  return out;
+}
