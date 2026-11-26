@@ -24,13 +24,12 @@ export interface QualitySettings {
   shadowMapSize: number;
   /** Cada cuántos frames se re-dibuja el mapa de sombras (1 = siempre). */
   shadowUpdateInterval: number;
-  treeDensity: number;
 }
 
 const PRESETS: Record<QualityTier, Omit<QualitySettings, 'tier' | 'pixelRatio'> & { maxPixelRatio: number }> = {
-  low: { maxPixelRatio: 1, minPixelRatio: 0.6, antialias: false, shadows: false, shadowMapSize: 512, shadowUpdateInterval: 1, treeDensity: 0.6 },
-  medium: { maxPixelRatio: 1.5, minPixelRatio: 0.75, antialias: false, shadows: true, shadowMapSize: 1024, shadowUpdateInterval: 2, treeDensity: 0.85 },
-  high: { maxPixelRatio: 2, minPixelRatio: 1, antialias: true, shadows: true, shadowMapSize: 2048, shadowUpdateInterval: 1, treeDensity: 1 },
+  low: { maxPixelRatio: 1, minPixelRatio: 0.6, antialias: false, shadows: false, shadowMapSize: 512, shadowUpdateInterval: 1 },
+  medium: { maxPixelRatio: 1.5, minPixelRatio: 0.75, antialias: false, shadows: true, shadowMapSize: 1024, shadowUpdateInterval: 2 },
+  high: { maxPixelRatio: 2, minPixelRatio: 1, antialias: true, shadows: true, shadowMapSize: 2048, shadowUpdateInterval: 1 },
 };
 
 export function pickTier(d: DeviceInfo): QualityTier {

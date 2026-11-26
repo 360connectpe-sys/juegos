@@ -14,6 +14,17 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | 5 | Construcción | Pendiente |
 | 6 | Tormenta, partida completa, salas, lobby | Pendiente |
 
+## Fase 2.1 — Estabilidad y corrección técnica (2026-11-26)
+- La UI captura los fallos de creación de WebGL y muestra el mensaje de error de carga.
+- El mapa físico y sus 140 árboles son iguales en todas las calidades. Todos los obstáculos se dibujan
+  con las mismas mallas instanciadas (3 draw calls para árboles). La calidad sigue ajustando sombras,
+  antialias y resolución. Se retiró el parámetro de densidad que alteraba el mundo.
+- Los snapshots incluyen velocidad y locomoción, restauradas inmediatamente incluso sin entradas
+  pendientes. La restauración limpia los eventos transitorios para evitar repetir un salto o aterrizaje.
+- Regresiones automatizadas para arranque WebGL, colisionadores desde Game en las tres calidades y
+  reconciliación sin entradas pendientes con física real.
+- Sigue pendiente medir el coste de los 140 árboles en celulares reales de gama baja.
+
 ## Fase 2 — Personaje, cámara, entrada y edificios (2026-11-26)
 **Hecho**
 - **Motor de personaje** puro y determinista (`shared/movement.ts`): movimiento analógico 360°, aceleración y

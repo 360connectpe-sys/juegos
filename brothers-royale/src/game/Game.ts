@@ -67,7 +67,8 @@ export class Game {
     try {
       report(0.1, 'Preparando la isla');
       this.lighting = new Lighting(this.engine.scene, this.quality);
-      const layout = generateWorldLayout({ treeCount: Math.round(140 * this.quality.treeDensity) });
+      // La calidad solo cambia el render: todos ven y chocan con los mismos árboles.
+      const layout = generateWorldLayout();
       this.layout = layout;
       this.buildWorldVisuals(layout);
 

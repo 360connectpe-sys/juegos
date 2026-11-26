@@ -17,6 +17,8 @@ import type { PhysicsWorld } from './PhysicsWorld';
 export interface CharacterSnapshot {
   position: Vec3;
   motor: MotorState;
+  velocity: Vec3;
+  locomotion: PlayerState['locomotion'];
   lastProcessedSeq: number;
 }
 
@@ -122,12 +124,23 @@ export class CharacterBody {
   }
 
   snapshot(): CharacterSnapshot {
-    return { position: { ...this.state.position }, motor: { ...this.motor }, lastProcessedSeq: this.state.lastProcessedSeq };
+    return {
+      position: { ...this.state.position },
+      motor: { ...this.motor },
+      velocity: { ...this.state.velocity },
+      locomotion: this.state.locomotion,
+      lastProcessedSeq: this.state.lastProcessedSeq,
+    };
   }
 
   restore(snap: CharacterSnapshot): void {
     this.motor = { ...snap.motor };
     this.setFeet(snap.position);
+    this.state.velocity = { ...snap.velocity };
+    this.state.locomotion = snap.locomotion;
+    this.lastEvents.jumped = false;
+    this.lastEvents.landed = false;
+    this.lastEvents.impactSpeed = 0;
     this.state.yaw = snap.motor.yaw;
     this.state.grounded = snap.motor.grounded;
     this.state.lastProcessedSeq = snap.lastProcessedSeq;

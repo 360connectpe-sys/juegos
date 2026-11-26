@@ -1,3 +1,4 @@
+import { PredictionController } from '@/net/Prediction';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CharacterBody } from '@/physics/CharacterBody';
 import { loadRapier, PhysicsWorld, type Rapier } from '@/physics/PhysicsWorld';
@@ -150,6 +151,29 @@ describe('física (Rapier)', () => {
     expect(s.grounded).toBe(true);
     expect(s.position.y).toBeCloseTo(ground, 1);
     physics.dispose();
+  });
+
+  it('reconcilia sin entradas pendientes y restaura el estado completo inmediatamente', () => {
+    const physics = makeWorld();
+    const body = new CharacterBody(physics, 'r', 'R', { x: layout.spawn.x, y: 0.2, z: layout.spawn.z });
+    try {
+      run(body, physics, {}, 10);
+      run(body, physics, { moveX: 1, buttons: Buttons.JUMP }, 1);
+      const authoritative = structuredClone(body.state);
+      const snap = body.snapshot();
+      const prediction = new PredictionController(body, SIMULATION.fixedDt);
+      const input = { ...emptyInput(100), moveZ: 1 };
+      prediction.predict(input);
+      run(body, physics, {}, 40);
+      expect(body.state.locomotion).not.toBe(authoritative.locomotion);
+      expect(prediction.reconcile(snap, 100)).toBe(0);
+      expect(body.state).toEqual(authoritative);
+      expect(body.lastEvents).toEqual({ jumped: false, landed: false, impactSpeed: 0 });
+      body.state.velocity.x = 999;
+      expect(snap.velocity).toEqual(authoritative.velocity);
+    } finally {
+      physics.dispose();
+    }
   });
 
   it('snapshot/restore reproduce exactamente la simulación (base de la reconciliación)', () => {

@@ -29,7 +29,13 @@ export function App() {
     if (!canvas) return;
     const info = readDeviceInfo();
     const quality = detectQuality(info, readQualityOverride(window.location.search));
-    const g = new Game(canvas, quality, info.isTouch ? 'touch' : 'keyboard');
+    let g: Game;
+    try {
+      g = new Game(canvas, quality, info.isTouch ? 'touch' : 'keyboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
     setGame(g);
     if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('debug')) window.__BR_GAME__ = g;
     g.events.on('progress', (p) => setProgress(p));
@@ -41,6 +47,7 @@ export function App() {
     });
     g.init().catch(() => undefined);
     return () => {
+      if (window.__BR_GAME__ === g) delete window.__BR_GAME__;
       g.dispose();
       setGame(null);
     };
