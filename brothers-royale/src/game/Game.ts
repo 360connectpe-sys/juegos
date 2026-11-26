@@ -20,10 +20,15 @@ import { Vector3 } from 'three';
 import { moveToWorld, type CameraMode } from '@/engine/camera/cameraMath';
 import { CameraController } from './camera/CameraController';
 import type { LookSettings, SampleContext } from './input/InputManager';
-import type { Vec2 } from '@shared/types';
+import { Buttons, type Vec2 } from '@shared/types';
 import { InputManager } from './input/InputManager';
 import type { InputDevice } from './input/sources';
-import { createStaticPrefabBatch, PrefabView } from './world/PrefabView';
+import { createStaticPrefabBatch, InteriorBatch, PrefabView } from './world/PrefabView';
+import { ChestView, PickupView } from './world/Loot';
+import type { ClientMatchEvent } from '@/net/MatchView';
+import type { Inventory } from '@shared/inventory';
+import { itemName } from '@shared/items';
+import { findTarget, type InteractTarget, type NoticeCode } from '@shared/match/MatchState';
 import { createTerrainMesh, createWater } from './world/Terrain';
 import { createTrees } from './world/Trees';
 
@@ -53,9 +58,22 @@ export interface OnlineRequest {
   code?: string;
 }
 
+/** Objetivo de interacción cercano (para el botón Abrir / Recoger). */
+export interface InteractInfo {
+  type: 'chest' | 'pickup';
+  id: number;
+  /** Texto del botón: "Abrir" o "Recoger". */
+  action: string;
+  /** Qué es: "Cofre", "Escopeta rara"… */
+  label: string;
+}
+
 export type GameEvents = {
   net: NetEvent;
   camera: CameraMode;
+  inventory: Inventory;
+  interact: InteractInfo | null;
+  notice: NoticeCode;
   /** Estado del contexto WebGL (pérdida/recuperación). */
   graphics: ContextStatus;
   quality: QualityTier;
@@ -102,6 +120,9 @@ export class Game {
   };
   private readonly projected = new Vector3();
   private readonly mouseAimVec: Vec2 = { x: 0, y: 0 };
+  private chestView: ChestView | null = null;
+  private readonly pickupView = new PickupView();
+  private interactKey = '';
   private statsTimer = 0;
   private disposed = false;
 
@@ -139,7 +160,8 @@ export class Game {
 
       report(0.8, 'Llamando a tu personaje');
       const spawn = { x: layout.spawn.x, y: terrainHeight(layout.spawn.x, layout.spawn.z, layout.terrain) + 0.1, z: layout.spawn.z };
-      this.session = new OfflineSession(physics, spawn);
+      this.session = new OfflineSession(physics, spawn, 'Jugador', layout.chests);
+      this.attachSession(this.session);
       this.avatar = new PlayerAvatar(0, this.quality.shadows);
       this.engine.scene.add(this.avatar.root);
       const first = this.session.localPlayer();
@@ -170,20 +192,29 @@ export class Game {
     const scene = this.engine.scene;
     scene.add(createWater(layout.terrain.size));
     scene.add(createTerrainMesh(layout.terrain));
-    // Edificios con interior: vista propia (techos que se ocultan). El resto, en un solo lote.
-    for (const placed of layout.structures.filter((p) => p.def.interior)) {
-      const view = new PrefabView(placed, this.quality.shadows);
+    // Edificios con interior: todos en un BatchedMesh (1 draw call); cada uno con su
+    // vista recortable para cuando el jugador entra. El resto (sin interior), en un lote estático.
+    const interiors = layout.structures.filter((p) => p.def.interior);
+    const buildings = new InteriorBatch(interiors, this.quality.shadows);
+    scene.add(buildings.mesh);
+    this.shadowCasters.push(buildings.mesh);
+    interiors.forEach((placed, i) => {
+      const view = new PrefabView(placed, this.quality.shadows, { setVisible: (v) => buildings.setVisible(i, v) });
       this.structures.push(view);
       scene.add(view.root);
       this.shadowCasters.push(...view.root.children);
-    }
-    const batch = createStaticPrefabBatch(layout.structures.filter((p) => !p.def.interior), this.quality.shadows);
+    });
+    const batch = createStaticPrefabBatch(layout.structures.filter((p) => !p.def.interior && p.def.id !== 'chest'), this.quality.shadows);
     if (batch) {
       scene.add(batch);
       this.shadowCasters.push(batch);
     }
     const trees: Group = createTrees(layout.trees, layout.seed, this.quality.shadows);
     scene.add(trees);
+    // Cofres y objetos: instanciados (2 + 3 draw calls para todos).
+    this.chestView = new ChestView(layout.chests, this.quality.shadows);
+    scene.add(this.chestView.body, this.chestView.lid);
+    for (const m of Object.values(this.pickupView.meshes)) scene.add(m);
     this.shadowCasters.push(...trees.children);
   }
 
@@ -203,7 +234,10 @@ export class Game {
       input.moveZ = 0;
       input.buttons = 0;
     }
+    const slot = this.input.consumeSlotRequest(session.match.inventory?.selected ?? 0);
+    if (slot !== null && !this.inputSuspended) session.selectSlot(slot);
     session.tick(input, dt);
+    this.updateInteractTarget(session);
     const local = session.localPlayer();
     if (local) this.avatar.pushState(local);
     this.syncRemotes(session);
@@ -241,6 +275,8 @@ export class Game {
     // El "corte" de techos y paredes es propio de la vista isométrica.
     const cutaway = !cameras || cameras.mode === 'isometric';
     for (const s of this.structures) s.update(p.x, p.y, p.z, dt, cutaway);
+    this.chestView?.update(dt);
+    this.pickupView.animate(dt);
 
     this.statsTimer += dt;
     if (this.statsTimer >= 0.5) {
@@ -301,13 +337,91 @@ export class Game {
   }
 
   /** Posiciones para el minimapa (se consulta pocas veces por segundo). */
-  minimapState(): { size: number; local: { x: number; z: number; yaw: number } | null; others: { x: number; z: number }[] } {
+  minimapState(): {
+    size: number;
+    local: { x: number; z: number; yaw: number } | null;
+    others: { x: number; z: number }[];
+    chests: { x: number; z: number; opened: boolean }[];
+  } {
     const local = this.session?.localPlayer();
+    const m = this.session?.match;
     return {
       size: this.layout?.terrain.size ?? 0,
       local: local ? { x: local.position.x, z: local.position.z, yaw: local.yaw } : null,
       others: [...this.remotes.values()].map((r) => ({ x: r.position.x, z: r.position.z })),
+      chests: (m?.chests ?? []).map((c) => ({ x: c.x, z: c.z, opened: m?.opened[c.id] ?? false })),
     };
+  }
+
+  /** Inventario propio actual (lo decide la autoridad). */
+  get inventory(): Inventory | null {
+    return this.session?.match.inventory ?? null;
+  }
+
+  /** Elegir hueco desde el HUD (toque/clic en el inventario). */
+  selectSlot(slot: number): void {
+    if (!this.inputSuspended) this.session?.selectSlot(slot);
+  }
+
+  /** Botón Abrir/Recoger del HUD: pulsa la acción de interacción en el próximo tick. */
+  pressInteract(): void {
+    if (!this.inputSuspended) this.input.pulse(Buttons.INTERACT);
+  }
+
+  /** Conecta la sesión con las vistas de cofres/objetos y el HUD. */
+  private attachSession(session: GameSession): void {
+    session.onMatchEvent = (e) => this.onMatchEvent(e);
+    this.chestView?.sync(session.match.opened);
+    this.pickupView.reset(session.match.pickups.values());
+    this.interactKey = '';
+    const inv = session.match.inventory;
+    if (inv) this.events.emit('inventory', inv);
+  }
+
+  private onMatchEvent(e: ClientMatchEvent): void {
+    switch (e.type) {
+      case 'chestOpened':
+        this.chestView?.setOpened(e.chestId, true);
+        break;
+      case 'pickupAdded':
+      case 'pickupUpdated':
+        this.pickupView.add(e.pickup);
+        if (e.type === 'pickupUpdated') this.pickupView.update(e.pickup);
+        break;
+      case 'pickupRemoved':
+        this.pickupView.remove(e.id);
+        break;
+      case 'inventory':
+        this.events.emit('inventory', e.inventory);
+        break;
+      case 'notice':
+        this.events.emit('notice', e.code);
+        break;
+      case 'reset':
+        if (this.session) {
+          this.chestView?.sync(this.session.match.opened);
+          this.pickupView.reset(this.session.match.pickups.values());
+          const inv = this.session.match.inventory;
+          if (inv) this.events.emit('inventory', inv);
+        }
+        break;
+    }
+  }
+
+  /** Calcula (con las mismas reglas que el servidor) qué se puede abrir o recoger. */
+  private updateInteractTarget(session: GameSession): void {
+    const local = session.localPlayer();
+    const physics = this.physics;
+    if (!local || !physics) return;
+    const m = session.match;
+    const t: InteractTarget | null = findTarget(m.chests, m.opened, m.pickups.values(), local.position, (a, b) => physics.lineOfSight(a, b));
+    const key = t ? `${t.type}:${t.id}:${t.type === 'pickup' ? m.pickups.get(t.id)?.item.qty : ''}` : '';
+    if (key === this.interactKey) return;
+    this.interactKey = key;
+    if (!t) return this.events.emit('interact', null);
+    if (t.type === 'chest') return this.events.emit('interact', { type: 'chest', id: t.id, action: 'Abrir', label: 'Cofre' });
+    const p = m.pickups.get(t.id);
+    this.events.emit('interact', { type: 'pickup', id: t.id, action: 'Recoger', label: p ? itemName(p.item) : 'Objeto' });
   }
 
   get worldLayout(): WorldLayout | null {
@@ -424,6 +538,7 @@ export class Game {
         code: req.code ?? '',
         physics: this.physics,
         seed: this.layout.seed,
+        chests: this.layout.chests,
         onInfo: (info) => {
           // Solo cuenta cuando ya es la sesión activa (evita eventos durante la conexión).
           if (!current || this.session !== current) return;
@@ -439,6 +554,7 @@ export class Game {
       this.session = online;
       current = online;
       old?.dispose();
+      this.attachSession(online);
       this.replaceLocalAvatar(online.identity(online.localPlayerId).color);
       if (this.avatar) this.engine.iso.snapTo(this.avatar.position);
       this.events.emit('net', { ...online.info });
@@ -458,7 +574,9 @@ export class Game {
     const pos = { ...online.localPlayer().position };
     online.dispose();
     this.clearRemotes();
-    this.session = new OfflineSession(this.physics, pos);
+    // Sin conexión la partida empieza de nuevo: cofres cerrados y el hacha de siempre.
+    this.session = new OfflineSession(this.physics, pos, 'Jugador', this.layout?.chests ?? []);
+    this.attachSession(this.session);
     this.replaceLocalAvatar(0);
     this.events.emit('net', reason ? { status: 'offline', reason } : { status: 'offline' });
   }

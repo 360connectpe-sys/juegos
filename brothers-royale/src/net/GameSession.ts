@@ -1,4 +1,5 @@
 import type { PlayerId, PlayerInput, PlayerState } from '@shared/types';
+import type { ClientMatchEvent, MatchView } from './MatchView';
 
 /** Identidad visible de un jugador (para pintar su avatar). */
 export interface PlayerIdentity {
@@ -26,5 +27,11 @@ export interface GameSession {
   localPlayer(): PlayerState | undefined;
   /** Nombre y color de un jugador visible. */
   identity(id: PlayerId): PlayerIdentity;
+  /** Cofres, objetos en el suelo e inventario propio (lo decide la autoridad). */
+  readonly match: MatchView;
+  /** Avisa de cambios de la partida (para actualizar vistas y HUD). */
+  onMatchEvent: ((e: ClientMatchEvent) => void) | null;
+  /** Pide cambiar el hueco seleccionado del inventario (lo valida la autoridad). */
+  selectSlot(slot: number): void;
   dispose(): void;
 }

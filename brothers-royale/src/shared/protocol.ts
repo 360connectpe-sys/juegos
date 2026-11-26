@@ -4,9 +4,11 @@
  * una entrada por tick. Los estados públicos viajan cuantizados (netcodec.ts).
  */
 import type { CharacterSnapshot } from './reconciliation';
+import type { Inventory } from './inventory';
+import type { MatchEvent, MatchSnapshot, NoticeCode } from './match/MatchState';
 import type { PlayerInput } from './types';
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** Nombre de la sala registrada en el servidor. */
 export const ROOM_NAME = 'brothers';
@@ -92,6 +94,8 @@ export interface RosterEntry {
 // --- Cliente → servidor ----------------------------------------------------
 export interface ClientMessages {
   input: PlayerInput;
+  /** Elegir hueco del inventario (0..4). */
+  select: { slot: number };
   ping: { t: number };
 }
 
@@ -108,7 +112,20 @@ export interface WelcomeMessage {
   roster: RosterEntry[];
   /** Estado inicial completo del propio personaje. */
   state: CharacterSnapshot;
+  /**
+   * Cofres abiertos y objetos en el suelo en este momento. El servidor lo envía
+   * siempre; es opcional en el tipo porque el cliente lo valida antes de usarlo.
+   */
+  match?: MatchSnapshot;
+  /** Inventario propio (siempre enviado; validado en el cliente). */
+  inventory?: Inventory;
 }
+
+/** Cambios públicos de la partida (se agrupan por tick). */
+export type PublicMatchEvent = Extract<MatchEvent, { type: 'chestOpened' | 'pickupAdded' | 'pickupRemoved' | 'pickupUpdated' }>;
+
+export const isPublicMatchEvent = (e: MatchEvent): e is PublicMatchEvent =>
+  e.type === 'chestOpened' || e.type === 'pickupAdded' || e.type === 'pickupRemoved' || e.type === 'pickupUpdated';
 
 /** Snapshot público compacto (ver netcodec.ts). */
 export interface SnapshotMessage {
@@ -129,5 +146,11 @@ export interface ServerMessages {
   correction: CorrectionMessage;
   join: RosterEntry;
   leave: { id: string; netId: number };
+  /** Cambios públicos de cofres y objetos de un tick. */
+  match: { tick: number; events: PublicMatchEvent[] };
+  /** Inventario propio (solo al dueño). */
+  inventory: Inventory;
+  /** Aviso solo para el dueño (inventario lleno, cofre ya abierto…). */
+  notice: { code: NoticeCode };
   pong: { t: number; tick: number };
 }

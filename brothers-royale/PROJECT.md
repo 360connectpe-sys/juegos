@@ -11,9 +11,73 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | 2 | Controlador de personaje, cámara, entrada (táctil/teclado/mando), edificios con plantas y escaleras, animaciones, FPS | ✅ Hecha |
 | 3 | Multijugador con Colyseus: servidor autoritativo, salas, predicción y reconciliación | 🟡 3.1 (red) y 3.2 (gráficos móviles) hechas |
 | 4 | Cámaras (isométrica, 3ª y 1ª persona), controles con apuntado y HUD personalizable | ✅ Hecha |
+| 5 | Mapa ampliado (casas pequeñas), cofres, botín e inventario sincronizado | ✅ Hecha |
 | 4b | Armas y combate | Pendiente |
 | 5 | Construcción | Pendiente |
 | 6 | Tormenta, partida completa, salas, lobby | Pendiente |
+
+## Fase 5 — Mapa ampliado, cofres e inventario (2026-11-26)
+**Hecho**
+- **Mapa**: se conservan la casa grande, el mirador y las cajas. Se añaden **8-12 casas pequeñas** (9 con la
+  semilla del juego) repartidas por sectores alrededor de la isla (cuatro cuadrantes siempre), con **4 diseños**
+  (cabaña, casa de piedra con azotea, casa alargada y casita con porche) y 4 paletas. Cada una se asienta en una
+  **zona plana a la altura de su colina** (`TerrainParams.flatZones`), con la puerta hacia el pueblo y su interior
+  accesible (techo y paredes frontales se ocultan al entrar, como en la casa grande). El terreno del pueblo es
+  idéntico al anterior. Se mantienen **140 árboles** para la futura tala.
+- **Cofres** (deterministas): uno dentro de cada casa pequeña, dos en la casa grande (planta baja y entreplanta),
+  uno en el mirador y 6 exteriores en sitios despejados (17-21 en total; 18 con la semilla del juego). Son prefabs
+  con colisionador.
+- **Botón Abrir / Recoger**: aparece al acercarse (≤ 2 m al cofre, ≤ 1,8 m al objeto, misma planta) y con **línea
+  de visión** (no se abre a través de paredes). Táctil: botón grande; teclado `F`; mando `B`; el botón "Usar" del HUD
+  también vale.
+- **Cada cofre se abre una vez por partida**. Botín **aleatorio por partida** pero determinista por (semilla de partida,
+  cofre): siempre un arma (pistola, subfusil, escopeta o rifle; común 60 %, rara 30 %, épica 10 %) con su munición,
+  a veces botiquines y munición extra. **Sin escudos**.
+- **Inventario** (`shared/inventory.ts`): 5 huecos; el 1 es el **hacha permanente** (todos empiezan con ella; no se
+  suelta ni se reemplaza); armas 1 por hueco, botiquines hasta 3; munición en una bolsa aparte con tope por tipo;
+  si está lleno, el arma de la mano se cambia por la nueva (nunca el hacha). Selección con 1-5, `RB` o tocando el hueco.
+- **Autoridad del servidor** (`shared/match/MatchState.ts`, puro; el mismo código sin conexión en `OfflineSession`):
+  cofres, botín, objetos en el suelo e inventarios solo los modifica la autoridad, en un único hilo y por orden. La
+  interacción se procesa en el **flanco** del bit `INTERACT` de cada entrada, con la posición autoritativa tras ese
+  paso y comprobando distancia y línea de visión (rayo de Rapier). El primero gana: no hay aperturas dobles ni
+  duplicados (comprobado con 6 jugadores pulsando en el mismo tick). Quien sale de la partida suelta sus objetos.
+- **Red** (protocolo v4): el estado de la partida va en la bienvenida; los cambios públicos (cofre abierto, objeto
+  aparece/desaparece/cambia) en **un mensaje por tick** para la sala; el inventario y los avisos solo al dueño; elegir
+  hueco es un mensaje validado. El cliente valida todo lo que recibe (`ReplicatedMatch`).
+- **Minimapa**: casas pequeñas y cofres aún cerrados.
+- **Rendimiento**: todos los edificios con interior en un **`BatchedMesh`** (1 draw call + 1 de sombra; al entrar en
+  uno solo ese sale del lote), cofres en 2 `InstancedMesh` (sin sombra: son bajos), objetos en 3 `InstancedMesh` que
+  no se dibujan si están vacíos, material compartido, plano lejano de 3ª/1ª persona a 100 m (lo que tapa la niebla
+  no se dibuja).
+
+**Rendimiento antes / después** — 6 jugadores (local + 5 bots reales), resolución fija ×1, SwiftShader.
+
+| Vista | Calidad | Draw calls | Triángulos | Programas | CPU/frame p50 · p95 (ms) | FPS* |
+|---|---|---|---|---|---|---|
+| Celular horizontal | Baja | 13 → **15** | 18,0k → 20,0k | 5 → 7 | 0,8 · 1,2 → 0,9 · 1,5 | 60 → 60 |
+| Celular horizontal | Normal | 22 → **24** | 27,6k → 30,3k | 10 → 14 | 1,0 · 1,5 → 1,3 · 1,9 | 33 → 30 |
+| Escritorio | Baja | 13 → **15** | 18,0k → 20,1k | 5 → 7 | 1,0 · 1,5 → 1,4 · 2,0 | 32 → 28 |
+| Escritorio | Normal | 22 → **24** | 27,6k → 30,5k | 10 → 14 | 1,6 · 2,5 → 1,7 · 2,7 | 14 → 13 |
+
+Servidor con 6 jugadores (600 ticks): paso p50 0,311 → 0,312 ms, p95 0,627 → 0,635 ms; colisionadores 203 → 277.
+Bundle inicial: 31,4 → 39,5 KB gzip. El +2 draw calls son los cofres: las 9 casas nuevas no añaden ninguno (sin el
+`BatchedMesh` la primera versión llegaba a 33-34 en Normal, por encima del presupuesto de 30). Los programas suben
+por las variantes de `BatchedMesh` e instancias con color. \* FPS por software (SwiftShader), no representativos de
+una GPU móvil; se mantienen dentro del ruido salvo la CPU/frame, que sube unas décimas de ms por las vistas nuevas.
+
+**Pruebas**: 223 (las 200 anteriores + 23 nuevas). Se adaptó 1 afirmación existente: la lista exacta de estructuras
+(ahora se comprueba que el pueblo sigue intacto al principio). Nuevas: mapa (casas, zonas planas, cuadrantes,
+cofres, árboles), objetos e inventario, botín determinista, reglas de cofres, línea de visión con Rapier, 6
+jugadores en el mismo tick, réplica del cliente con datos mal formados, sesión sin conexión, vistas instanciadas,
+selección de hueco, HUD de inventario y botón Abrir/Recoger, e **integración real con 6 clientes** (`OnlineSession`
+contra Colyseus): un único ganador por cofre, sin duplicados, inventarios privados iguales a los del servidor y
+objetos que caen cuando alguien sale. E2E en navegador: abrir, recoger, seleccionar, entrar en una casa pequeña y
+cofre abierto por un jugador visto por otro.
+
+**Pendiente**
+- Usar los objetos (disparar, curar, talar) llega con el combate y la recolección.
+- Los cofres no se vuelven a llenar: la partida aún no tiene final ni reinicio de sala.
+- Medir en celulares reales con las casas nuevas a la vista en 3ª persona.
 
 ## Fase 4 — Cámaras, controles y HUD personalizable (2026-11-26)
 **Hecho**

@@ -88,6 +88,22 @@ export class PhysicsWorld {
     return hit ? hit.time_of_impact : null;
   }
 
+  /**
+   * ¿Hay línea de visión entre `from` y `to`? (mundo y estructuras; nunca
+   * jugadores). Un impacto en los últimos `slack` metros cuenta como visible:
+   * es el propio objetivo (p. ej. el cofre, que tiene colisionador).
+   */
+  lineOfSight(from: Vec3, to: Vec3, slack = 0.6): boolean {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dz = to.z - from.z;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-4) return true;
+    const ray = new this.R.Ray(from, { x: dx / len, y: dy / len, z: dz / len });
+    const hit = this.world.castRay(ray, len, true, undefined, CAMERA_QUERY_GROUPS);
+    return !hit || hit.timeOfImpact >= len - slack;
+  }
+
   /** Lanza un rayo hacia abajo y devuelve la altura del primer impacto. */
   groundHeightAt(x: number, z: number, fromY = 50): number | null {
     const ray = new this.R.Ray({ x, y: fromY, z }, { x: 0, y: -1, z: 0 });

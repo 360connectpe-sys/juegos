@@ -5,6 +5,7 @@ import { detectQuality, loadSavedQuality, readDeviceInfo, readQualityOverride } 
 import { GraphicsNotice } from './components/GraphicsNotice';
 import { canFullscreen, enterFullscreenLandscape, OrientationHint } from './components/OrientationHint';
 import { SettingsPanel } from './components/SettingsPanel';
+import { InteractPrompt } from './components/InteractPrompt';
 import { HudEditor } from './hud/HudEditor';
 import { HudSlot } from './hud/HudSlot';
 import { loadHudLayout, resetHudLayout, saveHudLayout, type HudLayout } from './hud/layout';
@@ -176,6 +177,7 @@ export function App() {
           }}
         />
       )}
+      {ready && game && !settingsOpen && !editingHud && <InteractPrompt game={game} device={device} />}
       {ready && game && <GraphicsNotice events={game.events} />}
       {ready && isTouch && <OrientationHint />}
       <LoadingScreen progress={progress.value} label={progress.label} error={error} hidden={ready} />

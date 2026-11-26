@@ -54,6 +54,15 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    (`shared/world/prefab.ts`, `structures.ts`); de la misma lista de piezas salen la malla (`PrefabView`)
    y los colisionadores (`prefabColliders`). Escaleras = peldaños ≤ 0,4 m + rampa invisible (`stairs()`).
    Las construcciones de jugadores deberán usar este mismo formato y la capa de colisión `build`.
+   Mapa (fase 5): pueblo fijo (casa grande, mirador, cajas) + casas pequeñas por sectores (`placeSmallHouses`, su
+   propio RNG) asentadas en `TerrainParams.flatZones` + cofres (prefab `chest`, ids estables = orden en
+   `layout.chests`). Un generador nuevo = su propio RNG derivado de la semilla, para no alterar los demás.
+4d. **Cofres, objetos e inventario**: la autoridad es `MatchState` (`shared/match/`), que ejecuta el servidor
+   (`ServerWorld`) y, sin conexión, `OfflineSession`. Nunca se predicen en el cliente: el cliente solo muestra
+   (`ReplicatedMatch`, que valida lo que llega). Las interacciones van por el bit `INTERACT` en el flanco, con la
+   posición autoritativa, distancia y línea de visión (`PhysicsWorld.lineOfSight`). El botín se decide con
+   `rollChestLoot(semilla de partida, cofre)`. El hacha (hueco 1) es permanente. Sin escudos. Cualquier cambio de
+   objetos debe conservar `MatchState.totals()` (no duplicar ni perder) salvo al abrir un cofre.
 4b. **Personaje**: la lógica de movimiento es pura (`shared/movement.ts`: `motorIntent` +
    `applyCollisionResult`); `physics/CharacterBody` solo resuelve colisiones. Todo el estado del motor debe
    caber en `MotorState`/`CharacterSnapshot` (serializable) para que la reconciliación (`net/Prediction.ts`)
@@ -67,7 +76,8 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    - Solo DOS calidades: Baja y Normal (`engine/quality.ts`). La calidad SOLO puede tocar render (resolución,
      sombras, manchas de sombra): nunca el mundo, la física, los oclusores ni la cámara (ventaja competitiva).
      Se cambia en vivo con `Game.setQuality`.
-   - Presupuesto: < 30 draw calls con 8 jugadores en Normal (hoy 26) y < 20 en Baja (hoy 15). Avatares =
+   - Presupuesto: < 30 draw calls en Normal y < 20 en Baja (6 jugadores, fase 5: 24 y 15). Edificios con
+     interior = un `BatchedMesh` (`InteriorBatch`); cofres y objetos = `InstancedMesh` (vacíos, invisibles). Avatares =
      una `SkinnedMesh` con geometría por paleta y material compartidos; sombras de mancha en un `InstancedMesh`;
      prefabs sin interior en un lote estático (`createStaticPrefabBatch`); la casa es 1 malla desde fuera.
    - Superficies grandes opacas (agua) con `renderOrder` alto para que la profundidad descarte lo cubierto.
@@ -96,5 +106,5 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 8. Cada sistema nuevo llega con tests de su parte pura. Actualizar `PROJECT.md` al cerrar cada avance.
 
 ## Fuera de alcance hasta nueva fase
-Armas/combate, cofres, construcción funcional y tormenta: no implementarlos sin pedirlo.
+Daño, disparos, curación, tala de árboles, construcción funcional y tormenta: no implementarlos sin pedirlo.
 Los ganchos ya existen (bits de `Buttons`, `MotorModifiers`, capa `build`, `PredictionController`).

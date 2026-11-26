@@ -1,8 +1,21 @@
 import { WORLD } from '../constants';
 import { createRng, randRange } from '../random';
+import { rotateXZ } from '../math';
 import type { PlacedPrefab } from './prefab';
-import { createCratesDef, createHouseDef, createTowerDef } from './structures';
-import { defaultTerrainParams, terrainHeight, type TerrainParams } from './terrain';
+import {
+  createChestDef,
+  createCratesDef,
+  createHouseDef,
+  createSmallHouseDef,
+  createTowerDef,
+  HOUSE,
+  SMALL_HOUSE_SIZE,
+  SMALL_HOUSE_VARIANTS,
+  smallHouseChestSpot,
+  TOWER,
+  type SmallHouseVariant,
+} from './structures';
+import { defaultTerrainParams, terrainHeight, villageHeight, type FlatZone, type TerrainParams } from './terrain';
 
 export interface TreePlacement {
   x: number;
@@ -14,12 +27,77 @@ export interface TreePlacement {
   variant: 0 | 1;
 }
 
+/** Cofre del mapa (también es un prefab con colisionador en `structures`). */
+export interface ChestPlacement {
+  /** Índice estable: lo comparten servidor y clientes. */
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  /** Dónde está: dentro de una casa (id del prefab) o fuera. */
+  where: 'outside' | 'house' | 'loft' | 'tower' | 'small-house';
+}
+
 export interface WorldLayout {
   seed: number;
   terrain: TerrainParams;
+  /** Todo lo que se dibuja y colisiona: pueblo, casas pequeñas y cofres. */
   structures: PlacedPrefab[];
+  /** Casas pequeñas repartidas por el mapa (también están en `structures`). */
+  houses: PlacedPrefab[];
+  chests: ChestPlacement[];
   trees: TreePlacement[];
   spawn: { x: number; z: number };
+}
+
+export const MAP = {
+  minHouses: 8,
+  maxHouses: 12,
+  /** Distancia al centro entre la que se reparten las casas pequeñas. */
+  houseRing: { min: 24, max: 44 },
+  /** Límite |x|,|z| para que la zona plana no toque la costa. */
+  houseEdge: 44,
+  outsideChests: 6,
+} as const;
+
+/**
+ * Casas pequeñas por sectores alrededor del pueblo (así quedan en distintas
+ * zonas del mapa), a la altura de su colina y con la puerta hacia el centro.
+ */
+function placeSmallHouses(seed: number, terrain: TerrainParams): { houses: PlacedPrefab[]; zones: FlatZone[] } {
+  const rng = createRng(seed ^ 0x51ed27);
+  const count = MAP.minHouses + Math.floor(rng() * (MAP.maxHouses - MAP.minHouses + 1));
+  const houses: PlacedPrefab[] = [];
+  const zones: FlatZone[] = [];
+  const order = [...SMALL_HOUSE_VARIANTS];
+  const tryPlace = (k: number, sectors: number, relaxed: boolean): boolean => {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const angle = ((k + 0.1 + rng() * 0.8) / sectors) * Math.PI * 2;
+      const r = randRange(rng, MAP.houseRing.min, MAP.houseRing.max);
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+      const variant: SmallHouseVariant = order[(k + Math.floor(rng() * 4)) % order.length]!;
+      const size = SMALL_HOUSE_SIZE[variant];
+      const radius = Math.hypot(size.w, size.d + (variant === 'porch' ? 3 : 0)) / 2 + 1.5;
+      if (Math.max(Math.abs(x), Math.abs(z)) + radius * 1.8 > MAP.houseEdge) continue;
+      const base = villageHeight(x, z, terrain);
+      // Ni en la arena ni en el agua (relajado: se admite subir un poco el terreno junto a la playa).
+      if (base < (relaxed ? -0.3 : 0.25)) continue;
+      if (zones.some((o) => Math.hypot(o.x - x, o.z - z) < (o.radius + radius) * 1.3 + 2)) continue;
+      const def = createSmallHouseDef(variant, Math.floor(rng() * 4));
+      zones.push({ x, z, radius, base: Math.max(base, 0.25) });
+      houses.push({ def, x, y: Math.max(base, 0.25), z, rotationY: Math.atan2(-x, -z) });
+      return true;
+    }
+    return false;
+  };
+  // Cada sector intenta primero un sitio ideal y, si no lo hay, uno aceptable: así
+  // ninguna zona del mapa se queda sin casas.
+  for (let k = 0; k < count; k++) if (!tryPlace(k, count, false)) tryPlace(k, count, true);
+  // Si algún sector no tenía sitio, se completa el mínimo relajando condiciones.
+  for (let k = 0; houses.length < MAP.minHouses && k < 64; k++) tryPlace(k, 16, true);
+  return { houses, zones };
 }
 
 export interface LayoutOptions {
@@ -45,12 +123,54 @@ export function generateWorldLayout(opts: LayoutOptions = {}): WorldLayout {
     z,
     rotationY,
   });
+  const { houses, zones } = placeSmallHouses(seed, terrain);
+  terrain.flatZones = zones;
   const structures: PlacedPrefab[] = [
     place(createHouseDef(), 0, 0),
     place(createTowerDef(), 11, -6),
     place(createCratesDef(), 7.5, 6.5, 0.3),
     place(createCratesDef(), -8, 7, -0.6),
+    ...houses,
   ];
+
+  // Cofres (deterministas): dentro de cada casa pequeña, en la casa grande
+  // (planta baja y entreplanta), en el mirador y repartidos por el exterior.
+  const chestDef = createChestDef();
+  const chests: ChestPlacement[] = [];
+  const addChest = (x: number, y: number, z: number, yaw: number, where: ChestPlacement['where']) => {
+    chests.push({ id: chests.length, x, y, z, yaw, where });
+    structures.push({ def: chestDef, x, y, z, rotationY: yaw });
+  };
+  const local = (p: PlacedPrefab, lx: number, lz: number) => {
+    const r = rotateXZ(lx, lz, p.rotationY);
+    return { x: p.x + r.x, z: p.z + r.z };
+  };
+  for (const h of houses) {
+    const variant = h.def.id.replace('small-', '') as SmallHouseVariant;
+    const spot = smallHouseChestSpot(variant);
+    const w = local(h, spot.x, spot.z);
+    addChest(w.x, h.y, w.z, h.rotationY + spot.yaw, 'small-house');
+  }
+  const big = structures[0]!;
+  const g = local(big, HOUSE.width / 2 - 1.1, HOUSE.depth / 2 - 1.3);
+  addChest(g.x, big.y, g.z, big.rotationY + Math.PI, 'house');
+  const loft = local(big, HOUSE.width / 2 - 1.4, -HOUSE.depth / 2 + 1.1);
+  addChest(loft.x, big.y + HOUSE.groundHeight, loft.z, big.rotationY, 'loft');
+  const tower = structures[1]!;
+  addChest(tower.x, tower.y + TOWER.height, tower.z - 0.4, tower.rotationY, 'tower');
+  const rngC = createRng(seed ^ 0xc4e57);
+  for (let i = 0, tries = 0; i < MAP.outsideChests && tries < 2000; tries++) {
+    const a = rngC() * Math.PI * 2;
+    const r = randRange(rngC, 14, 48);
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    const y = terrainHeight(x, z, terrain);
+    if (y < 0.3 || Math.abs(terrainHeight(x + 1, z, terrain) - terrainHeight(x - 1, z, terrain)) > 0.6) continue;
+    if (structures.some((st) => Math.hypot(x - st.x, z - st.z) < st.def.clearRadius + 1.5)) continue;
+    if (chests.some((c) => c.where === 'outside' && Math.hypot(c.x - x, c.z - z) < 12)) continue;
+    addChest(x, y, z, rngC() * Math.PI * 2, 'outside');
+    i++;
+  }
 
   const half = terrain.size / 2;
   const margin = 6;
@@ -74,7 +194,7 @@ export function generateWorldLayout(opts: LayoutOptions = {}): WorldLayout {
     });
   }
 
-  return { seed, terrain, structures, trees, spawn: { x: 2.5, z: 7.5 } };
+  return { seed, terrain, structures, houses, chests, trees, spawn: { x: 2.5, z: 7.5 } };
 }
 
 /** ¿Se puede aparecer en (x, z)? Fuera de estructuras y lejos de troncos. */

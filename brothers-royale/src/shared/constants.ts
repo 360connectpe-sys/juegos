@@ -97,5 +97,6 @@ export const CAMERA_RIG = {
   fov: 70,
   firstFov: 78,
   near: 0.05,
-  far: 140,
+  // = fin de la niebla (95 m) con margen: lo que no se ve ni se dibuja.
+  far: 100,
 } as const;

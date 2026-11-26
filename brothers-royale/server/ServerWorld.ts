@@ -11,7 +11,8 @@ import { isValidPlayerInput } from '@shared/inputValidation';
 import { packPlayer } from '@shared/netcodec';
 import { NET, type RosterEntry, type SnapshotMessage } from '@shared/protocol';
 import type { CharacterSnapshot } from '@shared/reconciliation';
-import type { PlayerInput } from '@shared/types';
+import { MatchState, type LineOfSight, type MatchEvent } from '@shared/match/MatchState';
+import { Buttons, hasButton, type PlayerInput } from '@shared/types';
 import { worldColliders } from '@shared/world/colliders';
 import { generateWorldLayout, spawnPoint, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
@@ -36,6 +37,8 @@ export interface ServerPlayer {
   /** Hay estado nuevo que enviar al propietario. */
   correctionDirty: boolean;
   connected: boolean;
+  /** Botón de interacción pulsado en la entrada anterior (detección de flanco). */
+  interactHeld: boolean;
 }
 
 export type QueueResult = 'queued' | 'invalid' | 'dropped' | 'unknown-player';
@@ -44,22 +47,41 @@ export class ServerWorld {
   readonly physics: PhysicsWorld;
   readonly layout: WorldLayout;
   readonly players = new Map<string, ServerPlayer>();
+  /** Cofres, objetos e inventarios: SOLO el servidor los modifica. */
+  readonly match: MatchState;
+  readonly los: LineOfSight;
   tick = 0;
   private spawnCounter = 0;
 
-  private constructor(physics: PhysicsWorld, layout: WorldLayout) {
+  private constructor(physics: PhysicsWorld, layout: WorldLayout, matchSeed: number) {
     this.physics = physics;
     this.layout = layout;
+    this.match = new MatchState(layout.chests, matchSeed);
+    this.los = (from, to) => physics.lineOfSight(from, to);
   }
 
-  static async create(seed: number = WORLD.seed): Promise<ServerWorld> {
+  /**
+   * @param matchSeed Semilla del botín de ESTA partida (aleatoria por sala;
+   * fija en las pruebas para reproducirlas).
+   */
+  static async create(seed: number = WORLD.seed, matchSeed: number = randomSeed()): Promise<ServerWorld> {
     const R = await loadRapier();
     const layout = generateWorldLayout({ seed });
     const physics = new PhysicsWorld(R);
     physics.addTerrain(layout.terrain);
     worldColliders(layout).forEach((c) => physics.addStatic(c));
     physics.step();
-    return new ServerWorld(physics, layout);
+    return new ServerWorld(physics, layout, matchSeed);
+  }
+
+  /** Eventos de partida pendientes (cofres, objetos, inventarios, avisos). */
+  drainMatchEvents(): MatchEvent[] {
+    return this.match.drain();
+  }
+
+  /** Selección de hueco del inventario (mensaje validado por la sala). */
+  selectSlot(id: string, slot: unknown): boolean {
+    return this.match.selectSlot(id, slot);
   }
 
   get seed(): number {
@@ -95,14 +117,17 @@ export class ServerWorld {
       droppedInputs: 0,
       correctionDirty: true,
       connected: true,
+      interactHeld: false,
     };
     this.players.set(id, player);
+    this.match.addPlayer(id);
     return player;
   }
 
   removePlayer(id: string): ServerPlayer | undefined {
     const p = this.players.get(id);
     if (!p) return undefined;
+    this.match.removePlayer(id, p.body.state.position);
     p.body.dispose();
     this.players.delete(id);
     return p;
@@ -136,6 +161,11 @@ export class ServerWorld {
       while (p.credits > 0 && p.queue.length > 0) {
         const input = p.queue.shift()!;
         p.body.step(input, dt);
+        // Interacción (abrir cofre / recoger): solo en el flanco de pulsación y
+        // con la posición AUTORITATIVA tras ese mismo paso.
+        const interact = hasButton(input.buttons, Buttons.INTERACT);
+        if (interact && !p.interactHeld) this.match.interact(p.id, p.body.state.position, this.los);
+        p.interactHeld = interact;
         p.credits--;
         processed++;
       }
@@ -187,4 +217,9 @@ export class ServerWorld {
     this.players.clear();
     this.physics.dispose();
   }
+}
+
+function randomSeed(): number {
+  const c = globalThis.crypto;
+  return c?.getRandomValues ? c.getRandomValues(new Uint32Array(1))[0]! : Math.floor(Math.random() * 0xffffffff);
 }

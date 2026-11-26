@@ -34,7 +34,8 @@ describe('layout del mapa', () => {
     expect(generateWorldLayout({ seed: 8, treeCount: 120 }).trees[0]).not.toEqual(a.trees[0]);
   });
   it('coloca casa, mirador y cajas, y ningún árbol encima', () => {
-    expect(a.structures.map((s) => s.def.id)).toEqual(['house', 'tower', 'crates', 'crates']);
+    // Fase 5: el pueblo (casa grande, mirador y cajas) se conserva intacto al principio; después vienen casas pequeñas y cofres.
+    expect(a.structures.slice(0, 4).map((s) => s.def.id)).toEqual(['house', 'tower', 'crates', 'crates']);
     expect(a.trees.length).toBeGreaterThan(100);
     for (const t of a.trees)
       for (const s of a.structures) expect(Math.hypot(t.x - s.x, t.z - s.z)).toBeGreaterThan(s.def.clearRadius);

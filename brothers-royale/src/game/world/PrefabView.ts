@@ -1,4 +1,4 @@
-import { BoxGeometry, type BufferGeometry, ExtrudeGeometry, Group, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Shape, Vector3 } from 'three';
+import { BatchedMesh, BoxGeometry, type BufferGeometry, ExtrudeGeometry, Group, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Shape, Vector3 } from 'three';
 import { damp } from '@shared/math';
 import { facesCamera, insideState, type InsideState, type PartLayer, type PlacedPrefab } from '@shared/world/prefab';
 import { merge, paint, transform } from './geometry';
@@ -87,6 +87,43 @@ export function createStaticPrefabBatch(placed: readonly PlacedPrefab[], castSha
 }
 
 /**
+ * Todos los edificios con interior (casa grande y casas pequeñas) en UN
+ * BatchedMesh: 1 draw call (+1 de sombra) los veas todos o ninguno, con
+ * recorte por edificio fuera de cámara. Cuando el jugador entra en uno, solo
+ * ese se oculta del lote y su PrefabView muestra las piezas recortables.
+ */
+export class InteriorBatch {
+  readonly mesh: BatchedMesh;
+  private readonly ids: number[] = [];
+
+  constructor(placed: readonly PlacedPrefab[], castShadow: boolean) {
+    const geos = placed.map((p) => {
+      const all: BufferGeometry[] = [];
+      for (const list of buildPrefabBuckets(p).values()) all.push(...list);
+      return merge(all);
+    });
+    const vertices = geos.reduce((n, g) => n + g.getAttribute('position').count, 0);
+    this.mesh = new BatchedMesh(Math.max(placed.length, 1), Math.max(vertices, 3), 0, sharedStaticMaterial());
+    this.mesh.name = 'buildings';
+    placed.forEach((p, i) => {
+      const id = this.mesh.addInstance(this.mesh.addGeometry(geos[i]!));
+      this.mesh.setMatrixAt(id, prefabMatrix(p));
+      this.ids.push(id);
+      geos[i]!.dispose();
+    });
+    this.mesh.castShadow = castShadow;
+    this.mesh.receiveShadow = true;
+    this.mesh.computeBoundingSphere();
+    this.mesh.matrixAutoUpdate = false;
+  }
+
+  setVisible(index: number, visible: boolean): void {
+    const id = this.ids[index];
+    if (id !== undefined) this.mesh.setVisibleAt(id, visible);
+  }
+}
+
+/**
  * Vista de un prefab CON interior (la casa). Fuera de ella se dibuja como una
  * sola malla opaca (1 draw call). Al entrar se cambia a mallas por grupo para
  * desvanecer techo, planta alta y paredes que tapan la cámara; esas mallas solo
@@ -94,7 +131,8 @@ export function createStaticPrefabBatch(placed: readonly PlacedPrefab[], castSha
  */
 export class PrefabView {
   readonly root = new Group();
-  private readonly whole: Mesh;
+  /** Malla completa propia (si no forma parte de un InteriorBatch). */
+  private readonly whole: Mesh | null;
   private readonly meshes = new Map<GroupKey, Mesh>();
   private readonly opacity = new Map<GroupKey, number>();
   private split = false;
@@ -103,6 +141,8 @@ export class PrefabView {
   constructor(
     readonly placed: PlacedPrefab,
     castShadow: boolean,
+    /** Si se da, la vista "desde fuera" la pone el lote compartido. */
+    private readonly batch: { setVisible(visible: boolean): void } | null = null,
   ) {
     const buckets = buildPrefabBuckets(placed);
     const all: BufferGeometry[] = [];
@@ -120,8 +160,13 @@ export class PrefabView {
       this.opacity.set(key, 1);
       this.root.add(mesh);
     }
-    this.whole = staticMesh(merge(all), `${placed.def.id}:whole`, castShadow);
-    this.root.add(this.whole);
+    if (batch) {
+      all.forEach((g) => g.dispose());
+      this.whole = null;
+    } else {
+      this.whole = staticMesh(merge(all), `${placed.def.id}:whole`, castShadow);
+      this.root.add(this.whole);
+    }
 
     this.root.name = `prefab:${placed.def.id}`;
     this.root.position.set(placed.x, placed.y, placed.z);
@@ -137,13 +182,13 @@ export class PrefabView {
 
   /** Draw calls actuales de este prefab (para métricas y pruebas). */
   get visibleMeshes(): number {
-    let n = this.whole.visible ? 1 : 0;
+    let n = this.whole ? (this.whole.visible ? 1 : 0) : this.split ? 0 : 1;
     for (const m of this.meshes.values()) if (m.visible) n++;
     return n;
   }
 
   set castShadow(v: boolean) {
-    this.whole.castShadow = v;
+    if (this.whole) this.whole.castShadow = v;
     for (const m of this.meshes.values()) m.castShadow = v;
   }
 
@@ -179,7 +224,8 @@ export class PrefabView {
     const split = !(this.state === 'outside' && allOpaque);
     if (split !== this.split) {
       this.split = split;
-      this.whole.visible = !split;
+      if (this.whole) this.whole.visible = !split;
+      this.batch?.setVisible(!split);
       if (!split) for (const m of this.meshes.values()) m.visible = false;
     }
   }

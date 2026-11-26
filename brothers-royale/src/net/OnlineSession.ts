@@ -19,6 +19,10 @@ import {
 import type { CharacterSnapshot } from '@shared/reconciliation';
 import type { PlayerInput, PlayerState } from '@shared/types';
 import type { GameSession, PlayerIdentity } from './GameSession';
+import { ReplicatedMatch, type ClientMatchEvent, type MatchView } from './MatchView';
+import type { ChestPlacement } from '@shared/world/layout';
+import type { NoticeCode } from '@shared/match/MatchState';
+import type { PublicMatchEvent } from '@shared/protocol';
 import { sanitizeRoomCode } from '@shared/session';
 import { SnapshotInterpolator } from './Interpolation';
 import { PredictionController } from './Prediction';
@@ -44,6 +48,8 @@ export interface OnlineOptions {
   physics: PhysicsWorld;
   /** Semilla del mapa del cliente: debe coincidir con la del servidor. */
   seed: number;
+  /** Cofres del mapa local (mismos ids que en el servidor). */
+  chests?: readonly ChestPlacement[];
   onInfo?: (info: OnlineInfo) => void;
   /** Tiempo máximo para unirse y recibir la bienvenida (ms). */
   timeoutMs?: number;
@@ -82,6 +88,9 @@ export class OnlineSession implements GameSession {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private readonly scratch: PublicPlayer = { netId: 0, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0, grounded: true, locomotion: 'idle', lastSeq: 0 };
   readonly info: OnlineInfo;
+  /** Réplica de cofres, objetos e inventario propio (la autoridad es el servidor). */
+  private readonly replica: ReplicatedMatch;
+  onMatchEvent: ((e: ClientMatchEvent) => void) | null = null;
   private disposed = false;
 
   private constructor(
@@ -89,7 +98,10 @@ export class OnlineSession implements GameSession {
     private readonly physics: PhysicsWorld,
     welcome: WelcomeMessage,
     private readonly onInfo: ((info: OnlineInfo) => void) | undefined,
+    chests: readonly ChestPlacement[] = [],
   ) {
+    this.replica = new ReplicatedMatch(chests);
+    this.replica.load(welcome.match, welcome.inventory);
     if (welcome.roster.length > NET.maxPlayersPerRoom) throw new Error('El servidor supera el máximo de 8 jugadores por sala');
     this.localPlayerId = welcome.playerId;
     this.lastCorrectionTick = welcome.tick;
@@ -134,6 +146,9 @@ export class OnlineSession implements GameSession {
         room.onMessage('join', (m: RosterEntry) => (session ? session.onJoin(m) : early.join.push(m)));
         room.onMessage('leave', (m: { id: string; netId: number }) => session?.onLeave(m.netId));
         room.onMessage('pong', (m: { t: number }) => session?.onPong(m));
+        room.onMessage('match', (m: { tick: number; events: PublicMatchEvent[] }) => session?.onMatch(m));
+        room.onMessage('inventory', (m: unknown) => session?.onInventory(m));
+        room.onMessage('notice', (m: { code: NoticeCode }) => session?.onNotice(m));
         room.onLeave((code: number, reason?: string) => {
           if (!session) reject(new Error(closeReason(code, reason)));
           else session.onClosed(code, reason);
@@ -149,7 +164,7 @@ export class OnlineSession implements GameSession {
 
     try {
       opts.signal?.throwIfAborted();
-      session = new OnlineSession(room, opts.physics, welcome, opts.onInfo);
+      session = new OnlineSession(room, opts.physics, welcome, opts.onInfo, opts.chests ?? []);
     } catch (error) {
       await room.leave(true).catch(() => undefined);
       throw error;
@@ -195,6 +210,14 @@ export class OnlineSession implements GameSession {
     return this.body.state;
   }
 
+  get match(): MatchView {
+    return this.replica;
+  }
+
+  selectSlot(slot: number): void {
+    if (this.info.status === 'connected' && Number.isInteger(slot)) this.room.send('select', { slot });
+  }
+
   identity(id: string): PlayerIdentity {
     for (const r of this.roster.values()) if (r.id === id) return { name: r.name, color: r.color };
     return { name: 'Jugador', color: 0 };
@@ -220,6 +243,23 @@ export class OnlineSession implements GameSession {
 
   // --- Mensajes del servidor ---------------------------------------------------
 
+  private onMatch(m: { tick: number; events: PublicMatchEvent[] }): void {
+    if (!Array.isArray(m?.events)) return;
+    for (const e of m.events) {
+      const ok = this.replica.apply(e);
+      if (ok) this.onMatchEvent?.(ok);
+    }
+  }
+
+  private onInventory(m: unknown): void {
+    const inv = this.replica.setInventory(m);
+    if (inv) this.onMatchEvent?.({ type: 'inventory', inventory: inv });
+  }
+
+  private onNotice(m: { code: NoticeCode }): void {
+    if (m?.code === 'full' || m?.code === 'opened' || m?.code === 'gone') this.onMatchEvent?.({ type: 'notice', code: m.code });
+  }
+
   private onWelcome(w: WelcomeMessage): void {
     if (w.roster.length > NET.maxPlayersPerRoom) {
       this.onClosed(CloseCodes.ROOM_CAPACITY);
@@ -227,6 +267,8 @@ export class OnlineSession implements GameSession {
       return;
     }
     // Tras reconectar: estado autoritativo fresco y sin entradas pendientes viejas.
+    this.replica.load(w.match, w.inventory);
+    this.onMatchEvent?.({ type: 'reset' });
     this.pendingCorrection = null;
     this.lastCorrectionTick = w.tick;
     this.interp.clear();

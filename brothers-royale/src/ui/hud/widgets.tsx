@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Game } from '@/game/Game';
+import type { Inventory as InventoryState } from '@shared/inventory';
+import { ITEMS, itemName, type ItemKind, type ItemStack } from '@shared/items';
 import { terrainHeight } from '@shared/world/terrain';
 
 /** Barra de salud (preparada: aún no hay daño, siempre llena). */
@@ -33,19 +35,99 @@ export function Lives({ lives = 3, max = 3 }: { lives?: number; max?: number }) 
   );
 }
 
-/** Inventario de 5 huecos (preparado: vacío, primero seleccionado). */
-export function Inventory({ slots = 5, selected = 0 }: { slots?: number; selected?: number }) {
+/** Icono simple por tipo de objeto (SVG en línea, sin texturas). */
+export function ItemIcon({ kind }: { kind: ItemKind }) {
+  const cat = ITEMS[kind].category;
+  if (kind === 'axe')
+    return (
+      <svg viewBox="0 0 24 24" className="w-icon" aria-hidden="true">
+        <path d="M14 3c3 0 6 2 7 5-2 0-4 1-5 3l-2-2-8 12-2-1 8-12-2-2c1-2 2-3 4-3Z" />
+      </svg>
+    );
+  if (cat === 'weapon')
+    return (
+      <svg viewBox="0 0 24 24" className="w-icon" aria-hidden="true">
+        <path d={kind === 'shotgun' || kind === 'rifle' ? 'M2 9h17l3 2v2H9l-2 5H4l1-5H2Z' : 'M3 8h14l2 2v2H11l-2 6H6l1-6H3Z'} />
+      </svg>
+    );
+  if (cat === 'ammo')
+    return (
+      <svg viewBox="0 0 24 24" className="w-icon" aria-hidden="true">
+        <path d="M6 9h3V5l-1.5-2L6 5Zm5 0h3V5l-1.5-2L11 5Zm5 0h3V5l-1.5-2L16 5ZM5 10h15v10H5Z" />
+      </svg>
+    );
   return (
-    <ol className="w-inv" aria-label="Inventario vacío">
-      {Array.from({ length: slots }, (_, i) => (
-        <li key={i} className={`w-inv__slot${i === selected ? ' is-on' : ''}`}>
-          <span className="w-inv__key" aria-hidden="true">
-            {i + 1}
-          </span>
-        </li>
-      ))}
-    </ol>
+    <svg viewBox="0 0 24 24" className="w-icon w-icon--heal" aria-hidden="true">
+      <path d="M4 7h16v13H4Zm6 3v3H7v2h3v3h2v-3h3v-2h-3v-3Z" />
+    </svg>
   );
+}
+
+const AMMO_SHORT: Record<string, string> = { ammo_light: 'Ligera', ammo_medium: 'Media', ammo_shells: 'Cartuchos' };
+
+/**
+ * Inventario de 5 huecos. Sin datos muestra los huecos vacíos (vista previa
+ * del editor). Con datos: hacha en el 1, objetos con su rareza y cantidad,
+ * munición debajo; tocar un hueco lo selecciona (lo valida la autoridad).
+ */
+export function Inventory({
+  slots = 5,
+  selected = 0,
+  inventory = null,
+  onSelect,
+}: {
+  slots?: number;
+  selected?: number;
+  inventory?: InventoryState | null;
+  onSelect?: (slot: number) => void;
+}) {
+  const sel = inventory?.selected ?? selected;
+  const items: (ItemStack | null)[] = inventory?.slots ?? Array.from({ length: slots }, () => null);
+  const ammo = inventory ? Object.entries(inventory.ammo).filter(([, n]) => n > 0) : [];
+  return (
+    <div className="w-inv-wrap">
+      <ol className="w-inv" aria-label={inventory ? 'Inventario' : 'Inventario vacío'}>
+        {items.map((it, i) => (
+          <li key={i} className={`w-inv__slot${i === sel ? ' is-on' : ''}${it?.rarity ? ` r-${it.rarity}` : ''}`}>
+            <button
+              type="button"
+              className="w-inv__btn"
+              aria-label={`Hueco ${i + 1}: ${it ? itemName(it) : 'vacío'}`}
+              aria-pressed={i === sel}
+              tabIndex={onSelect ? 0 : -1}
+              onClick={() => onSelect?.(i)}
+            >
+              <span className="w-inv__key" aria-hidden="true">
+                {i + 1}
+              </span>
+              {it && <ItemIcon kind={it.kind} />}
+              {it && it.qty > 1 && <span className="w-inv__qty">{it.qty}</span>}
+            </button>
+          </li>
+        ))}
+      </ol>
+      {ammo.length > 0 && (
+        <p className="w-ammo" aria-label="Munición">
+          {ammo.map(([k, n]) => (
+            <span key={k}>
+              {AMMO_SHORT[k]} {n}
+            </span>
+          ))}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Inventario conectado al juego (se re-dibuja solo cuando cambia). */
+export function LiveInventory({ game }: { game: Game | null }) {
+  const [inv, setInv] = useState(() => game?.inventory ?? null);
+  useEffect(() => {
+    if (!game) return;
+    setInv(game.inventory);
+    return game.events.on('inventory', setInv);
+  }, [game]);
+  return <Inventory inventory={inv} onSelect={game ? (i) => game.selectSlot(i) : undefined} />;
 }
 
 const MAP_PX = 128;
@@ -79,7 +161,9 @@ export function Minimap({ game }: { game: Game | null }) {
     for (const t of layout.trees) c.fillRect(((t.x + half) / layout.terrain.size) * MAP_PX - 1, ((t.z + half) / layout.terrain.size) * MAP_PX - 1, 2, 2);
     c.fillStyle = '#b23a37';
     for (const s of layout.structures) {
-      const r = s.def.id === 'house' ? 5 : 2.5;
+      if (s.def.id === 'chest') continue; // los cofres van en la capa dinámica
+      const r = s.def.id === 'house' ? 5 : s.def.id.startsWith('small-') ? 3.2 : 2.2;
+      c.fillStyle = s.def.id.startsWith('small-') ? '#8a3b2b' : '#b23a37';
       c.fillRect(((s.x + half) / layout.terrain.size) * MAP_PX - r, ((s.z + half) / layout.terrain.size) * MAP_PX - r, r * 2, r * 2);
     }
   }, [game]);
@@ -93,6 +177,15 @@ export function Minimap({ game }: { game: Game | null }) {
       const half = st.size / 2;
       const u = (x: number) => ((x + half) / st.size) * MAP_PX;
       c.clearRect(0, 0, MAP_PX, MAP_PX);
+      // Cofres aún cerrados (dorados).
+      c.fillStyle = '#ffd34d';
+      c.strokeStyle = '#5e3b1c';
+      c.lineWidth = 1;
+      for (const ch of st.chests) {
+        if (ch.opened) continue;
+        c.fillRect(u(ch.x) - 1.8, u(ch.z) - 1.8, 3.6, 3.6);
+        c.strokeRect(u(ch.x) - 1.8, u(ch.z) - 1.8, 3.6, 3.6);
+      }
       c.fillStyle = '#ff5a5f';
       for (const o of st.others) {
         c.beginPath();
@@ -140,7 +233,7 @@ export function renderInfoWidget(id: 'health' | 'lives' | 'inventory' | 'minimap
     case 'lives':
       return <Lives />;
     case 'inventory':
-      return <Inventory />;
+      return <LiveInventory game={game} />;
     case 'minimap':
       return <Minimap game={game} />;
   }

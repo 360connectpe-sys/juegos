@@ -104,6 +104,8 @@ export class KeyboardSource implements InputSource {
   private actionLatch = 0;
   private activity = false;
   zoomDelta = 0;
+  /** Hueco pedido con las teclas 1-5 (o null). */
+  slotRequest: number | null = null;
 
   constructor(private readonly target: Window) {
     target.addEventListener('keydown', this.onDown);
@@ -142,6 +144,8 @@ export class KeyboardSource implements InputSource {
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
     // Un toque rápido (keydown+keyup entre dos ticks) no debe perder el salto.
     if (e.code === 'Space' && !e.repeat) this.jumpLatch = true;
+    const digit = /^(?:Digit|Numpad)([1-5])$/.exec(e.code);
+    if (digit && !e.repeat) this.slotRequest = Number(digit[1]) - 1;
     const action = KEY_ACTIONS[e.code];
     if (action && !e.repeat) this.actionLatch |= action;
     if (e.code === 'Equal' || e.code === 'NumpadAdd') this.zoomDelta -= 0.1;
@@ -373,6 +377,9 @@ type GamepadLike = Pick<Gamepad, 'axes' | 'buttons' | 'connected' | 'mapping'>;
 export class GamepadSource implements InputSource {
   readonly device = 'gamepad' as const;
   private prevJump = false;
+  private prevNext = false;
+  /** RB: pasar al hueco siguiente (se cuenta en el flanco). */
+  nextSlotPressed = false;
   connected = false;
 
   constructor(private readonly getPads: () => readonly (GamepadLike | null)[] = () => navigator.getGamepads?.() ?? []) {}
@@ -396,6 +403,9 @@ export class GamepadSource implements InputSource {
     const dy = (pressed(PAD.UP) ? 1 : 0) - (pressed(PAD.DOWN) ? 1 : 0);
     if (dx !== 0 || dy !== 0) move = { x: dx, y: dy };
     const jump = pressed(PAD.A);
+    const next = pressed(PAD.RB);
+    if (next && !this.prevNext) this.nextSlotPressed = true;
+    this.prevNext = next;
     let actions = 0;
     for (const [btn, bit] of PAD_ACTIONS) if (pressed(btn)) actions |= bit;
     const aim = this.rightStick(p);

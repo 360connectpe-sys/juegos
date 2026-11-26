@@ -2,7 +2,7 @@ import type { WebSocketClient } from '@colyseus/ws-transport';
 import { type Client, Room, ServerError } from '@colyseus/core';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
 import { SIMULATION } from '@shared/constants';
-import { CloseCodes, NET, PROTOCOL_VERSION, type WelcomeMessage } from '@shared/protocol';
+import { CloseCodes, isPublicMatchEvent, NET, PROTOCOL_VERSION, type PublicMatchEvent, type WelcomeMessage } from '@shared/protocol';
 import { sanitizeRoomCode, uniqueName, validateJoinOptions } from '@shared/session';
 import { ServerWorld } from './ServerWorld';
 
@@ -52,6 +52,10 @@ export class BrothersRoom extends Room {
     });
     this.onMessage('ready', (client) => this.handleReady(client));
     this.onMessage('input', (client, message) => this.handleInput(client, message));
+    this.onMessage('select', (client, message: { slot?: unknown }) => {
+      if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready) return;
+      this.world.selectSlot(client.sessionId, message?.slot);
+    });
     this.onMessage('ping', (client, message: { t?: unknown }) => {
       if (!this.countMessage(client)) return;
       const t = typeof message?.t === 'number' && Number.isFinite(message.t) ? message.t : 0;
@@ -97,6 +101,8 @@ export class BrothersRoom extends Room {
       tickRate: NET.tickRate,
       roster: this.world.roster(),
       state: player.body.snapshot(),
+      match: this.world.match.snapshot(),
+      inventory: this.world.match.inventory(player.id)!,
     };
     client.send('welcome', welcome);
     player.correctionDirty = false;
@@ -129,7 +135,11 @@ export class BrothersRoom extends Room {
 
   private tick(): void {
     this.world.step();
-    if (this.clients.length === 0) return;
+    if (this.clients.length === 0) {
+      this.world.drainMatchEvents();
+      return;
+    }
+    this.sendMatchEvents();
     // Fase 3.2: el snapshot se codifica UNA vez y se difunde; antes se codificaba
     // una vez por cliente. Se excluye a quien aún no está listo o va saturado.
     const skip = this.skipScratch;
@@ -150,6 +160,28 @@ export class BrothersRoom extends Room {
       const state = this.world.takeCorrection(client.sessionId);
       if (state) client.send('correction', { tick: this.world.tick, state });
     }
+  }
+
+  /**
+   * Cofres y objetos: un único mensaje por tick para toda la sala. Inventario y
+   * avisos: solo al dueño. Quien aún no está listo los recibirá en la bienvenida.
+   */
+  private sendMatchEvents(): void {
+    const events = this.world.drainMatchEvents();
+    if (events.length === 0) return;
+    const pub: PublicMatchEvent[] = [];
+    for (const e of events) {
+      if (isPublicMatchEvent(e)) pub.push(e);
+      else {
+        const client = this.clients.find((c) => c.sessionId === e.playerId);
+        if (!client || !this.meta.get(client.sessionId)?.ready) continue;
+        if (e.type === 'inventory') client.send('inventory', e.inventory);
+        else client.send('notice', { code: e.code });
+      }
+    }
+    if (pub.length === 0) return;
+    const notReady = this.clients.filter((c) => !this.meta.get(c.sessionId)?.ready);
+    this.broadcast('match', { tick: this.world.tick, events: pub }, notReady.length ? { except: notReady } : undefined);
   }
 
   async onDrop(client: Client): Promise<void> {

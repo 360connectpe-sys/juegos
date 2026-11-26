@@ -249,3 +249,117 @@ export function createCratesDef(): PrefabDef {
     ],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Fase 5: casas pequeñas repartidas por el mapa y cofres
+// ---------------------------------------------------------------------------
+
+export type SmallHouseVariant = 'cabin' | 'stone' | 'long' | 'porch';
+export const SMALL_HOUSE_VARIANTS: readonly SmallHouseVariant[] = ['cabin', 'stone', 'long', 'porch'];
+
+/** Paletas de pared/tejado/madera: misma forma, aspecto distinto. */
+export const SMALL_HOUSE_PALETTES = [
+  { wall: '#f2dfc0', roof: '#c8553d', trim: '#7a4b2a' },
+  { wall: '#cfe3ea', roof: '#3d6fa8', trim: '#5a4636' },
+  { wall: '#d9e4c4', roof: '#4f8a4b', trim: '#6b4a2b' },
+  { wall: '#ead2c4', roof: '#7a4f3a', trim: '#4a3527' },
+] as const;
+
+const SMALL = {
+  thickness: 0.25,
+  doorWidth: 1.4,
+  doorHeight: 2.15,
+} as const;
+
+/** Dimensiones de cada diseño (ancho X, fondo Z, alto de pared). */
+export const SMALL_HOUSE_SIZE: Record<SmallHouseVariant, { w: number; d: number; h: number; door: number }> = {
+  cabin: { w: 5.4, d: 4.6, h: 2.6, door: 0 },
+  stone: { w: 5, d: 5, h: 2.5, door: 0 },
+  long: { w: 4.4, d: 7, h: 2.6, door: -0.9 },
+  porch: { w: 5, d: 4.4, h: 2.6, door: 0.6 },
+};
+
+/**
+ * Casa pequeña de una planta, accesible por una puerta en +Z local. El
+ * interior permite ocultar techo y paredes frontales al entrar (como la casa
+ * grande). Las paredes colisionan; techos y adornos son solo visuales.
+ */
+export function createSmallHouseDef(variant: SmallHouseVariant, paletteIndex: number): PrefabDef {
+  const pal = SMALL_HOUSE_PALETTES[((paletteIndex % SMALL_HOUSE_PALETTES.length) + SMALL_HOUSE_PALETTES.length) % SMALL_HOUSE_PALETTES.length]!;
+  const { w: W, d: D, h: H, door: doorX } = SMALL_HOUSE_SIZE[variant];
+  const t = SMALL.thickness;
+  const hw = W / 2;
+  const hd = D / 2;
+  const wall = variant === 'stone' ? '#b9b4aa' : pal.wall;
+  const FRONT = { x: 0, y: 1 };
+  const parts: PrefabPart[] = [];
+  const cy = H / 2;
+
+  parts.push(bx([0, 0.03, 0], [W + 0.3, 0.06, D + 0.3], pal.trim, 'base', { collide: false }));
+  parts.push(bx([0, cy, -hd + t / 2], [W, H, t], wall, 'base', { facing: { x: 0, y: -1 } }));
+  parts.push(bx([-hw + t / 2, cy, 0], [t, H, D], wall, 'base', { facing: { x: -1, y: 0 } }));
+  parts.push(bx([hw - t / 2, cy, 0], [t, H, D], wall, 'base', { facing: { x: 1, y: 0 } }));
+  // Fachada con hueco de puerta (desplazado según el diseño).
+  const dl = doorX - SMALL.doorWidth / 2;
+  const dr = doorX + SMALL.doorWidth / 2;
+  const leftLen = dl + hw;
+  const rightLen = hw - dr;
+  parts.push(bx([-hw + leftLen / 2, cy, hd - t / 2], [leftLen, H, t], wall, 'base', { facing: FRONT }));
+  parts.push(bx([dr + rightLen / 2, cy, hd - t / 2], [rightLen, H, t], wall, 'base', { facing: FRONT }));
+  parts.push(bx([doorX, SMALL.doorHeight + (H - SMALL.doorHeight) / 2, hd - t / 2], [SMALL.doorWidth, H - SMALL.doorHeight, t], wall, 'base', { facing: FRONT }));
+  parts.push(bx([doorX, SMALL.doorHeight, hd - t / 2], [SMALL.doorWidth + 0.1, 0.1, t + 0.06], pal.trim, 'base', { collide: false, facing: FRONT }));
+  // Ventanas
+  const win = '#5bc0eb';
+  parts.push(bx([hw + 0.02, H * 0.6, 0], [0.06, 0.8, 1], win, 'base', { collide: false, facing: { x: 1, y: 0 } }));
+  parts.push(bx([-hw - 0.02, H * 0.6, 0], [0.06, 0.8, 1], win, 'base', { collide: false, facing: { x: -1, y: 0 } }));
+  if (variant !== 'long') parts.push(bx([doorX > 0 ? -hw / 2 : hw / 2, H * 0.6, hd + 0.02], [0.9, 0.8, 0.06], win, 'base', { collide: false, facing: FRONT }));
+
+  if (variant === 'stone') {
+    // Azotea plana con pretil y una chimenea.
+    parts.push(bx([0, H + 0.1, 0], [W + 0.3, 0.2, D + 0.3], '#8f8a80', 'roof', { collide: false }));
+    parts.push(bx([0, H + 0.35, hd + 0.1], [W + 0.3, 0.3, 0.12], '#8f8a80', 'roof', { collide: false }));
+    parts.push(bx([0, H + 0.35, -hd - 0.1], [W + 0.3, 0.3, 0.12], '#8f8a80', 'roof', { collide: false }));
+    parts.push(bx([hw * 0.5, H + 0.7, -hd * 0.4], [0.5, 1, 0.5], '#7a7a7a', 'roof', { collide: false }));
+  } else {
+    // Tejado a dos aguas con cumbrera en Z.
+    const roofH = variant === 'long' ? 1.3 : 1.6;
+    for (const z of [hd - t, -hd]) parts.push({ kind: 'gable', y: H, z, halfWidth: hw, height: roofH, thickness: t, color: wall, layer: 'roof' });
+    const slope = Math.atan2(roofH, hw);
+    const slab = Math.hypot(hw, roofH) + 0.35;
+    for (const sx of [-1, 1])
+      parts.push(bx([(sx * hw) / 2 + sx * 0.04, H + roofH / 2 + 0.1, 0], [slab, 0.18, D + 0.5], pal.roof, 'roof', { collide: false, rot: [0, 0, -sx * slope] }));
+  }
+  if (variant === 'porch') {
+    // Porche: dos postes (colisionan) y un tejadillo.
+    for (const sx of [-1, 1]) parts.push(bx([sx * (hw - 0.3), 1.2, hd + 1.4], [0.18, 2.4, 0.18], pal.trim, 'base', { facing: FRONT }));
+    parts.push(bx([0, 2.45, hd + 0.75], [W, 0.12, 1.7], pal.roof, 'roof', { collide: false }));
+  }
+  if (variant === 'cabin') parts.push(bx([-hw * 0.5, H + 1.2, -hd * 0.3], [0.45, 1.1, 0.45], '#8a8a8a', 'roof', { collide: false }));
+
+  return {
+    id: `small-${variant}`,
+    parts,
+    clearRadius: Math.hypot(hw, hd) + (variant === 'porch' ? 3 : 2),
+    interior: { min: { x: -hw + t - 0.1, y: -0.5, z: -hd + t - 0.1 }, max: { x: hw - t + 0.1, y: H + 0.5, z: hd - t + 0.1 } },
+  };
+}
+
+/** Posición local (suelo) del cofre dentro de una casa pequeña: esquina del fondo. */
+export function smallHouseChestSpot(variant: SmallHouseVariant): { x: number; z: number; yaw: number } {
+  const { w, d } = SMALL_HOUSE_SIZE[variant];
+  return { x: -w / 2 + SMALL.thickness + 0.65, z: -d / 2 + SMALL.thickness + 0.5, yaw: 0 };
+}
+
+export const CHEST = { width: 0.9, height: 0.62, depth: 0.58 } as const;
+
+/**
+ * Cofre: solo su colisionador (caja). Se dibuja con un InstancedMesh
+ * aparte (todos los cofres en 2 draw calls) porque la tapa se anima.
+ */
+export function createChestDef(): PrefabDef {
+  return {
+    id: 'chest',
+    clearRadius: 1.2,
+    parts: [bx([0, CHEST.height / 2, 0], [CHEST.width, CHEST.height, CHEST.depth], '#8b5a2b', 'base', { visible: false })],
+  };
+}

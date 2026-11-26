@@ -1062,3 +1062,154 @@ kbd {
     display: none;
   }
 }
+
+/* ======================================================================
+   Fase 5 — Inventario, Abrir/Recoger y avisos
+   ====================================================================== */
+.w-inv-wrap {
+  /* La munición va al lado: el alto del inventario no cambia y no se recorta. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+.w-inv__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  color: var(--foam);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.w-inv__btn:focus-visible {
+  outline: 3px solid var(--sun);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+.w-inv__slot.r-common {
+  border-color: #c9ced6;
+}
+.w-inv__slot.r-rare {
+  border-color: #4d9de0;
+  background: rgb(77 157 224 / 0.22);
+}
+.w-inv__slot.r-epic {
+  border-color: #b35cff;
+  background: rgb(179 92 255 / 0.22);
+}
+.w-inv__slot.is-on {
+  border-color: var(--sun);
+  box-shadow: 0 0 0 2px var(--sun);
+}
+.w-icon {
+  width: 26px;
+  height: 26px;
+  fill: var(--foam);
+}
+.w-icon--heal {
+  fill: #ffffff;
+}
+.w-icon--heal path {
+  fill-rule: evenodd;
+}
+.w-inv__qty {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font: 800 0.65rem/1 var(--body);
+  font-variant-numeric: tabular-nums;
+}
+.w-ammo {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 3px 8px;
+  font: 800 0.68rem/1.2 var(--body);
+  font-variant-numeric: tabular-nums;
+  background: rgb(23 19 63 / 0.55);
+  border-radius: 8px;
+}
+
+.interact {
+  position: absolute;
+  left: 50%;
+  top: 60%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.interact__btn {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas: 'key action' 'key label';
+  align-items: center;
+  column-gap: 10px;
+  min-height: 52px;
+  padding: 8px 16px;
+  color: var(--ink);
+  background: var(--sun);
+  border: 4px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: 0 5px 0 var(--ink);
+  cursor: pointer;
+  touch-action: none;
+}
+.interact__btn--pickup {
+  background: var(--mint);
+}
+.interact__btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 var(--ink);
+}
+.interact__btn:focus-visible {
+  outline: 3px solid var(--foam);
+  outline-offset: 3px;
+}
+.interact__btn kbd {
+  grid-area: key;
+  box-shadow: 0 2px 0 var(--ink);
+}
+.interact__action {
+  grid-area: action;
+  font: 400 1.25rem/1 var(--display);
+}
+.interact__label {
+  grid-area: label;
+  font: 800 0.75rem/1.2 var(--body);
+}
+.interact__notice {
+  margin: 0;
+  max-width: min(360px, 80vw);
+  padding: 6px 12px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  text-align: center;
+  color: var(--foam);
+  background: var(--coral);
+  border-radius: 10px;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .interact {
+    top: 56%;
+  }
+  .interact__btn {
+    min-height: 44px;
+    padding: 5px 12px;
+  }
+  .interact__action {
+    font-size: 1.05rem;
+  }
+  .w-icon {
+    width: 22px;
+    height: 22px;
+  }
+}

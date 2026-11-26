@@ -145,6 +145,26 @@ export class InputManager {
     return { yaw, pitch };
   }
 
+  /**
+   * Hueco del inventario pedido desde el teclado (1-5) o el mando (RB =
+   * siguiente). Lo valida y aplica la autoridad; aquí solo se pide.
+   */
+  consumeSlotRequest(current: number, slots = 5): number | null {
+    let req: number | null = this.keyboard.slotRequest;
+    this.keyboard.slotRequest = null;
+    if (this.gamepad.nextSlotPressed) {
+      this.gamepad.nextSlotPressed = false;
+      req = (current + 1) % slots;
+    }
+    return req;
+  }
+
+  /** Pulsa una acción una vez (botones del HUD como "Abrir"/"Recoger"). */
+  pulse(bit: number): void {
+    this.touch.setAction(bit, true);
+    this.touch.setAction(bit, false);
+  }
+
   /** Cambio de zoom acumulado (rueda del ratón, +/-), solo cliente. */
   consumeZoom(): number {
     const z = this.wheelZoom + this.keyboard.zoomDelta;
