@@ -1,6 +1,7 @@
 import {
   ACESFilmicToneMapping,
   BufferGeometry,
+  BatchedMesh,
   type Camera,
   DirectionalLight,
   InstancedMesh,
@@ -224,9 +225,10 @@ export class Engine {
     const materials = new Set<Material>();
     this.scene.traverse((object) => {
       if (object instanceof Mesh) {
-        geometries.add(object.geometry);
+        if (!(object instanceof BatchedMesh)) geometries.add(object.geometry);
         for (const material of Array.isArray(object.material) ? object.material : [object.material]) materials.add(material);
       }
+      if (object instanceof BatchedMesh) object.dispose();
       if (object instanceof InstancedMesh) object.dispose();
       if (object instanceof DirectionalLight) object.dispose();
     });

@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { HudElementId, HudElementLayout } from './layout';
 
 /**
@@ -19,15 +19,36 @@ export function HudSlot({
   className?: string;
   interactive?: boolean;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [bounds, setBounds] = useState({ width: 0, height: 0, areaWidth: 0, areaHeight: 0 });
+  useLayoutEffect(() => {
+    const node = ref.current;
+    const parent = node?.parentElement;
+    if (!node || !parent) return;
+    const measure = () => setBounds({ width: node.offsetWidth, height: node.offsetHeight, areaWidth: parent.clientWidth, areaHeight: parent.clientHeight });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [layout.visible]);
   if (!layout.visible) return null;
+  const scale = Math.min(layout.scale,
+    bounds.areaWidth && bounds.width ? bounds.areaWidth / bounds.width : layout.scale,
+    bounds.areaHeight && bounds.height ? bounds.areaHeight / bounds.height : layout.scale);
+  const halfWidth = bounds.width * scale / 2;
+  const halfHeight = bounds.height * scale / 2;
   const style = {
     '--x': layout.x,
     '--y': layout.y,
-    '--s': layout.scale,
+    '--s': scale,
+    left: `clamp(${halfWidth}px, ${layout.x * 100}%, calc(100% - ${halfWidth}px))`,
+    top: `clamp(${halfHeight}px, ${layout.y * 100}%, calc(100% - ${halfHeight}px))`,
     '--o': layout.opacity,
   } as CSSProperties;
   return (
-    <div className={`hud-slot${interactive ? ' hud-slot--interactive' : ''} ${className}`} data-hud={id} style={style}>
+    <div ref={ref} className={`hud-slot${interactive ? ' hud-slot--interactive' : ''} ${className}`} data-hud={id} style={style}>
       {children}
     </div>
   );

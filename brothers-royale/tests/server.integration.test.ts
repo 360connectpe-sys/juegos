@@ -115,6 +115,7 @@ describe('servidor autoritativo (Colyseus) con dos clientes', () => {
 
     const bad = new Client(`ws://127.0.0.1:${PORT}`);
     await expect(bad.joinOrCreate(ROOM_NAME, { protocol: 1, name: 'Viejo' })).rejects.toThrow(/protocolo/);
+    await expect(bad.joinOrCreate(ROOM_NAME, { protocol: 3, name: 'Cliente v3' })).rejects.toThrow(/protocolo/);
 
     for (let i = 0; i < 40; i++) priv.room.send('input', { seq: -1 });
     await until(() => priv.left !== null);

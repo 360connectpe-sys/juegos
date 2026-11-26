@@ -109,6 +109,8 @@ export class MatchState {
 
   /** Todos empiezan con el hacha permanente en el hueco 1. */
   addPlayer(id: string): Inventory {
+    const existing = this.inventories.get(id);
+    if (existing) return existing;
     const inv = createInventory();
     this.inventories.set(id, inv);
     this.events.push({ type: 'inventory', playerId: id, inventory: inv });

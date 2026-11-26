@@ -11,8 +11,8 @@ export type CollisionLayer = 'world' | 'structure' | 'build' | 'player';
 
 /** Descripción de colisionadores estáticos, independiente del motor de física. */
 export type StaticColliderSpec =
-  | { kind: 'box'; center: Vec3; halfExtents: Vec3; rotation: Quat; layer: CollisionLayer }
-  | { kind: 'cylinder'; center: Vec3; radius: number; halfHeight: number; layer: CollisionLayer };
+  | { kind: 'box'; center: Vec3; halfExtents: Vec3; rotation: Quat; layer: CollisionLayer; interactionTarget?: boolean }
+  | { kind: 'cylinder'; center: Vec3; radius: number; halfHeight: number; layer: CollisionLayer; interactionTarget?: boolean };
 
 const IDENTITY: Quat = { x: 0, y: 0, z: 0, w: 1 };
 
@@ -28,6 +28,7 @@ export function prefabColliders(p: PlacedPrefab, layer: CollisionLayer = 'struct
       halfExtents: { x: part.size.x / 2, y: part.size.y / 2, z: part.size.z / 2 },
       rotation,
       layer,
+      interactionTarget: p.def.id === 'chest',
     });
   }
   return out;

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { matchMaker } from '@colyseus/core';
 import type { Room } from '@colyseus/sdk';
 import { createServer } from '../server/index';
+import type { WebSocketClient } from '@colyseus/ws-transport';
 import type { BrothersRoom } from '../server/BrothersRoom';
 import { OnlineSession } from '@/net/OnlineSession';
 import type { ClientMatchEvent } from '@/net/MatchView';
@@ -52,6 +53,24 @@ async function play(clients: TestClient[], ticks: number, interact: (i: number, 
 }
 
 describe('partida con 6 jugadores: cofres, botín e inventarios sincronizados', () => {
+  it('reconectar conserva el inventario autoritativo sin generar copias en el suelo', async () => {
+    const client = await makeClient('Reconectar inventario');
+    try {
+      const sdk = (client.session as unknown as { room: Room }).room;
+      const room = matchMaker.getLocalRoomById(sdk.roomId) as BrothersRoom;
+      const inv = room.world.match.inventory(client.session.localPlayerId)!;
+      inv.ammo.ammo_light = 17;
+      const totals = room.world.match.totals();
+      (room.clients.find((c) => c.sessionId === sdk.sessionId) as WebSocketClient).ref.terminate();
+      await wait(50);
+      for (let i = 0; i < 300 && (client.session.status !== 'connected' || client.session.match.inventory?.ammo.ammo_light !== 17); i++) await wait(10);
+      expect(client.session.status).toBe('connected');
+      expect(client.session.match.inventory!.ammo.ammo_light).toBe(17);
+      expect(room.world.match.inventory(sdk.sessionId)).toBe(inv);
+      expect(room.world.match.totals()).toEqual(totals);
+    } finally { client.session.dispose(); client.physics.dispose(); }
+  }, 10000);
+
   it('un único ganador por cofre, sin duplicados, inventarios privados y objetos que caen al salir', async () => {
     const clients: TestClient[] = [];
     for (let i = 0; i < 6; i++) clients.push(await makeClient(`J${i}`));

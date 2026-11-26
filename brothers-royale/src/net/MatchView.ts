@@ -1,5 +1,5 @@
 import { isValidInventory, type Inventory } from '@shared/inventory';
-import { isItemKind } from '@shared/items';
+import { isItemKind, ITEMS, RARITIES } from '@shared/items';
 import type { MatchSnapshot, NoticeCode, Pickup } from '@shared/match/MatchState';
 import type { PublicMatchEvent } from '@shared/protocol';
 import type { ChestPlacement } from '@shared/world/layout';
@@ -27,7 +27,7 @@ export function isValidPickup(p: unknown): p is Pickup {
   return (
     typeof o === 'object' &&
     o !== null &&
-    Number.isInteger(o.id) &&
+    Number.isSafeInteger(o.id) && o.id > 0 &&
     isNum(o.x) &&
     isNum(o.y) &&
     isNum(o.z) &&
@@ -35,7 +35,8 @@ export function isValidPickup(p: unknown): p is Pickup {
     o.item !== null &&
     isItemKind(o.item.kind) &&
     Number.isInteger(o.item.qty) &&
-    o.item.qty > 0
+    o.item.qty > 0 && o.item.qty <= ITEMS[o.item.kind].stack &&
+    (o.item.rarity === undefined || RARITIES.includes(o.item.rarity))
   );
 }
 
@@ -59,7 +60,7 @@ export class ReplicatedMatch implements MatchView {
     this.pickups.clear();
     if (snap && Array.isArray(snap.opened)) for (const id of snap.opened) if (Number.isInteger(id) && id >= 0 && id < this.opened.length) this.opened[id] = true;
     if (snap && Array.isArray(snap.pickups)) for (const p of snap.pickups) if (isValidPickup(p)) this.pickups.set(p.id, p);
-    if (isValidInventory(inventory)) this.inventory = inventory;
+    this.inventory = isValidInventory(inventory) ? inventory : null;
   }
 
   /** Aplica un cambio público. Devuelve el evento si era válido. */

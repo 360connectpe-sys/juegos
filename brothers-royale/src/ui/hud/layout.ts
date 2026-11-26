@@ -3,6 +3,7 @@
  * normalizados al ÁREA SEGURA de la pantalla (0..1, sin notch ni barra de
  * inicio), así una misma disposición vale en cualquier celular o monitor.
  */
+import { safeStorage } from '@/game/settings';
 import { clamp } from '@shared/math';
 import { Buttons } from '@shared/types';
 
@@ -130,7 +131,7 @@ export function resetElement(layout: HudLayout, id: HudElementId): HudLayout {
 
 export const HUD_KEY = 'br.hud.v1';
 
-export function loadHudLayout(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): HudLayout {
+export function loadHudLayout(storage: Pick<Storage, 'getItem'> | null = safeStorage()): HudLayout {
   try {
     const txt = storage?.getItem(HUD_KEY);
     return parseHudLayout(txt ? JSON.parse(txt) : null);
@@ -139,7 +140,7 @@ export function loadHudLayout(storage: Pick<Storage, 'getItem'> | null = typeof 
   }
 }
 
-export function saveHudLayout(layout: HudLayout, storage: Pick<Storage, 'setItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): void {
+export function saveHudLayout(layout: HudLayout, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
   try {
     storage?.setItem(HUD_KEY, JSON.stringify(parseHudLayout(layout)));
   } catch {
@@ -147,7 +148,7 @@ export function saveHudLayout(layout: HudLayout, storage: Pick<Storage, 'setItem
   }
 }
 
-export function resetHudLayout(storage: Pick<Storage, 'removeItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): HudLayout {
+export function resetHudLayout(storage: Pick<Storage, 'removeItem'> | null = safeStorage()): HudLayout {
   try {
     storage?.removeItem(HUD_KEY);
   } catch {

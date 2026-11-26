@@ -26,6 +26,7 @@ export function loadRapier(): Promise<Rapier> {
 }
 
 export class PhysicsWorld {
+  private readonly interactionTargets = new Set<number>();
   readonly world: RAPIERNS.World;
   private cameraBall: RAPIERNS.Ball | null = null;
 
@@ -66,11 +67,14 @@ export class PhysicsWorld {
       desc = R.ColliderDesc.cylinder(spec.halfHeight, spec.radius);
     }
     desc.setTranslation(spec.center.x, spec.center.y, spec.center.z).setCollisionGroups(staticGroups(spec.layer));
-    return this.world.createCollider(desc);
+    const collider = this.world.createCollider(desc);
+    if (spec.interactionTarget) this.interactionTargets.add(collider.handle);
+    return collider;
   }
 
   /** Para piezas destructibles/construcciones (fase futura). */
   removeStatic(collider: RAPIERNS.Collider): void {
+    this.interactionTargets.delete(collider.handle);
     this.world.removeCollider(collider, false);
   }
 
@@ -90,17 +94,17 @@ export class PhysicsWorld {
 
   /**
    * ¿Hay línea de visión entre `from` y `to`? (mundo y estructuras; nunca
-   * jugadores). Un impacto en los últimos `slack` metros cuenta como visible:
+   * jugadores). Solo se ignora el colisionador del cofre que contiene el objetivo. Un impacto en los últimos `slack` metros cuenta como visible:
    * es el propio objetivo (p. ej. el cofre, que tiene colisionador).
    */
-  lineOfSight(from: Vec3, to: Vec3, slack = 0.6): boolean {
+  lineOfSight(from: Vec3, to: Vec3, slack = 0.02): boolean {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = to.z - from.z;
     const len = Math.hypot(dx, dy, dz);
     if (len < 1e-4) return true;
     const ray = new this.R.Ray(from, { x: dx / len, y: dy / len, z: dz / len });
-    const hit = this.world.castRay(ray, len, true, undefined, CAMERA_QUERY_GROUPS);
+    const hit = this.world.castRay(ray, len, true, undefined, CAMERA_QUERY_GROUPS, undefined, undefined, (collider) => !(this.interactionTargets.has(collider.handle) && collider.containsPoint(to)));
     return !hit || hit.timeOfImpact >= len - slack;
   }
 

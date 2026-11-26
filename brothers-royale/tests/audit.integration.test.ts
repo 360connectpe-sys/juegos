@@ -5,7 +5,7 @@ import type { WebSocketClient } from '@colyseus/ws-transport';
 import { createServer } from '../server/index';
 import type { BrothersRoom } from '../server/BrothersRoom';
 import { CloseCodes, NET, PROTOCOL_VERSION, ROOM_NAME, type WelcomeMessage } from '@shared/protocol';
-import { emptyInput } from '@shared/types';
+import { Buttons, emptyInput } from '@shared/types';
 
 const port = 30000 + Math.floor(Math.random() * 2000);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -24,7 +24,7 @@ async function connect(code: string) {
   let snapshots = 0;
   room.onMessage('welcome', (message: WelcomeMessage) => { welcome = message; welcomes++; });
   room.onMessage('snapshot', () => { snapshots++; });
-  for (const type of ['join', 'leave', 'correction', 'pong']) room.onMessage(type, () => undefined);
+  for (const type of ['join', 'leave', 'correction', 'pong', 'match', 'inventory', 'notice']) room.onMessage(type, () => undefined);
   room.onLeave((code) => { closed = code; });
   room.send('ready');
   for (let i = 0; i < 200 && !welcome; i++) await wait(10);
@@ -61,6 +61,10 @@ describe('auditoría de carga y límites', () => {
       });
       const durationSeconds = Number(process.env.BR_SOAK_SECONDS ?? 5);
       if (!Number.isSafeInteger(durationSeconds) || durationSeconds < 5) throw new Error('BR_SOAK_SECONDS debe ser un entero ≥ 5');
+      if (durationSeconds >= 600) {
+        const chest = room.world.layout.chests.find((c) => c.where === 'outside')!;
+        for (const player of room.world.players.values()) player.body.teleport({ x: chest.x, y: chest.y + 0.05, z: chest.z + 1 });
+      }
       const totalInputs = durationSeconds * 30;
       const firstTick = room.world.tick;
       const memory = [{ second: 0, ...process.memoryUsage() }];
@@ -71,7 +75,7 @@ describe('auditoría de carga y límites', () => {
       for (let seq = 1; seq <= totalInputs; seq++) {
         const deadline = start + seq * 1000 / 30;
         const direction = Math.floor(seq / 90) % 2 === 0 ? 1 : -1;
-        for (const c of clients) c.room.send('input', { ...emptyInput(seq), moveX: direction * Math.SQRT1_2, moveZ: direction * Math.SQRT1_2, buttons: seq % 90 === 1 ? 1 : 0 });
+        for (const c of clients) c.room.send('input', { ...emptyInput(seq), moveX: direction * Math.SQRT1_2, moveZ: direction * Math.SQRT1_2, buttons: seq % 90 === 1 ? Buttons.JUMP | Buttons.INTERACT : 0 });
         maxQueue = Math.max(maxQueue, ...[...room.world.players.values()].map((p) => p.queue.length));
         maxBuffered = Math.max(maxBuffered, ...room.clients.map((c) => (c as WebSocketClient).ref.bufferedAmount));
         expect(room.world.players.size).toBe(8);

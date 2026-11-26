@@ -86,6 +86,10 @@ export class AdaptiveResolution {
 
   /** Olvida las medidas (pestaña oculta, contexto perdido, cambio de calidad). */
   reset(): void {
+    this.fastestFrame = Infinity;
+    this.refreshHz = 60;
+    this.lastChange = null;
+    this.windowsSinceChange = 0;
     this.samples = [];
     this.elapsed = 0;
     this.goodWindows = 0;

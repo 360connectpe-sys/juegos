@@ -1,5 +1,17 @@
 # BROTHERS ROYALE — Estado del proyecto
 
+## Auditoría integral de fases 3.2, 4 y 5
+
+Revisión de 5103899 frente a 5da1a88. Informe completo en AUDIT-3.2-5.md.
+Se corrigieron visión a través de paredes cercanas al objetivo, validación de inventarios y pickups,
+inventarios obsoletos o reemplazados al repetir alta, limpieza de BatchedMesh, reinicio del refresco
+adaptativo y recorte, teclado y almacenamiento del HUD. Se conservan las mecánicas existentes.
+Validación final de 237 pruebas, tipos y builds, con bundle actualizado. Ocho clientes completaron
+610 segundos sin desconexiones a 30,00 Hz de media, p95 de simulación de 1,14 ms y pico de 190,45 ms.
+El informe documenta las mediciones de gráficos, recursos, multitouch, contexto WebGL y las
+limitaciones pendientes de hardware físico y redes reales.
+
+
 ## Visión
 Battle Royale multijugador web, low poly, perspectiva isométrica 2.5D, jugable en celular y
 computadora. Mecánicas inspiradas en el género (caída, botín, construcción, tormenta), identidad propia.

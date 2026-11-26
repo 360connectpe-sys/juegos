@@ -6,7 +6,7 @@
  *  - Armas: 1 por hueco. Botiquines: hasta 3 por hueco.
  *  - Munición: en una bolsa aparte por tipo (no ocupa huecos), con tope.
  */
-import { AMMO, isAmmo, ITEMS, type AmmoKind, type ItemStack } from './items';
+import { AMMO, isAmmo, isItemKind, ITEMS, RARITIES, type AmmoKind, type ItemStack } from './items';
 
 export const INVENTORY_SLOTS = 5;
 export const AXE_SLOT = 0;
@@ -102,11 +102,11 @@ export function isValidInventory(v: unknown): v is Inventory {
   return (
     Array.isArray(o.slots) &&
     o.slots.length === INVENTORY_SLOTS &&
-    o.slots.every((s) => s === null || (typeof s === 'object' && typeof s.kind === 'string' && s.kind in ITEMS && Number.isInteger(s.qty) && s.qty > 0)) &&
-    o.slots[AXE_SLOT]?.kind === 'axe' &&
+    o.slots.every((s) => s === null || (typeof s === 'object' && isItemKind(s.kind) && !isAmmo(s.kind) && Number.isSafeInteger(s.qty) && s.qty > 0 && s.qty <= ITEMS[s.kind].stack && (s.rarity === undefined || RARITIES.includes(s.rarity)))) &&
+    o.slots[AXE_SLOT]?.kind === 'axe' && o.slots.every((s, i) => i === AXE_SLOT || s?.kind !== 'axe') &&
     typeof o.ammo === 'object' &&
     o.ammo !== null &&
-    AMMO.every((a) => Number.isInteger(o.ammo[a]) && o.ammo[a] >= 0) &&
+    AMMO.every((a) => Number.isInteger(o.ammo[a]) && o.ammo[a] >= 0 && o.ammo[a] <= ITEMS[a].stack) &&
     Number.isInteger(o.selected) &&
     o.selected >= 0 &&
     o.selected < INVENTORY_SLOTS

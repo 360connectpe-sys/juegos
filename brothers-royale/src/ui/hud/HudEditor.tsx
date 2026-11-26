@@ -64,6 +64,7 @@ export function HudEditor({ initial, game, isTouch, onSave, onCancel }: Props) {
     setDragging(false);
   };
   const onKey = (e: KeyboardEvent) => {
+    if (e.target instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
     const step = e.shiftKey ? 0.05 : 0.01;
     const m: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
     const d = m[e.key];
