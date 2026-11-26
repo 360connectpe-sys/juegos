@@ -3,7 +3,8 @@ import { Vector3 } from 'three';
 import { EventBus } from '@/core/EventBus';
 import { AdaptiveResolution } from '@/engine/AdaptiveResolution';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
-import { computeFrustum, IsometricCamera } from '@/engine/IsometricCamera';
+import { computeFrustum, IsometricCamera, lookAheadTarget } from '@/engine/IsometricCamera';
+import { CAMERA } from '@shared/constants';
 import { buildQuality, detectQuality, pickTier, readQualityOverride } from '@/engine/quality';
 import { ISO_SCREEN_RIGHT, ISO_SCREEN_UP } from '@shared/movement';
 
@@ -76,6 +77,26 @@ describe('cámara isométrica', () => {
     const right = project(ISO_SCREEN_RIGHT.x * 5, ISO_SCREEN_RIGHT.y * 5);
     expect(right.x).toBeGreaterThan(0.1);
     expect(Math.abs(right.y)).toBeLessThan(1e-6);
+  });
+});
+
+describe('seguimiento de cámara', () => {
+  it('adelanta en la dirección de la velocidad con límite', () => {
+    expect(lookAheadTarget(0, 0, 0, 0)).toEqual({ x: 0, z: 0 });
+    expect(lookAheadTarget(1, 1, 2, 0).x).toBeCloseTo(1 + 2 * CAMERA.lookAhead);
+    const far = lookAheadTarget(0, 0, 100, 0);
+    expect(far.x).toBeCloseTo(CAMERA.maxLookAhead);
+  });
+  it('converge al jugador y el zoom respeta los límites', () => {
+    const iso = new IsometricCamera(16 / 9);
+    const p = new Vector3(10, 2, -4);
+    for (let i = 0; i < 120; i++) iso.follow(p, 0, 0, 1 / 60);
+    expect(iso.focus.x).toBeCloseTo(10, 1);
+    expect(iso.focus.y).toBeCloseTo(2, 1);
+    iso.addZoom(10);
+    for (let i = 0; i < 120; i++) iso.follow(p, 0, 0, 1 / 60);
+    expect(iso.zoom).toBeLessThanOrEqual(CAMERA.maxZoom);
+    expect(iso.zoom).toBeGreaterThan(CAMERA.maxZoom - 0.05);
   });
 });
 

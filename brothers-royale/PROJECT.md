@@ -8,11 +8,50 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | Fase | Contenido | Estado |
 |------|-----------|--------|
 | 1 | Base técnica: arquitectura, escena isométrica, mapa de prueba, personaje, física, tests | ✅ Hecha |
-| 2 | Personaje: animaciones, cámara (zoom), interacción con puertas, minimapa | Pendiente |
-| 3 | Multijugador con Colyseus (servidor autoritativo, predicción y reconciliación) | Pendiente |
+| 2 | Controlador de personaje, cámara, entrada (táctil/teclado/mando), edificios con plantas y escaleras, animaciones, FPS | ✅ Hecha |
+| 3 | Multijugador con Colyseus (servidor autoritativo; la predicción/reconciliación ya está lista en `net/Prediction.ts`) | Pendiente |
 | 4 | Armas y combate | Pendiente |
 | 5 | Construcción | Pendiente |
 | 6 | Tormenta, partida completa, salas, lobby | Pendiente |
+
+## Fase 2 — Personaje, cámara, entrada y edificios (2026-11-26)
+**Hecho**
+- **Motor de personaje** puro y determinista (`shared/movement.ts`): movimiento analógico 360°, aceleración y
+  frenado, control reducido en el aire, carrera, salto con *coyote time* y búfer, gravedad más fuerte al caer,
+  velocidad terminal y giro suave. Separado en `motorIntent` (intención) + `applyCollisionResult` (lo que pasó).
+- **CharacterBody** (Rapier KCC): escalones ≤ 0,4 m (autostep), pendientes ≤ 50°, *snap* al suelo,
+  capas de colisión (`physics/groups.ts`: mundo, estructuras, construcciones, jugador) y
+  `snapshot()/restore()` exactos para reconciliación.
+- **Preparado para combate/construcción/red**: `PlayerInput` con máscara de botones (`Buttons`: JUMP, SPRINT y
+  reservados FIRE, AIM, BUILD, INTERACT, RELOAD, CROUCH) y `aimYaw`; `MotorModifiers` (velocidad, sin
+  correr/saltar, no girar al apuntar); `PredictionController` + `InputHistory` (`net/Prediction.ts`) con tests;
+  `PlayerState.locomotion` para animar jugadores remotos sin datos extra.
+- **Prefabs** (`shared/world/prefab.ts`, `structures.ts`): estructuras descritas como datos de las que salen a la
+  vez la malla y las colisiones. Casa de dos plantas (puerta, entreplanta con barandilla, escalera interior con
+  rellano), mirador elevado con escalera exterior y pilas de cajas para subir saltando.
+- **Ocultación de techos**: al entrar se desvanecen el techo y las paredes que miran a la cámara; en la planta baja
+  también se oculta la planta alta (`PrefabView`, 3-5 draw calls por edificio).
+- **Cámara**: seguimiento suave con adelanto según la velocidad, vertical más lento (los saltos no marean) y zoom
+  (rueda, +/-).
+- **Entrada unificada** (`game/input/sources.ts`): teclado (WASD/flechas, Shift, Espacio), táctil multitouch
+  (joystick flotante + botones Correr/Saltar, cada uno con su dedo; sin re-render de React al mover) y
+  **Gamepad API** (stick/cruceta, A saltar, L3/LB correr, zona muerta radial). La ayuda en pantalla cambia según
+  el último dispositivo usado; los controles táctiles se ocultan al usar mando.
+- **Animaciones procedurales** por locomoción (reposo con respiración, caminar, correr inclinado, salto, caída y
+  aplastamiento al aterrizar), mezcladas suavemente.
+- **Contador de FPS** con color (verde/amarillo/rojo) y detalle con F3 o al tocarlo: ms por frame, peor frame,
+  draw calls, triángulos y resolución.
+- **Rendimiento**: sombras re-dibujadas cada 2 frames en calidad media, sin dependencias nuevas, HUD sin
+  re-renders por frame, motor sin asignaciones por tick en el camino caliente. Escena: ~32 draw calls, ~26k triángulos.
+- **Pruebas**: 59 tests (motor puro, prefabs, escaleras, visibilidad, cámara, fuentes de entrada, mando falso,
+  multitouch, predicción/reconciliación y física real: subir la escalera interior y la del mirador, paredes, puerta,
+  saltos, snapshot/restore exacto). E2E con Playwright: entrar en la casa, subir a la entreplanta (y = 2,82),
+  subir al mirador (y = 2,62), correr+saltar, zoom, mando simulado y dos dedos a la vez en móvil.
+
+**Pendiente / ideas siguientes**
+- Ocluir con silueta al jugador cuando queda detrás de un edificio desde fuera.
+- Agacharse (bit CROUCH ya reservado) y puertas que se abren con INTERACT.
+- Medir FPS en celulares reales de gama baja y ajustar presets.
 
 ## Fase 1 — Base técnica (2026-11-26)
 **Hecho**
@@ -52,5 +91,7 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 cd brothers-royale
 npm install
 npm run dev        # http://localhost:5173  (?q=low para simular gama baja, ?debug)
+# Controles: WASD/flechas, Shift correr, Espacio saltar, rueda o +/- zoom, F3 rendimiento.
+# Mando: stick o cruceta, A saltar, L3/LB correr. Móvil: joystick izquierdo, botones Correr y Saltar.
 npm run check      # typecheck + tests + build
 ```

@@ -7,17 +7,21 @@ import type { GameSession } from '@/net/GameSession';
 import { OfflineSession } from '@/net/OfflineSession';
 import { loadRapier, PhysicsWorld } from '@/physics/PhysicsWorld';
 import { SIMULATION } from '@shared/constants';
+import type { InsideState } from '@shared/world/prefab';
 import { worldColliders } from '@shared/world/colliders';
 import { generateWorldLayout, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
 import { PlayerAvatar } from './entities/PlayerAvatar';
 import { InputManager } from './input/InputManager';
-import { createHouse } from './world/House';
+import type { InputDevice } from './input/sources';
+import { PrefabView } from './world/PrefabView';
 import { createTerrainMesh, createWater } from './world/Terrain';
 import { createTrees } from './world/Trees';
 
 export interface GameStats {
   fps: number;
+  frameMs: number;
+  worstMs: number;
   tier: QualitySettings['tier'];
   pixelRatio: number;
   drawCalls: number;
@@ -29,10 +33,11 @@ export type GameEvents = {
   progress: { value: number; label: string };
   ready: undefined;
   stats: GameStats;
+  device: InputDevice;
   error: { message: string };
 };
 
-/** Orquestador: une motor, física, mundo, sesión y entrada. */
+/** Orquestador: une motor, física, mundo, sesión, entrada y cámara. */
 export class Game {
   readonly events = new EventBus<GameEvents>();
   readonly input: InputManager;
@@ -43,15 +48,18 @@ export class Game {
   private avatar: PlayerAvatar | null = null;
   private loop: FixedStepLoop | null = null;
   private layout: WorldLayout | null = null;
+  private readonly structures: PrefabView[] = [];
   private statsTimer = 0;
   private disposed = false;
 
   constructor(
     canvas: HTMLCanvasElement,
     private readonly quality: QualitySettings,
+    initialDevice: InputDevice = 'keyboard',
   ) {
     this.engine = new Engine(canvas, quality);
-    this.input = new InputManager();
+    this.input = new InputManager(window, undefined, initialDevice);
+    this.input.onDeviceChange = (d) => this.events.emit('device', d);
   }
 
   async init(): Promise<void> {
@@ -76,7 +84,7 @@ export class Game {
       this.session = new OfflineSession(physics, spawn);
       this.avatar = new PlayerAvatar(undefined, this.quality.shadows, !this.quality.shadows);
       this.engine.scene.add(this.avatar.root);
-      const first = this.session.players()[0];
+      const first = this.session.localPlayer();
       if (first) this.avatar.pushState(first, true);
       this.avatar.render(1, 0);
       this.engine.iso.snapTo(this.avatar.position);
@@ -99,22 +107,31 @@ export class Game {
     const scene = this.engine.scene;
     scene.add(createWater(layout.terrain.size));
     scene.add(createTerrainMesh(layout.terrain));
-    scene.add(createHouse(layout.house, 0));
+    for (const placed of layout.structures) {
+      const view = new PrefabView(placed, this.quality.shadows);
+      this.structures.push(view);
+      scene.add(view.root);
+    }
     scene.add(createTrees(layout.trees, layout.seed, this.quality.shadows));
   }
 
   private step(dt: number): void {
     if (!this.session || !this.avatar) return;
     this.session.tick(this.input.sample(), dt);
-    const local = this.session.players().find((p) => p.id === this.session?.localPlayerId);
+    const local = this.session.localPlayer();
     if (local) this.avatar.pushState(local);
   }
 
   private render(alpha: number, dt: number): void {
-    if (!this.avatar) return;
-    this.avatar.render(alpha, dt);
-    this.engine.iso.follow(this.avatar.position, dt);
+    const avatar = this.avatar;
+    if (!avatar) return;
+    avatar.render(alpha, dt);
+    const p = avatar.position;
+    const zoom = this.input.consumeZoom();
+    if (zoom !== 0) this.engine.iso.addZoom(zoom);
+    this.engine.iso.follow(p, avatar.velocity.x, avatar.velocity.z, dt);
     this.lighting.follow(this.engine.iso.focus);
+    for (const s of this.structures) s.update(p.x, p.y, p.z, dt);
 
     this.statsTimer += dt;
     if (this.statsTimer >= 0.5) {
@@ -122,6 +139,8 @@ export class Game {
       const f = this.engine.frameInfo();
       this.events.emit('stats', {
         fps: f.fps,
+        frameMs: f.frameMs,
+        worstMs: f.worstMs,
         tier: this.quality.tier,
         pixelRatio: f.pixelRatio,
         drawCalls: f.drawCalls,
@@ -131,12 +150,24 @@ export class Game {
     }
   }
 
-  /** Para depuración y pruebas e2e. */
-  debugState() {
+  /** Para depuración y pruebas e2e (?debug). */
+  debugState(): {
+    trees: number;
+    structures: { id: string; inside: InsideState }[];
+    players: readonly import('@shared/types').PlayerState[];
+    zoom: number;
+  } {
     return {
-      layout: this.layout ? { trees: this.layout.trees.length, house: this.layout.house } : null,
+      trees: this.layout?.trees.length ?? 0,
+      structures: this.structures.map((s) => ({ id: s.placed.def.id, inside: s.state })),
       players: this.session?.players() ?? [],
+      zoom: this.engine.iso.zoom,
     };
+  }
+
+  /** Solo depuración: teletransporta al jugador local. */
+  debugTeleport(x: number, y: number, z: number): void {
+    if (this.session instanceof OfflineSession) this.session.local.teleport({ x, y, z });
   }
 
   dispose(): void {

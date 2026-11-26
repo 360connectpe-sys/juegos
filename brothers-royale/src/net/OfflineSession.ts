@@ -7,8 +7,9 @@ import type { GameSession } from './GameSession';
 export class OfflineSession implements GameSession {
   readonly kind = 'offline' as const;
   readonly localPlayerId = 'local';
-  private readonly local: CharacterBody;
+  readonly local: CharacterBody;
   private readonly spawn: Vec3;
+  private readonly list: PlayerState[];
 
   constructor(
     private readonly physics: PhysicsWorld,
@@ -17,20 +18,21 @@ export class OfflineSession implements GameSession {
   ) {
     this.spawn = { ...spawn };
     this.local = new CharacterBody(physics, this.localPlayerId, name, spawn);
+    this.list = [this.local.state];
   }
 
   tick(input: PlayerInput, dt: number): void {
     const s = this.local.step(input, dt);
     this.physics.step();
-    if (s.position.y < -20) this.respawn();
-  }
-
-  private respawn(): void {
-    this.local.teleport(this.spawn);
+    if (s.position.y < -20) this.local.teleport(this.spawn);
   }
 
   players(): readonly PlayerState[] {
-    return [this.local.state];
+    return this.list;
+  }
+
+  localPlayer(): PlayerState {
+    return this.local.state;
   }
 
   dispose(): void {

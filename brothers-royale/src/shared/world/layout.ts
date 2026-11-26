@@ -1,16 +1,8 @@
 import { WORLD } from '../constants';
 import { createRng, randRange } from '../random';
+import type { PlacedPrefab } from './prefab';
+import { createCratesDef, createHouseDef, createTowerDef } from './structures';
 import { defaultTerrainParams, terrainHeight, type TerrainParams } from './terrain';
-
-export interface HousePlacement {
-  x: number;
-  z: number;
-  /** Rotación en Y (radianes). */
-  rotation: number;
-  width: number;
-  depth: number;
-  wallHeight: number;
-}
 
 export interface TreePlacement {
   x: number;
@@ -25,7 +17,7 @@ export interface TreePlacement {
 export interface WorldLayout {
   seed: number;
   terrain: TerrainParams;
-  house: HousePlacement;
+  structures: PlacedPrefab[];
   trees: TreePlacement[];
   spawn: { x: number; z: number };
 }
@@ -45,14 +37,20 @@ export function generateWorldLayout(opts: LayoutOptions = {}): WorldLayout {
   const terrain = defaultTerrainParams(seed);
   const rng = createRng(seed);
 
-  const house: HousePlacement = {
-    x: terrain.flatCenter.x,
-    z: terrain.flatCenter.z,
-    rotation: 0,
-    width: 8,
-    depth: 6,
-    wallHeight: 3,
-  };
+  // Pueblo de prueba dentro de la zona plana (y = 0).
+  const place = (def: PlacedPrefab['def'], x: number, z: number, rotationY = 0): PlacedPrefab => ({
+    def,
+    x,
+    y: terrainHeight(x, z, terrain),
+    z,
+    rotationY,
+  });
+  const structures: PlacedPrefab[] = [
+    place(createHouseDef(), 0, 0),
+    place(createTowerDef(), 11, -6),
+    place(createCratesDef(), 7.5, 6.5, 0.3),
+    place(createCratesDef(), -8, 7, -0.6),
+  ];
 
   const half = terrain.size / 2;
   const margin = 6;
@@ -63,7 +61,8 @@ export function generateWorldLayout(opts: LayoutOptions = {}): WorldLayout {
     attempts++;
     const x = randRange(rng, -half + margin, half - margin);
     const z = randRange(rng, -half + margin, half - margin);
-    if (Math.hypot(x - house.x, z - house.z) < WORLD.houseClearRadius + 2) continue;
+    if (structures.some((s) => Math.hypot(x - s.x, z - s.z) < s.def.clearRadius + 1.5)) continue;
+    if (Math.hypot(x, z) < 6) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < minTreeGap)) continue;
     trees.push({
       x,
@@ -75,5 +74,5 @@ export function generateWorldLayout(opts: LayoutOptions = {}): WorldLayout {
     });
   }
 
-  return { seed, terrain, house, trees, spawn: { x: house.x + 2, z: house.z + house.depth / 2 + 4 } };
+  return { seed, terrain, structures, trees, spawn: { x: 2.5, z: 7.5 } };
 }

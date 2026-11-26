@@ -31,14 +31,24 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    las vistas interpolan entre ticks. Las entidades visuales nunca son la fuente de verdad.
 3. **Red**: el juego solo habla con `GameSession`. La entrada viaja como `PlayerInput` (ejes del
    mundo, con `seq`); el estado como `PlayerState`. Mensajes en `shared/protocol.ts`.
-4. **Lo que se ve es lo que choca**: la geometría visual de muros/árboles usa las mismas medidas que
-   `shared/world/colliders.ts`.
+4. **Lo que se ve es lo que choca**: los edificios se definen como prefabs de datos
+   (`shared/world/prefab.ts`, `structures.ts`); de la misma lista de piezas salen la malla (`PrefabView`)
+   y los colisionadores (`prefabColliders`). Escaleras = peldaños ≤ 0,4 m + rampa invisible (`stairs()`).
+   Las construcciones de jugadores deberán usar este mismo formato y la capa de colisión `build`.
+4b. **Personaje**: la lógica de movimiento es pura (`shared/movement.ts`: `motorIntent` +
+   `applyCollisionResult`); `physics/CharacterBody` solo resuelve colisiones. Todo el estado del motor debe
+   caber en `MotorState`/`CharacterSnapshot` (serializable) para que la reconciliación (`net/Prediction.ts`)
+   siga siendo exacta. Nuevas acciones = nuevo bit en `Buttons`, nunca booleanos sueltos en `PlayerInput`.
+4c. **Entrada**: cada dispositivo es una `InputSource` (`game/input/sources.ts`) en ejes de pantalla;
+   `InputManager` las combina y convierte a mundo. Nada fuera de `game/input` lee teclado/táctil/mando.
 5. **Rendimiento móvil primero**:
    - Fusionar geometría estática (`game/world/geometry.ts` → 1 draw call por objeto) e
      `InstancedMesh` para elementos repetidos. Objetivo: < 50 draw calls en escena de prueba.
    - Materiales `MeshLambertMaterial` con color por vértice; sin texturas salvo necesidad.
    - Respetar `QualitySettings` (pixel ratio limitado, sombras solo medium/high, densidad).
    - `matrixAutoUpdate = false` en estáticos; no crear objetos por frame en bucles calientes.
+   - React no se re-renderiza por frame: HUD y joystick escriben en el DOM con refs.
+   - Sombras: `shadowMap.autoUpdate = false`; se re-dibujan cada `shadowUpdateInterval` frames.
    - Rapier se carga diferido en su propio chunk.
 6. **Cámara isométrica**: ortográfica desde (+1,+1,+1). Convertir entrada de pantalla a mundo con
    `screenToWorld` (no duplicar la matemática).
@@ -47,3 +57,4 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 
 ## Fuera de alcance hasta nueva fase
 Armas, construcción, tormenta y multijugador real (Colyseus): no implementarlos sin pedirlo.
+Los ganchos ya existen (bits de `Buttons`, `MotorModifiers`, capa `build`, `PredictionController`).

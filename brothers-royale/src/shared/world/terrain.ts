@@ -33,7 +33,7 @@ export const defaultTerrainParams = (seed: number = WORLD.seed): TerrainParams =
   size: WORLD.size,
   maxHeight: WORLD.maxHeight,
   flatCenter: { x: 0, z: 0 },
-  flatRadius: WORLD.houseClearRadius,
+  flatRadius: WORLD.flatRadius,
 });
 
 /**

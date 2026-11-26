@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { PLAYER } from '@shared/constants';
 import { clamp, rotateTowards, wrapAngle } from '@shared/math';
-import { desiredHorizontalVelocity, ISO_SCREEN_UP, screenToWorld, stepYaw, yawFromDirection } from '@shared/movement';
+import {
+  applyCollisionResult,
+  deriveLocomotion,
+  desiredHorizontalVelocity,
+  initialMotorState,
+  ISO_SCREEN_UP,
+  motorIntent,
+  screenToWorld,
+  stepYaw,
+  yawFromDirection,
+} from '@shared/movement';
 import { createRng, hash2 } from '@shared/random';
-import { emptyInput } from '@shared/types';
+import { Buttons, emptyInput } from '@shared/types';
 
 describe('math', () => {
   it('clamp y wrapAngle', () => {
@@ -54,7 +64,8 @@ describe('movement', () => {
   it('velocidad deseada: caminar, correr y quieto', () => {
     const input = { ...emptyInput(1), moveX: 1 };
     expect(desiredHorizontalVelocity(input).x).toBeCloseTo(PLAYER.walkSpeed);
-    expect(desiredHorizontalVelocity({ ...input, sprint: true }).x).toBeCloseTo(PLAYER.sprintSpeed);
+    expect(desiredHorizontalVelocity({ ...input, buttons: Buttons.SPRINT }).x).toBeCloseTo(PLAYER.sprintSpeed);
+    expect(desiredHorizontalVelocity({ ...input, buttons: Buttons.SPRINT }, { speedMultiplier: 0.5, canSprint: false, canJump: true, faceMovement: true }).x).toBeCloseTo(PLAYER.walkSpeed * 0.5);
     expect(desiredHorizontalVelocity(emptyInput())).toEqual({ x: 0, y: 0 });
   });
   it('el yaw gira hacia la dirección de movimiento', () => {
@@ -64,5 +75,71 @@ describe('movement', () => {
     for (let i = 0; i < 60; i++) yaw = stepYaw(yaw, 1, 0, 1 / 30);
     expect(yaw).toBeCloseTo(Math.PI / 2);
     expect(stepYaw(1.23, 0, 0, 1)).toBe(1.23);
+  });
+});
+
+describe('motor del personaje (puro)', () => {
+  const dt = 1 / 30;
+  it('acelera progresivamente y gira suave hacia el movimiento', () => {
+    const m = initialMotorState();
+    m.grounded = true;
+    motorIntent(m, { ...emptyInput(1), moveX: 1 }, dt);
+    expect(m.vx).toBeGreaterThan(0);
+    expect(m.vx).toBeLessThan(PLAYER.walkSpeed);
+    expect(m.yaw).toBeGreaterThan(0);
+    expect(m.yaw).toBeLessThan(Math.PI / 2);
+    for (let i = 0; i < 30; i++) motorIntent(m, { ...emptyInput(1), moveX: 1 }, dt);
+    expect(m.vx).toBeCloseTo(PLAYER.walkSpeed);
+    expect(m.yaw).toBeCloseTo(Math.PI / 2);
+  });
+  it('salta solo en el flanco de pulsación y respeta el coyote time', () => {
+    const m = initialMotorState();
+    m.grounded = true;
+    const jump = { ...emptyInput(1), buttons: Buttons.JUMP };
+    expect(motorIntent(m, jump, dt).jumped).toBe(true);
+    m.grounded = true; // aunque vuelva a tocar suelo, mantener pulsado no re-salta
+    expect(motorIntent(m, jump, dt).jumped).toBe(false);
+    // Coyote: deja el suelo y salta 2 ticks después.
+    const c = initialMotorState();
+    c.grounded = true;
+    motorIntent(c, emptyInput(), dt);
+    c.grounded = false;
+    motorIntent(c, emptyInput(), dt);
+    expect(motorIntent(c, jump, dt).jumped).toBe(true);
+  });
+  it('búfer de salto: pulsar justo antes de aterrizar salta al tocar suelo', () => {
+    const m = initialMotorState();
+    m.grounded = false;
+    m.vy = -5;
+    motorIntent(m, { ...emptyInput(1), buttons: Buttons.JUMP }, dt);
+    expect(m.vy).toBeLessThan(0);
+    applyCollisionResult(m, { x: 0, y: -0.2, z: 0 }, { x: 0, y: -0.1, z: 0 }, true, dt);
+    expect(motorIntent(m, emptyInput(2), dt).jumped).toBe(true);
+  });
+  it('la gravedad es más fuerte al caer y hay velocidad terminal', () => {
+    const m = initialMotorState();
+    for (let i = 0; i < 200; i++) motorIntent(m, emptyInput(), dt);
+    expect(m.vy).toBe(PLAYER.terminalVelocity);
+  });
+  it('choque con pared y techo corta la velocidad', () => {
+    const m = initialMotorState();
+    m.vx = 5;
+    m.vy = 6;
+    applyCollisionResult(m, { x: 5 * dt, y: 6 * dt, z: 0 }, { x: 0, y: 0, z: 0 }, false, dt);
+    expect(m.vx).toBe(0);
+    expect(m.vy).toBe(0);
+  });
+  it('apuntar (AIM) orienta hacia aimYaw en lugar de hacia el movimiento', () => {
+    const m = initialMotorState();
+    m.grounded = true;
+    for (let i = 0; i < 30; i++) motorIntent(m, { ...emptyInput(1), moveX: 1, buttons: Buttons.AIM, aimYaw: Math.PI }, dt);
+    expect(Math.abs(m.yaw)).toBeCloseTo(Math.PI);
+  });
+  it('deriva la locomoción para animar', () => {
+    expect(deriveLocomotion(true, 0, 0, 0)).toBe('idle');
+    expect(deriveLocomotion(true, 3, 0, 0)).toBe('walk');
+    expect(deriveLocomotion(true, 0, 0, 8)).toBe('run');
+    expect(deriveLocomotion(false, 0, 3, 0)).toBe('jump');
+    expect(deriveLocomotion(false, 0, -3, 0)).toBe('fall');
   });
 });

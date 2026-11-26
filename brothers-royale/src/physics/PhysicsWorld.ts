@@ -6,6 +6,7 @@ import type RAPIERNS from '@dimforge/rapier3d-compat';
 import { SIMULATION, WORLD } from '@shared/constants';
 import type { StaticColliderSpec } from '@shared/world/colliders';
 import { sampleTerrainGrid, type TerrainParams } from '@shared/world/terrain';
+import { staticGroups } from './groups';
 
 export type Rapier = typeof RAPIERNS;
 
@@ -47,6 +48,7 @@ export class PhysicsWorld {
       y: 1,
       z: params.size,
     });
+    desc.setCollisionGroups(staticGroups('world'));
     return this.world.createCollider(desc);
   }
 
@@ -55,13 +57,17 @@ export class PhysicsWorld {
     let desc: RAPIERNS.ColliderDesc;
     if (spec.kind === 'box') {
       const e = spec.halfExtents;
-      const half = spec.rotationY / 2;
-      desc = R.ColliderDesc.cuboid(e.x, e.y, e.z).setRotation({ x: 0, y: Math.sin(half), z: 0, w: Math.cos(half) });
+      desc = R.ColliderDesc.cuboid(e.x, e.y, e.z).setRotation(spec.rotation);
     } else {
       desc = R.ColliderDesc.cylinder(spec.halfHeight, spec.radius);
     }
-    desc.setTranslation(spec.center.x, spec.center.y, spec.center.z);
+    desc.setTranslation(spec.center.x, spec.center.y, spec.center.z).setCollisionGroups(staticGroups(spec.layer));
     return this.world.createCollider(desc);
+  }
+
+  /** Para piezas destructibles/construcciones (fase futura). */
+  removeStatic(collider: RAPIERNS.Collider): void {
+    this.world.removeCollider(collider, false);
   }
 
   /** Lanza un rayo hacia abajo y devuelve la altura del primer impacto. */

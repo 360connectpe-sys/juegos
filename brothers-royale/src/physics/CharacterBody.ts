@@ -1,20 +1,50 @@
 import type RAPIERNS from '@dimforge/rapier3d-compat';
 import { PLAYER, SIMULATION } from '@shared/constants';
-import { desiredHorizontalVelocity, stepYaw } from '@shared/movement';
+import {
+  applyCollisionResult,
+  DEFAULT_MODIFIERS,
+  deriveLocomotion,
+  initialMotorState,
+  motorIntent,
+  type MotorModifiers,
+  type MotorState,
+} from '@shared/movement';
 import type { PlayerInput, PlayerState, Vec3 } from '@shared/types';
+import { PLAYER_GROUPS } from './groups';
 import type { PhysicsWorld } from './PhysicsWorld';
 
+/** Todo lo necesario para restaurar exactamente un personaje (predicción en red). */
+export interface CharacterSnapshot {
+  position: Vec3;
+  motor: MotorState;
+  lastProcessedSeq: number;
+}
+
+export interface StepEvents {
+  jumped: boolean;
+  landed: boolean;
+  /** Velocidad vertical al aterrizar (para animación/daño por caída futuro). */
+  impactSpeed: number;
+}
+
+const FOOT_OFFSET = PLAYER.halfHeight + PLAYER.radius;
+
 /**
- * Personaje cinemático con el KinematicCharacterController de Rapier.
- * `step(input, dt)` es la función de simulación que más adelante ejecutará
- * también el servidor (y el cliente para predicción).
+ * Personaje cinemático: lógica de movimiento pura (`shared/movement`) +
+ * resolución de colisiones con el KinematicCharacterController de Rapier
+ * (pendientes, escalones, superficies elevadas). El mismo código correrá en el
+ * servidor autoritativo y en el cliente para predicción.
  */
 export class CharacterBody {
   private readonly body: RAPIERNS.RigidBody;
   private readonly collider: RAPIERNS.Collider;
   private readonly controller: RAPIERNS.KinematicCharacterController;
-  private verticalVelocity = 0;
+  private motor: MotorState = initialMotorState();
+  /** Modificadores de movimiento (combate/construcción los cambiarán). */
+  modifiers: MotorModifiers = { ...DEFAULT_MODIFIERS };
   readonly state: PlayerState;
+  readonly lastEvents: StepEvents = { jumped: false, landed: false, impactSpeed: 0 };
+  private readonly desired = { x: 0, y: 0, z: 0 };
 
   constructor(
     private readonly physics: PhysicsWorld,
@@ -23,16 +53,19 @@ export class CharacterBody {
     spawn: Vec3,
   ) {
     const R = physics.R;
-    const footOffset = PLAYER.halfHeight + PLAYER.radius;
     this.body = physics.world.createRigidBody(
-      R.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y + footOffset, spawn.z),
+      R.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y + FOOT_OFFSET, spawn.z),
     );
-    this.collider = physics.world.createCollider(R.ColliderDesc.capsule(PLAYER.halfHeight, PLAYER.radius), this.body);
+    this.collider = physics.world.createCollider(
+      R.ColliderDesc.capsule(PLAYER.halfHeight, PLAYER.radius).setCollisionGroups(PLAYER_GROUPS),
+      this.body,
+    );
     this.controller = physics.world.createCharacterController(0.02);
-    this.controller.enableAutostep(0.4, 0.2, false);
-    this.controller.enableSnapToGround(0.4);
-    this.controller.setMaxSlopeClimbAngle((50 * Math.PI) / 180);
-    this.controller.setMinSlopeSlideAngle((35 * Math.PI) / 180);
+    this.controller.setUp({ x: 0, y: 1, z: 0 });
+    this.controller.enableAutostep(PLAYER.maxStepHeight, 0.15, false);
+    this.controller.enableSnapToGround(0.35);
+    this.controller.setMaxSlopeClimbAngle((PLAYER.maxSlopeDeg * Math.PI) / 180);
+    this.controller.setMinSlopeSlideAngle(((PLAYER.maxSlopeDeg + 5) * Math.PI) / 180);
     this.controller.setSlideEnabled(true);
 
     this.state = {
@@ -42,50 +75,77 @@ export class CharacterBody {
       velocity: { x: 0, y: 0, z: 0 },
       yaw: 0,
       grounded: false,
+      locomotion: 'fall',
       lastProcessedSeq: 0,
     };
   }
 
   step(input: PlayerInput, dt: number = SIMULATION.fixedDt): PlayerState {
-    const s = this.state;
-    const v = desiredHorizontalVelocity(input);
+    const m = this.motor;
+    const wasGrounded = m.grounded;
+    const vyBefore = m.vy;
+    const { jumped } = motorIntent(m, input, dt, this.modifiers);
 
-    if (s.grounded && input.jump) this.verticalVelocity = PLAYER.jumpVelocity;
-    this.verticalVelocity += SIMULATION.gravity * dt;
-    if (s.grounded && this.verticalVelocity < 0) this.verticalVelocity = Math.max(this.verticalVelocity, -2);
+    const d = this.desired;
+    d.x = m.vx * dt;
+    d.y = m.vy * dt;
+    d.z = m.vz * dt;
+    this.controller.computeColliderMovement(this.collider, d, undefined, PLAYER_GROUPS);
+    const move = this.controller.computedMovement();
+    const grounded = this.controller.computedGrounded() && !jumped;
+    applyCollisionResult(m, d, move, grounded, dt);
 
-    this.controller.computeColliderMovement(this.collider, {
-      x: v.x * dt,
-      y: this.verticalVelocity * dt,
-      z: v.y * dt,
-    });
-    const m = this.controller.computedMovement();
     const p = this.body.translation();
-    const next = { x: p.x + m.x, y: p.y + m.y, z: p.z + m.z };
+    const next = { x: p.x + move.x, y: p.y + move.y, z: p.z + move.z };
     this.body.setNextKinematicTranslation(next);
-    // Actualiza la posición del colisionador ya (sin esperar a world.step) para
-    // que varios pasos seguidos del controlador sean coherentes.
+    // Aplica ya la posición (sin esperar a world.step) para que pasos
+    // consecutivos (p. ej. al re-simular en reconciliación) sean coherentes.
     this.body.setTranslation(next, true);
 
-    s.grounded = this.controller.computedGrounded();
-    if (s.grounded && this.verticalVelocity < 0) this.verticalVelocity = 0;
-    // Golpe contra el techo: corta la subida.
-    if (this.verticalVelocity > 0 && m.y < this.verticalVelocity * dt * 0.5) this.verticalVelocity = 0;
+    const ev = this.lastEvents;
+    ev.jumped = jumped;
+    ev.landed = !wasGrounded && grounded;
+    ev.impactSpeed = ev.landed ? -vyBefore : 0;
 
-    const footOffset = PLAYER.halfHeight + PLAYER.radius;
-    s.velocity = { x: m.x / dt, y: m.y / dt, z: m.z / dt };
-    s.position = { x: next.x, y: next.y - footOffset, z: next.z };
-    s.yaw = stepYaw(s.yaw, input.moveX, input.moveZ, dt);
+    const s = this.state;
+    s.position.x = next.x;
+    s.position.y = next.y - FOOT_OFFSET;
+    s.position.z = next.z;
+    s.velocity.x = move.x / dt;
+    s.velocity.y = move.y / dt;
+    s.velocity.z = move.z / dt;
+    s.yaw = m.yaw;
+    s.grounded = grounded;
+    s.locomotion = deriveLocomotion(grounded, m.vx, m.vy, m.vz);
     s.lastProcessedSeq = input.seq;
     return s;
   }
 
+  snapshot(): CharacterSnapshot {
+    return { position: { ...this.state.position }, motor: { ...this.motor }, lastProcessedSeq: this.state.lastProcessedSeq };
+  }
+
+  restore(snap: CharacterSnapshot): void {
+    this.motor = { ...snap.motor };
+    this.setFeet(snap.position);
+    this.state.yaw = snap.motor.yaw;
+    this.state.grounded = snap.motor.grounded;
+    this.state.lastProcessedSeq = snap.lastProcessedSeq;
+  }
+
   teleport(p: Vec3): void {
-    const footOffset = PLAYER.halfHeight + PLAYER.radius;
-    this.body.setTranslation({ x: p.x, y: p.y + footOffset, z: p.z }, true);
-    this.verticalVelocity = 0;
-    this.state.position = { ...p };
+    this.motor = initialMotorState(this.motor.yaw);
+    this.setFeet(p);
     this.state.velocity = { x: 0, y: 0, z: 0 };
+  }
+
+  private setFeet(p: Vec3): void {
+    const t = { x: p.x, y: p.y + FOOT_OFFSET, z: p.z };
+    this.body.setTranslation(t, true);
+    this.body.setNextKinematicTranslation(t);
+    // Sin esto el colisionador seguiría en la posición vieja hasta el próximo world.step().
+    this.physics.world.propagateModifiedBodyPositionsToColliders();
+    this.state.position = { ...p };
   }
 
   dispose(): void {

@@ -5,6 +5,9 @@ import type { QualitySettings } from './quality';
 
 export interface FrameInfo {
   fps: number;
+  /** Duración media y peor frame (ms) en la última ventana de medida. */
+  frameMs: number;
+  worstMs: number;
   pixelRatio: number;
   drawCalls: number;
   triangles: number;
@@ -27,6 +30,10 @@ export class Engine {
   private fpsAccum = 0;
   private fpsFrames = 0;
   private fps = 0;
+  private frameMs = 0;
+  private worstMs = 0;
+  private worstAccum = 0;
+  private frameCount = 0;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -43,6 +50,8 @@ export class Engine {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = quality.shadows;
     this.renderer.shadowMap.type = PCFShadowMap;
+    // Las sombras se re-dibujan a mano (cada N frames en gama media).
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.setPixelRatio(quality.pixelRatio);
     this.adaptive = new AdaptiveResolution({ min: quality.minPixelRatio, max: quality.pixelRatio });
 
@@ -70,6 +79,8 @@ export class Engine {
     const info = this.renderer.info.render;
     return {
       fps: this.fps,
+      frameMs: this.frameMs,
+      worstMs: this.worstMs,
       pixelRatio: this.renderer.getPixelRatio(),
       drawCalls: info.calls,
       triangles: info.triangles,
@@ -84,10 +95,14 @@ export class Engine {
 
     this.fpsAccum += dt;
     this.fpsFrames++;
+    this.worstAccum = Math.max(this.worstAccum, dt);
     if (this.fpsAccum >= 0.5) {
       this.fps = Math.round(this.fpsFrames / this.fpsAccum);
+      this.frameMs = (this.fpsAccum / this.fpsFrames) * 1000;
+      this.worstMs = this.worstAccum * 1000;
       this.fpsAccum = 0;
       this.fpsFrames = 0;
+      this.worstAccum = 0;
     }
     const newRatio = this.adaptive.update(dt);
     if (newRatio !== null) {
@@ -96,6 +111,10 @@ export class Engine {
     }
 
     this.onFrame?.(dt);
+    if (this.quality.shadows && this.frameCount % this.quality.shadowUpdateInterval === 0) {
+      this.renderer.shadowMap.needsUpdate = true;
+    }
+    this.frameCount++;
     this.renderer.render(this.scene, this.iso.camera);
   };
 
