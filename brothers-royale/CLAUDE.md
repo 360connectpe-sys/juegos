@@ -12,6 +12,7 @@ Rapier (`@dimforge/rapier3d-compat`, física) · Colyseus (multijugador, fase fu
 - `npm run dev` — servidor de desarrollo (`?q=low|medium|high` fuerza calidad, `?debug` expone `window.__BR_GAME__`).
 - `npm run check` — typecheck + tests + build. **Ejecutarlo antes de cada commit; debe pasar.**
 - `npm test`, `npm run typecheck`, `npm run build`, `npm run preview`.
+- `npm run build:pages` — regenera `jugar/` (versión publicada en GitHub Pages). Ejecutarlo y commitear `jugar/` al cerrar cada avance.
 
 ## Arquitectura y reglas
 ```

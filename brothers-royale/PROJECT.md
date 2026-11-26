@@ -41,8 +41,9 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 - Rapier compat incrusta el WASM en base64 (~1,7 MB gzip). Valorar el paquete no‑compat (`.wasm`
   separado, ~1,2 MB gzip y compilación en streaming) cuando se monte el servidor.
 - Los FPS medidos en CI/headless usan render por software; medir en dispositivos reales.
-- El build no se publica aún en GitHub Pages (el sitio sirve archivos estáticos sin paso de build);
-  falta decidir: commitear `dist/` o desplegar con una Action.
+- Publicación en GitHub Pages: `npm run build:pages` genera la versión jugable en `brothers-royale/jugar/`
+  (se commitea, porque Pages sirve archivos estáticos sin paso de build). URL una vez en `main`:
+  https://360connectpe-sys.github.io/juegos/brothers-royale/jugar/ . Regenerarla tras cada cambio.
 - La triangulación del heightfield de Rapier puede diferir de la malla visual en la diagonal de cada
   celda (diferencias de cm en pendientes).
 

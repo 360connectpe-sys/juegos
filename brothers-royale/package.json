@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build",
+    "build:pages": "tsc --noEmit && vite build --outDir jugar --emptyOutDir"
   },
   "engines": {
     "node": ">=22"
