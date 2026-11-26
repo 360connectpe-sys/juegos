@@ -24,13 +24,15 @@ servidor, `@colyseus/sdk` en el cliente, cargado de forma diferida) · Vitest.
 src/shared/   Lógica PURA y determinista (sin Three, sin DOM): constantes, tipos, movimiento,
               generación del mapa, colisionadores, protocolo de red. La usará también el servidor.
 src/physics/  Rapier, sin Three ni DOM (reutilizable en Node/Colyseus).
-src/engine/   Render genérico: renderer, cámara isométrica, luces, calidad, bucle de paso fijo.
+src/engine/   Render genérico: renderer, cámara isométrica, luces, calidad, bucle de paso fijo;
+              `engine/camera/cameraMath.ts` (matemática pura de las 3 perspectivas).
 src/game/     Juego: mundo visual, entidades (vistas), entrada, orquestador `Game`.
 src/net/      Frontera de red: `GameSession` → `OfflineSession` (por defecto) y `OnlineSession`
               (Colyseus: predicción + reconciliación + interpolación de remotos).
 server/       Servidor Node: `ServerWorld` (simulación autoritativa pura, sin red) y
               `BrothersRoom` (sala Colyseus: identidad, validación, snapshots, conexión).
-src/ui/       React: carga, HUD, controles táctiles. React NO toca la escena 3D por frame.
+src/ui/       React: carga, HUD, controles táctiles, Ajustes. React NO toca la escena 3D por frame.
+              `ui/hud/` = disposición del HUD (datos puros), editor visual e indicadores.
 tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/React).
 ```
 1. **Determinismo**: todo lo que afecte a la jugabilidad (velocidades, mapa, colisiones) vive en
@@ -77,11 +79,22 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    - Medir antes y después de cualquier optimización (draw calls, programas, geometrías, CPU/frame).
    - Sombras: `shadowMap.autoUpdate = false`; se re-dibujan cada `shadowUpdateInterval` frames.
    - Rapier se carga diferido en su propio chunk.
-6. **Cámara isométrica**: ortográfica desde (+1,+1,+1). Convertir entrada de pantalla a mundo con
-   `screenToWorld` (no duplicar la matemática).
+6. **Cámaras**: isométrica (ortográfica desde (+1,+1,+1)), 3ª y 1ª persona (`CameraController`). La perspectiva
+   se elige SOLO desde Ajustes. Es SOLO vista: convierte la entrada de pantalla a mundo con `moveToWorld`
+   (isométrica = `screenToWorld`) y aporta el yaw para `aimYaw`; nunca toca la física ni el protocolo. La colisión
+   de cámara usa `PhysicsWorld.castCameraSphere` (consulta, no simulación; ignora jugadores). En 3ª/1ª no hay
+   recorte de techos. El avatar propio se oculta en 1ª persona y con la cámara a < `CAMERA_RIG.hideAvatarBelow`.
+6b. **Mirada y apuntado**: la mirada se consume por frame de render (`InputManager.consumeLook`), con
+   sensibilidad de cámara, de apuntado e invertir Y. Acciones nuevas = bit de `Buttons` en la fuente que
+   corresponda (teclado, ratón, táctil, mando). Ataque, recarga, interacción y construcción ya envían su bit, pero
+   no tienen efecto hasta su fase.
+6c. **HUD y preferencias**: los elementos del HUD se colocan con `HudSlot` en coordenadas normalizadas al área
+   segura (`.hud-safe` usa `env(safe-area-inset-*)`). Todo lo que se guarda en `localStorage` (`br.settings.v1`,
+   `br.hud.v1`, `br.quality`) se valida al leerlo (`parseSettings`, `parseHudLayout`); nunca confiar en lo guardado.
+   Un elemento nuevo del HUD = entrada en `HUD_ELEMENTS` + posición de fábrica en `defaultHudLayout()`.
 7. Código y comentarios en español; nombres de identificadores en inglés.
 8. Cada sistema nuevo llega con tests de su parte pura. Actualizar `PROJECT.md` al cerrar cada avance.
 
 ## Fuera de alcance hasta nueva fase
-Armas, construcción, tormenta y multijugador real (Colyseus): no implementarlos sin pedirlo.
+Armas/combate, cofres, construcción funcional y tormenta: no implementarlos sin pedirlo.
 Los ganchos ya existen (bits de `Buttons`, `MotorModifiers`, capa `build`, `PredictionController`).

@@ -6,7 +6,10 @@ import type RAPIERNS from '@dimforge/rapier3d-compat';
 import { SIMULATION, WORLD } from '@shared/constants';
 import type { StaticColliderSpec } from '@shared/world/colliders';
 import { sampleTerrainGrid, type TerrainParams } from '@shared/world/terrain';
-import { staticGroups } from './groups';
+import type { Vec3 } from '@shared/types';
+import { CAMERA_QUERY_GROUPS, staticGroups } from './groups';
+
+const IDENTITY_ROT = { x: 0, y: 0, z: 0, w: 1 };
 
 export type Rapier = typeof RAPIERNS;
 
@@ -24,6 +27,7 @@ export function loadRapier(): Promise<Rapier> {
 
 export class PhysicsWorld {
   readonly world: RAPIERNS.World;
+  private cameraBall: RAPIERNS.Ball | null = null;
 
   constructor(readonly R: Rapier) {
     this.world = new R.World({ x: 0, y: SIMULATION.gravity, z: 0 });
@@ -68,6 +72,20 @@ export class PhysicsWorld {
   /** Para piezas destructibles/construcciones (fase futura). */
   removeStatic(collider: RAPIERNS.Collider): void {
     this.world.removeCollider(collider, false);
+  }
+
+  /**
+   * Lanza una esfera de `radius` desde `origin` en la dirección unitaria `dir`.
+   * Devuelve la distancia recorrida hasta el primer obstáculo (mundo,
+   * estructuras o construcciones; nunca jugadores) o null si no choca.
+   * Solo lo usa la cámara: es una consulta, no modifica la simulación.
+   */
+  castCameraSphere(origin: Vec3, dir: Vec3, maxDistance: number, radius: number): number | null {
+    if (!(maxDistance > 0)) return null;
+    this.cameraBall ??= new this.R.Ball(radius);
+    if (this.cameraBall.radius !== radius) this.cameraBall = new this.R.Ball(radius);
+    const hit = this.world.castShape(origin, IDENTITY_ROT, dir, this.cameraBall, 0, maxDistance, true, undefined, CAMERA_QUERY_GROUPS);
+    return hit ? hit.time_of_impact : null;
   }
 
   /** Lanza un rayo hacia abajo y devuelve la altura del primer impacto. */

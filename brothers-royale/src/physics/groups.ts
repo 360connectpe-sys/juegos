@@ -18,3 +18,6 @@ export const PLAYER_GROUPS = interactionGroups(
   LAYER_BITS.player,
   LAYER_BITS.world | LAYER_BITS.structure | LAYER_BITS.build,
 );
+
+/** Consultas de cámara: chocan con mundo, estructuras y construcciones, nunca con jugadores. */
+export const CAMERA_QUERY_GROUPS = interactionGroups(0xffff, LAYER_BITS.world | LAYER_BITS.structure | LAYER_BITS.build);

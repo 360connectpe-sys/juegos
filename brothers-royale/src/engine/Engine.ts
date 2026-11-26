@@ -1,6 +1,7 @@
 import {
   ACESFilmicToneMapping,
   BufferGeometry,
+  type Camera,
   DirectionalLight,
   InstancedMesh,
   Material,
@@ -57,6 +58,10 @@ export class Engine {
   private cpuMs = 0;
   private frameCount = 0;
   onContextChange: ((s: ContextStatus) => void) | null = null;
+  /** Cámara con la que se dibuja (isométrica por defecto; 3ª/1ª persona la cambian). */
+  activeCamera: Camera;
+  /** Avisa del nuevo aspecto al redimensionar (para cámaras en perspectiva). */
+  onResize: ((aspect: number) => void) | null = null;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -80,6 +85,7 @@ export class Engine {
     this.contextMonitor = new ContextLossMonitor(canvas, (s) => this.handleContext(s));
 
     this.iso = new IsometricCamera(1);
+    this.activeCamera = this.iso.camera;
     this.resize();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -157,7 +163,7 @@ export class Engine {
         this.renderer.shadowMap.needsUpdate = true;
       }
       this.frameCount++;
-      this.renderer.render(this.scene, this.iso.camera);
+      this.renderer.render(this.scene, this.activeCamera);
     }
     this.cpuAccum += performance.now() - t0;
 
@@ -188,6 +194,14 @@ export class Engine {
     const h = this.canvas.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.iso.resize(w / h);
+    this.onResize?.(w / h);
+  }
+
+  /** Aspecto actual del lienzo. */
+  get aspect(): number {
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
+    return w / h;
   }
 
   private handleVisibility = (): void => {

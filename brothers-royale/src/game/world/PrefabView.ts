@@ -148,9 +148,10 @@ export class PrefabView {
   }
 
   /** Actualiza la visibilidad según la posición (pies) del jugador local. */
-  update(px: number, py: number, pz: number, dt: number): void {
+  update(px: number, py: number, pz: number, dt: number, cutaway = true): void {
     if (!this.hasInterior) return;
-    this.state = insideState(this.placed, px, py, pz);
+    // En 3ª/1ª persona no se recorta nada: la cámara está dentro con el jugador.
+    this.state = cutaway ? insideState(this.placed, px, py, pz) : 'outside';
     const targets = visibilityTargets(this.state);
     let allOpaque = true;
     for (const [key, mesh] of this.meshes) {

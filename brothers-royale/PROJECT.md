@@ -10,9 +10,66 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | 1 | Base técnica: arquitectura, escena isométrica, mapa de prueba, personaje, física, tests | ✅ Hecha |
 | 2 | Controlador de personaje, cámara, entrada (táctil/teclado/mando), edificios con plantas y escaleras, animaciones, FPS | ✅ Hecha |
 | 3 | Multijugador con Colyseus: servidor autoritativo, salas, predicción y reconciliación | 🟡 3.1 (red) y 3.2 (gráficos móviles) hechas |
-| 4 | Armas y combate | Pendiente |
+| 4 | Cámaras (isométrica, 3ª y 1ª persona), controles con apuntado y HUD personalizable | ✅ Hecha |
+| 4b | Armas y combate | Pendiente |
 | 5 | Construcción | Pendiente |
 | 6 | Tormenta, partida completa, salas, lobby | Pendiente |
+
+## Fase 4 — Cámaras, controles y HUD personalizable (2026-11-26)
+**Hecho**
+- **Tres perspectivas** (`engine/camera/cameraMath.ts` puro + `game/camera/CameraController.ts`): isométrica
+  (la de siempre), **tercera persona** detrás y sobre el hombro, y **primera persona** desde los ojos. Se eligen
+  **solo desde Ajustes** (sin atajos de teclado).
+- **Colisión de cámara**: en 3ª persona se lanza una esfera (Rapier `castShape`) desde la cabeza hasta la
+  posición deseada; choca con mundo, estructuras y construcciones, nunca con jugadores. Se acerca al instante
+  (no atraviesa) y se aleja suave. Verificado: de espaldas a la fachada, la cámara queda a 4,80 con la pared en
+  z = 4,5 (su radio, 0,3).
+- **Avatar propio oculto** en 1ª persona y cuando la cámara de 3ª queda a menos de 1,1 m (pegada a una pared). En
+  3ª/1ª persona no se recortan techos ni paredes (eso es propio de la vista isométrica).
+- **Movimiento relativo a la cámara** en 3ª/1ª persona (`moveToWorld`); en isométrica, la conversión de siempre.
+  En 1ª persona el personaje mira siempre hacia la cámara (bit AIM + `aimYaw`); en 3ª, hacia donde camina, o
+  hacia la cámara mientras se apunta.
+- **Controles**:
+  - Táctil multitouch: joystick a la izquierda y **zona de mirada a la derecha a la vez** (en isométrica esa zona es
+    un stick de apuntado), más botones Saltar, Correr, Atacar, Apuntar, Recargar, Usar y Construir; cada uno sigue
+    su propio dedo.
+  - Teclado y ratón: WASD, Shift, Espacio; clic en el juego para mirar con el ratón (puntero bloqueado, Esc lo
+    suelta), Q/E giran, botón derecho apunta (en isométrica, hacia el cursor), izquierdo ataca; R/F/B recarga,
+    interacción y construcción.
+  - Mando: stick derecho mira (o apunta en isométrica), LT apunta, RT ataca, X/B/Y recarga, interacción y construcción.
+  - Ataque, recarga, interacción y construcción envían su bit de `Buttons` pero **aún no tienen efecto**.
+- **Sensibilidad** de cámara (×0,2-3) y **al apuntar** (×0,2-1,5), e **invertir eje vertical**.
+- **HUD personalizable** (`ui/hud/layout.ts`): 12 elementos (joystick, 7 botones, salud, vidas, inventario y
+  minimapa) con posición normalizada al **área segura** (notch y barra de inicio excluidos), tamaño (50-180 %),
+  opacidad (20-100 %) y visibilidad propios. Disposición de fábrica pensada para celular en horizontal.
+- **Editor visual del HUD** (Ajustes → Editar HUD): arrastre directo de cada elemento, deslizadores de tamaño y
+  opacidad, mostrar/ocultar, flechas del teclado para mover con precisión, restablecer elemento o todo,
+  guardar/cancelar. La barra del editor se coloca en el lado opuesto al elemento elegido y se atenúa al arrastrar.
+- **Indicadores preparados**: barra de salud, vidas, inventario de 5 huecos y **minimapa real** (terreno pintado una
+  vez, jugadores redibujados 10 veces/s, girado 45° para coincidir con la vista isométrica).
+- **Ajustes y persistencia**: perspectiva, sensibilidades, eje Y, calidad (Baja/Normal), editar HUD, pantalla
+  completa y "Restablecer ajustes y HUD" (con confirmación). Se guardan en `localStorage` (`br.settings.v1`,
+  `br.hud.v1`) con validación al leer: valores corruptos o manipulados vuelven a los de fábrica o se acotan. Con
+  Ajustes o el editor abiertos el personaje no se mueve y el ratón se suelta (la partida y la red siguen).
+- Se mantienen Baja/Normal, la resolución adaptativa y el FPS sin límite.
+
+**La perspectiva no toca la simulación**: la cámara solo cambia cómo se convierte la entrada de pantalla a una
+dirección del mundo; `PlayerInput` mantiene formato y significado. Pruebas: misma dirección del mundo → posición
+idéntica desde isométrica y desde 3ª persona; cliente con 1ª, 3ª e isométrica mezcladas frente al servidor →
+snapshot idéntico; E2E en línea con un jugador en 3ª persona y otro en 1ª: cada uno se ve exactamente donde lo
+ve el otro.
+
+**Pruebas**: 200 (las 163 anteriores, sin cambios, + 37 nuevas): matemática de cámaras, colisión con Rapier,
+controlador, independencia física y de red, entrada por perspectiva, ratón/teclado/mando/táctil, sensibilidades,
+multitouch con mirada simultánea, persistencia y saneado de ajustes y HUD, editor (arrastre, tamaño, opacidad,
+visibilidad, flechas, restablecer, barra que no tapa) y panel de Ajustes. E2E en navegador: perspectivas desde
+Ajustes, mirada táctil + joystick, colisión con la pared, puntero bloqueado, editor con guardado tras recargar,
+restablecer y multijugador.
+
+**Pendiente**
+- Probar en celulares reales la sensibilidad táctil por defecto y la disposición del HUD con distintos notch.
+- La cámara de 3ª persona no aparta ramas de árboles (solo chocan los troncos).
+- Mirar con el ratón en isométrica no gira la cámara (es fija por diseño): el ratón apunta.
 
 ## Fase 3.2 — Optimización gráfica Mobile First (2026-11-26)
 **Auditoría del commit de Codex `5da1a88`** (endurecimiento de red y límite de 8 jugadores): las 138 pruebas
@@ -250,8 +307,10 @@ El informe AUDIT-3.1.md detalla regresiones, mediciones y límites pendientes de
 cd brothers-royale
 npm install
 npm run dev        # http://localhost:5173  (?q=low|normal fuerza la calidad, ?debug)
-# Controles: WASD/flechas, Shift correr, Espacio saltar, rueda o +/- zoom, F3 rendimiento.
-# Mando: stick o cruceta, A saltar, L3/LB correr. Móvil: joystick izquierdo, botones Correr y Saltar.
+# Controles: WASD/flechas, Shift correr, Espacio saltar, rueda o +/- zoom, F3 rendimiento, Q/E girar cámara.
+# 3ª/1ª persona (Ajustes → Perspectiva): clic en el juego para mirar con el ratón, Esc para soltarlo.
+# Mando: stick izquierdo moverse, stick derecho mirar/apuntar, A saltar, LB correr, LT apuntar.
+# Móvil: joystick izquierdo, arrastrar a la derecha para mirar, botones de acción (editables en Ajustes → Editar HUD).
 npm run check      # typecheck + tests + build (cliente y servidor)
 npm run server     # servidor multijugador en ws://localhost:2567 (otra terminal)
 # Jugar en línea: botón "Jugar en línea", o http://localhost:5173/?online&name=Ana&code=SALA1

@@ -76,3 +76,26 @@ export const CAMERA = {
   minZoom: 0.7,
   maxZoom: 1.5,
 } as const;
+
+/** Cámaras en perspectiva (3ª y 1ª persona). Solo afectan a la vista, nunca a la simulación. */
+export const CAMERA_RIG = {
+  /** Altura de los ojos sobre los pies (1ª persona). */
+  eyeHeight: 1.62,
+  /** Altura del pivote de 3ª persona (hombro). */
+  shoulderHeight: 1.55,
+  /** Desplazamiento lateral del pivote de 3ª persona (cámara sobre el hombro derecho). */
+  shoulderOffset: 0.45,
+  thirdDistance: 4.2,
+  thirdMinDistance: 1.4,
+  thirdMaxDistance: 7,
+  /** Radio de la "esfera" de la cámara al chocar con paredes. */
+  collisionRadius: 0.3,
+  /** Más cerca que esto, el avatar propio se oculta para no tapar la vista. */
+  hideAvatarBelow: 1.1,
+  firstPitch: { min: -1.45, max: 1.45 },
+  thirdPitch: { min: -0.55, max: 1.1 },
+  fov: 70,
+  firstFov: 78,
+  near: 0.05,
+  far: 140,
+} as const;

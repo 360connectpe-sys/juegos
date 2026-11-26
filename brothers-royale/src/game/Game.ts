@@ -16,6 +16,11 @@ import { generateWorldLayout, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
 import { Frustum, Matrix4, Sphere, type Group, type Object3D } from 'three';
 import { BlobShadows, disposeAvatarResources, PlayerAvatar } from './entities/PlayerAvatar';
+import { Vector3 } from 'three';
+import { moveToWorld, type CameraMode } from '@/engine/camera/cameraMath';
+import { CameraController } from './camera/CameraController';
+import type { LookSettings, SampleContext } from './input/InputManager';
+import type { Vec2 } from '@shared/types';
 import { InputManager } from './input/InputManager';
 import type { InputDevice } from './input/sources';
 import { createStaticPrefabBatch, PrefabView } from './world/PrefabView';
@@ -50,6 +55,7 @@ export interface OnlineRequest {
 
 export type GameEvents = {
   net: NetEvent;
+  camera: CameraMode;
   /** Estado del contexto WebGL (pérdida/recuperación). */
   graphics: ContextStatus;
   quality: QualityTier;
@@ -83,6 +89,19 @@ export class Game {
   private readonly frustum = new Frustum();
   private readonly projScreen = new Matrix4();
   private readonly cullSphere = new Sphere();
+  /** Cámaras (isométrica / 3ª / 1ª persona). Se crea con la física (colisión de cámara). */
+  private cameras: CameraController | null = null;
+  private pendingMode: CameraMode = 'isometric';
+  /** Entrada en pausa (Ajustes o editor de HUD abiertos): el personaje no se mueve. */
+  private inputSuspended = false;
+  private readonly sampleCtx: SampleContext = {
+    toWorld: (sx, sy) => moveToWorld(sx, sy, this.cameras?.mode ?? 'isometric', this.cameras?.yaw ?? 0),
+    cameraYaw: null,
+    alwaysAim: false,
+    mouseAim: null,
+  };
+  private readonly projected = new Vector3();
+  private readonly mouseAimVec: Vec2 = { x: 0, y: 0 };
   private statsTimer = 0;
   private disposed = false;
 
@@ -126,7 +145,12 @@ export class Game {
       const first = this.session.localPlayer();
       if (first) this.avatar.pushState(first, true);
       this.avatar.render(1, 0);
-      this.engine.iso.snapTo(this.avatar.position);
+      this.cameras = new CameraController(this.engine.iso, (o, d, max, r) => physics.castCameraSphere(o, d, max, r));
+      this.engine.onResize = (aspect) => this.cameras?.resize(aspect);
+      this.cameras.resize(this.engine.aspect ?? 1);
+      this.cameras.setMode(this.pendingMode, first?.yaw ?? 0);
+      this.cameras.snapTo(this.avatar.position);
+      this.engine.activeCamera = this.cameras.camera;
 
       this.loop = new FixedStepLoop(SIMULATION.fixedDt, {
         step: (dt) => this.step(dt),
@@ -171,9 +195,10 @@ export class Game {
       this.goOffline(reason);
     }
     const session = this.session;
-    const input = this.input.sample();
-    if (this.engine.contextLost) {
-      // Sin gráficos no se juega a ciegas: entrada neutra (la conexión y la gravedad siguen).
+    const input = this.input.sample(this.buildSampleContext());
+    if (this.engine.contextLost || this.inputSuspended) {
+      // Sin gráficos (o con Ajustes abiertos) no se juega a ciegas: entrada neutra
+      // (la conexión y la gravedad siguen).
       input.moveX = 0;
       input.moveZ = 0;
       input.buttons = 0;
@@ -188,8 +213,14 @@ export class Game {
     const avatar = this.avatar;
     if (!avatar) return;
     avatar.render(alpha, dt);
+    const cameras = this.cameras;
+    // Mirada (ratón, táctil, mando, Q/E) a la frecuencia de render: respuesta inmediata.
+    if (cameras) {
+      const look = this.input.consumeLook(dt);
+      if (!this.inputSuspended) cameras.addLook(look.yaw, look.pitch);
+    }
     // Los remotos fuera de cámara solo se mueven: no se calcula su animación.
-    const cam = this.engine.iso.camera;
+    const cam = cameras ? cameras.camera : this.engine.iso.camera;
     this.projScreen.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projScreen);
     for (const r of this.remotes.values()) {
@@ -200,10 +231,16 @@ export class Game {
     if (this.quality.blobShadows) this.blobs.update(this.allAvatars());
     const p = avatar.position;
     const zoom = this.input.consumeZoom();
-    if (zoom !== 0) this.engine.iso.addZoom(zoom);
-    this.engine.iso.follow(p, avatar.velocity.x, avatar.velocity.z, dt);
-    this.lighting.follow(this.engine.iso.focus);
-    for (const s of this.structures) s.update(p.x, p.y, p.z, dt);
+    if (cameras) {
+      if (zoom !== 0 && !this.inputSuspended) cameras.addZoom(zoom);
+      cameras.update(p, avatar.velocity.x, avatar.velocity.z, dt);
+      this.engine.activeCamera = cameras.camera;
+      avatar.root.visible = !cameras.hideAvatar;
+      this.lighting.follow(cameras.focus);
+    }
+    // El "corte" de techos y paredes es propio de la vista isométrica.
+    const cutaway = !cameras || cameras.mode === 'isometric';
+    for (const s of this.structures) s.update(p.x, p.y, p.z, dt, cutaway);
 
     this.statsTimer += dt;
     if (this.statsTimer >= 0.5) {
@@ -232,6 +269,74 @@ export class Game {
 
   get qualityTier(): QualityTier {
     return this.quality.tier;
+  }
+
+  /** Perspectiva actual. */
+  get cameraMode(): CameraMode {
+    return this.cameras?.mode ?? this.pendingMode;
+  }
+
+  /**
+   * Cambia la perspectiva (solo desde Ajustes). Es SOLO vista: la simulación,
+   * las colisiones y lo que se envía al servidor no cambian de formato.
+   */
+  setCameraMode(mode: CameraMode): void {
+    this.pendingMode = mode;
+    const cameras = this.cameras;
+    if (!cameras || !this.avatar) return;
+    cameras.setMode(mode, this.session?.localPlayer()?.yaw ?? cameras.yaw);
+    cameras.snapTo(this.avatar.position);
+    this.engine.activeCamera = cameras.camera;
+    this.events.emit('camera', mode);
+  }
+
+  setLookSettings(s: LookSettings): void {
+    this.input.look = { ...s };
+  }
+
+  /** Pausa la entrada (Ajustes/editor de HUD abiertos). La partida y la red siguen. */
+  setInputSuspended(v: boolean): void {
+    this.inputSuspended = v;
+    if (v) this.input.touch.reset();
+  }
+
+  /** Posiciones para el minimapa (se consulta pocas veces por segundo). */
+  minimapState(): { size: number; local: { x: number; z: number; yaw: number } | null; others: { x: number; z: number }[] } {
+    const local = this.session?.localPlayer();
+    return {
+      size: this.layout?.terrain.size ?? 0,
+      local: local ? { x: local.position.x, z: local.position.z, yaw: local.yaw } : null,
+      others: [...this.remotes.values()].map((r) => ({ x: r.position.x, z: r.position.z })),
+    };
+  }
+
+  get worldLayout(): WorldLayout | null {
+    return this.layout;
+  }
+
+  private buildSampleContext(): SampleContext {
+    const c = this.sampleCtx;
+    const cameras = this.cameras;
+    const mode = cameras?.mode ?? 'isometric';
+    c.cameraYaw = mode === 'isometric' ? null : (cameras?.yaw ?? 0);
+    c.alwaysAim = mode === 'first';
+    c.mouseAim = null;
+    // Isométrica + botón derecho: apuntar hacia el cursor (respecto al personaje en pantalla).
+    if (mode === 'isometric' && this.input.mouse.aimHeld && this.avatar && cameras) {
+      const rect = this.engine.canvas.getBoundingClientRect();
+      this.projected.copy(this.avatar.position).setY(this.avatar.position.y + 1).project(cameras.camera);
+      const px = rect.left + ((this.projected.x + 1) / 2) * rect.width;
+      const py = rect.top + ((1 - this.projected.y) / 2) * rect.height;
+      const dx = this.input.mouse.cursor.x - px;
+      const dy = py - this.input.mouse.cursor.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 8) {
+        this.mouseAimVec.x = dx / len;
+        this.mouseAimVec.y = dy / len;
+        c.mouseAim = this.mouseAimVec;
+      }
+    }
+    return c;
   }
 
   /**
@@ -366,8 +471,16 @@ export class Game {
     zoom: number;
     net: NetStatus;
     remoteAvatars: number;
+    camera: { mode: CameraMode; distance: number; hit: number | null; yaw: number; avatarVisible: boolean };
   } {
     return {
+      camera: {
+        mode: this.cameraMode,
+        distance: this.cameras?.distance ?? 0,
+        hit: this.cameras?.lastHit ?? null,
+        yaw: this.cameras?.yaw ?? 0,
+        avatarVisible: this.avatar?.root.visible ?? true,
+      },
       net: this.netStatus,
       remoteAvatars: this.remotes.size,
       trees: this.layout?.trees.length ?? 0,
