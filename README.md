@@ -4,6 +4,7 @@
 
 Juegos de Conecti, la mascota de 360 Connect (placas inteligentes NFC + QR, Trujillo, Perú).
 
+- **BROTHERS ROYALE** (`brothers-royale/`, en desarrollo): battle royale low poly isométrico con Vite, TypeScript, Three.js, React y Rapier. Ver `brothers-royale/PROJECT.md`.
 - **Conecti Duelo Online** (`duelo-online/`; los enlaces viejos `…/juegos/?sala=` redirigen solos): pelea por turnos, cada jugador desde su celular, con salas por código.
 - **CONECTI NAVAL BATTLE** (`conecti-naval-battle/`): artillería naval online 1 contra 1 en pixel art, con servidor Node.js + Socket.io. Se juega en `naval-battle/` (versión sin servidor con Firebase) o con su propio servidor en Render.
 - **Conecti Naval** (`naval/`): batalla naval online 1 contra 1. Cada jugador esconde 2 barcos (NFC y QR) y dispara a ciegas con WhatsApp, Instagram y TikTok. Los barcos nunca se suben al servidor: cada celular responde los disparos que recibe.

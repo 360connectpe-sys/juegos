@@ -1,0 +1,23 @@
+name: BROTHERS ROYALE CI
+
+on:
+  push:
+    paths: ['brothers-royale/**', '.github/workflows/brothers-royale.yml']
+  pull_request:
+    paths: ['brothers-royale/**', '.github/workflows/brothers-royale.yml']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: brothers-royale
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: brothers-royale/package-lock.json
+      - run: npm ci
+      - run: npm run check
