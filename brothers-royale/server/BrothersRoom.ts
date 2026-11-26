@@ -1,0 +1,157 @@
+import { type Client, Room, ServerError } from '@colyseus/core';
+import { FixedStepLoop } from '@/engine/FixedStepLoop';
+import { SIMULATION } from '@shared/constants';
+import { CloseCodes, NET, PROTOCOL_VERSION, type WelcomeMessage } from '@shared/protocol';
+import { sanitizeRoomCode, uniqueName, validateJoinOptions } from '@shared/session';
+import { ServerWorld } from './ServerWorld';
+
+interface ClientMeta {
+  ready: boolean;
+  msgWindowStart: number;
+  msgCount: number;
+  floodStrikes: number;
+}
+
+export interface CreateOptions {
+  code?: string;
+}
+
+/**
+ * Sala de partida: servidor autoritativo a 30 Hz.
+ *  - Identificación: sessionId de Colyseus + netId corto + nombre único + color.
+ *  - Entradas validadas (shared/inputValidation) con cola, presupuesto por tick
+ *    y límite de mensajes; los clientes que abusan son expulsados.
+ *  - Snapshot público compacto a toda la sala en cada tick y corrección
+ *    privada a cada propietario cuando su estado cambia.
+ *  - Caídas de conexión: el personaje se conserva NET.reconnectSeconds.
+ */
+export class BrothersRoom extends Room {
+  maxClients: number = NET.maxPlayersPerRoom;
+  patchRate: number | null = null; // sin estado Schema: enviamos snapshots propios
+  autoDispose = true;
+
+  world!: ServerWorld;
+  code = '';
+  private loop!: FixedStepLoop;
+  private readonly meta = new Map<string, ClientMeta>();
+
+  async onCreate(options: CreateOptions = {}): Promise<void> {
+    this.code = sanitizeRoomCode(options.code);
+    this.world = await ServerWorld.create();
+    await this.setMetadata({ code: this.code });
+
+    this.onMessage('ready', (client) => this.handleReady(client));
+    this.onMessage('input', (client, message) => this.handleInput(client, message));
+    this.onMessage('ping', (client, message: { t?: unknown }) => {
+      if (!this.countMessage(client)) return;
+      const t = typeof message?.t === 'number' && Number.isFinite(message.t) ? message.t : 0;
+      client.send('pong', { t, tick: this.world.tick });
+    });
+
+    this.loop = new FixedStepLoop(SIMULATION.fixedDt, { step: () => this.tick(), render: () => undefined });
+    // Medimos el tiempo real nosotros: el reloj de la sala se avanza también
+    // desde otros puntos de Colyseus y su deltaTime no es fiable aquí.
+    let last = performance.now();
+    this.setSimulationInterval(() => {
+      const now = performance.now();
+      this.loop.advance((now - last) / 1000);
+      last = now;
+    }, 1000 / NET.tickRate);
+  }
+
+  onJoin(client: Client, options: unknown): void {
+    const v = validateJoinOptions(options);
+    if (!v.ok) {
+      throw new ServerError(CloseCodes.PROTOCOL_MISMATCH, v.reason === 'protocol' ? `Versión de protocolo distinta (servidor ${PROTOCOL_VERSION})` : 'Opciones de unión inválidas');
+    }
+    const name = uniqueName(v.options.name, [...this.world.players.values()].map((p) => p.name));
+    const player = this.world.addPlayer(client.sessionId, name);
+    this.meta.set(client.sessionId, { ready: false, msgWindowStart: Date.now(), msgCount: 0, floodStrikes: 0 });
+    this.broadcast('join', this.world.rosterEntry(player), { except: client });
+  }
+
+  /** El cliente ya registró sus manejadores: le mandamos la bienvenida. */
+  private handleReady(client: Client): void {
+    const meta = this.meta.get(client.sessionId);
+    const player = this.world.players.get(client.sessionId);
+    if (!meta || !player) return;
+    meta.ready = true;
+    const welcome: WelcomeMessage = {
+      protocol: PROTOCOL_VERSION,
+      playerId: player.id,
+      netId: player.netId,
+      roomId: this.roomId,
+      code: this.code,
+      seed: this.world.seed,
+      tick: this.world.tick,
+      tickRate: NET.tickRate,
+      roster: this.world.roster(),
+      state: player.body.snapshot(),
+    };
+    client.send('welcome', welcome);
+    player.correctionDirty = false;
+  }
+
+  private handleInput(client: Client, message: unknown): void {
+    if (!this.countMessage(client)) return;
+    const result = this.world.queueInput(client.sessionId, message);
+    const p = this.world.players.get(client.sessionId);
+    if (result === 'invalid' && p && p.invalidInputs > NET.maxInvalidInputs) {
+      client.leave(CloseCodes.INVALID_INPUT, 'Demasiadas entradas inválidas');
+    }
+  }
+
+  /** Límite de mensajes por segundo por cliente. Devuelve false si se descarta. */
+  private countMessage(client: Client): boolean {
+    const m = this.meta.get(client.sessionId);
+    if (!m) return false;
+    const now = Date.now();
+    if (now - m.msgWindowStart >= 1000) {
+      m.msgWindowStart = now;
+      m.msgCount = 0;
+    }
+    if (++m.msgCount <= NET.maxMessagesPerSecond) return true;
+    if (m.msgCount === NET.maxMessagesPerSecond + 1 && ++m.floodStrikes >= 3) {
+      client.leave(CloseCodes.FLOODING, 'Demasiados mensajes');
+    }
+    return false;
+  }
+
+  private tick(): void {
+    this.world.step();
+    if (this.clients.length === 0) return;
+    this.broadcast('snapshot', this.world.snapshot());
+    for (const client of this.clients) {
+      if (!this.meta.get(client.sessionId)?.ready) continue;
+      const state = this.world.takeCorrection(client.sessionId);
+      if (state) client.send('correction', { tick: this.world.tick, state });
+    }
+  }
+
+  async onDrop(client: Client): Promise<void> {
+    const p = this.world.players.get(client.sessionId);
+    if (p) p.connected = false;
+    try {
+      await this.allowReconnection(client, NET.reconnectSeconds);
+    } catch {
+      // La sala se está cerrando o expiró el plazo: Colyseus llamará a onLeave.
+    }
+  }
+
+  onReconnect(client: Client): void {
+    const p = this.world.players.get(client.sessionId);
+    if (p) p.connected = true;
+    const meta = this.meta.get(client.sessionId);
+    if (meta) meta.ready = false; // el cliente vuelve a pedir la bienvenida
+  }
+
+  onLeave(client: Client): void {
+    const p = this.world.removePlayer(client.sessionId);
+    this.meta.delete(client.sessionId);
+    if (p) this.broadcast('leave', { id: p.id, netId: p.netId });
+  }
+
+  onDispose(): void {
+    this.world?.dispose();
+  }
+}

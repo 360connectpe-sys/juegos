@@ -25,6 +25,7 @@ export default defineConfig({
         manualChunks(id: string) {
           if (id.includes('node_modules/three')) return 'three';
           if (id.includes('node_modules/@dimforge')) return 'rapier';
+          if (id.includes('node_modules/@colyseus') || id.includes('node_modules/msgpackr')) return 'net';
           if (id.includes('node_modules/react')) return 'react';
           return undefined;
         },

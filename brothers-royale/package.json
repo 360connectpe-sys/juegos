@@ -11,13 +11,19 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run test && npm run build",
-    "build:pages": "tsc --noEmit && vite build --outDir jugar --emptyOutDir"
+    "check": "npm run typecheck && npm run test && npm run build && npm run build:server",
+    "build:pages": "tsc --noEmit && vite build --outDir jugar --emptyOutDir",
+    "build:server": "vite build -c vite.server.config.ts",
+    "server": "npm run build:server && node dist-server/index.js"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
+    "@colyseus/core": "^0.18.30",
+    "@colyseus/schema": "^5.0.52",
+    "@colyseus/sdk": "^0.18.10",
+    "@colyseus/ws-transport": "^0.18.5",
     "@dimforge/rapier3d-compat": "^0.21.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

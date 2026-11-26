@@ -76,3 +76,29 @@ export function generateWorldLayout(opts: LayoutOptions = {}): WorldLayout {
 
   return { seed, terrain, structures, trees, spawn: { x: 2.5, z: 7.5 } };
 }
+
+/** ¿Se puede aparecer en (x, z)? Fuera de estructuras y lejos de troncos. */
+export function isClearSpawn(layout: WorldLayout, x: number, z: number): boolean {
+  if (layout.structures.some((s) => Math.hypot(x - s.x, z - s.z) < s.def.clearRadius)) return false;
+  return !layout.trees.some((t) => Math.hypot(x - t.x, z - t.z) < 1.5);
+}
+
+/**
+ * Punto de aparición del jugador `index` (determinista): el 0 es el de
+ * siempre; el resto recorre anillos alrededor del pueblo saltando posiciones
+ * ocupadas por estructuras o árboles, para no aparecer uno encima de otro.
+ */
+export function spawnPoint(layout: WorldLayout, index: number): { x: number; z: number } {
+  if (index <= 0) return { ...layout.spawn };
+  let found = 0;
+  for (let k = 0; k < 400; k++) {
+    const ring = Math.floor(k / 12);
+    const angle = ((k % 12) / 12) * Math.PI * 2 + ring * 0.26;
+    const r = 13 + ring * 2.5;
+    const x = Math.cos(angle) * r;
+    const z = Math.sin(angle) * r;
+    if (!isClearSpawn(layout, x, z)) continue;
+    if (++found === index) return { x, z };
+  }
+  return { ...layout.spawn };
+}

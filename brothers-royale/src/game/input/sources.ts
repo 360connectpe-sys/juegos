@@ -50,6 +50,13 @@ export function combineFrames(frames: InputFrame[]): InputFrame {
 
 // ---------------------------------------------------------------------------
 
+/** ¿El evento viene de un campo donde el usuario escribe? */
+export function isEditable(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable === true;
+}
+
 export class KeyboardSource implements InputSource {
   readonly device = 'keyboard' as const;
   private readonly keys = new Set<string>();
@@ -79,6 +86,8 @@ export class KeyboardSource implements InputSource {
   }
 
   private onDown = (e: KeyboardEvent): void => {
+    // Escribir en un campo de texto (p. ej. el nombre) no mueve al personaje.
+    if (isEditable(e.target)) return;
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
     // Un toque rápido (keydown+keyup entre dos ticks) no debe perder el salto.
     if (e.code === 'Space' && !e.repeat) this.jumpLatch = true;

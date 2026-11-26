@@ -1,9 +1,16 @@
 import type { PlayerId, PlayerInput, PlayerState } from '@shared/types';
 
+/** Identidad visible de un jugador (para pintar su avatar). */
+export interface PlayerIdentity {
+  name: string;
+  /** Índice de color del avatar. */
+  color: number;
+}
+
 /**
  * Frontera entre el juego y la red. El juego solo habla con esta interfaz:
- *  - OfflineSession (hoy): simula todo localmente.
- *  - ColyseusSession (fase multijugador): envía cada `PlayerInput` al servidor,
+ *  - OfflineSession: simula todo localmente (modo por defecto).
+ *  - OnlineSession (Colyseus): envía cada `PlayerInput` al servidor,
  *    predice al jugador local con la MISMA simulación (CharacterBody +
  *    PredictionController) y reconcilia con las instantáneas autoritativas;
  *    los demás jugadores se interpolan con `PlayerAvatar`.
@@ -17,5 +24,7 @@ export interface GameSession {
   players(): readonly PlayerState[];
   /** Estado del jugador local (atajo). */
   localPlayer(): PlayerState | undefined;
+  /** Nombre y color de un jugador visible. */
+  identity(id: PlayerId): PlayerIdentity;
   dispose(): void;
 }

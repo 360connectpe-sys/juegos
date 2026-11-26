@@ -9,10 +9,56 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 |------|-----------|--------|
 | 1 | Base técnica: arquitectura, escena isométrica, mapa de prueba, personaje, física, tests | ✅ Hecha |
 | 2 | Controlador de personaje, cámara, entrada (táctil/teclado/mando), edificios con plantas y escaleras, animaciones, FPS | ✅ Hecha |
-| 3 | Multijugador con Colyseus (servidor autoritativo; la predicción/reconciliación ya está lista en `net/Prediction.ts`) | Pendiente |
+| 3 | Multijugador con Colyseus: servidor autoritativo, salas, predicción y reconciliación | 🟡 3.1 hecha (base de red) |
 | 4 | Armas y combate | Pendiente |
 | 5 | Construcción | Pendiente |
 | 6 | Tormenta, partida completa, salas, lobby | Pendiente |
+
+## Fase 3.1 — Servidor autoritativo con Colyseus (2026-11-26)
+**Hecho**
+- **Servidor** (`server/`, Colyseus 0.18 sobre WebSocket, Node 22, sin servicios externos):
+  - `ServerWorld`: simulación autoritativa a **30 Hz** con el mismo mapa, colisionadores y `CharacterBody`
+    que el cliente. Sin dependencia de Colyseus: se prueba directamente en Node.
+  - `BrothersRoom`: bucle de paso fijo propio (`FixedStepLoop`) medido con `performance.now()` (el
+    `deltaTime` del reloj de la sala no era fiable y daba 10 ticks/s), hasta 16 jugadores por sala.
+- **Salas**: sala pública por defecto y salas privadas por código (`filterBy(['code'])`, letras y números).
+- **Identificación**: `sessionId` de Colyseus + `netId` corto (0-255, reutilizable) + nombre saneado y
+  único en la sala ("Ana", "Ana 2") + color de avatar. Roster en la bienvenida y eventos `join`/`leave`.
+- **Validación**: versión de protocolo (v3) y opciones al unirse; cada entrada con `isValidPlayerInput`
+  (fase 2.2), copia solo de campos conocidos, cola de 12, como mucho 3 entradas por tick y 1 de media
+  (anti speed-hack), límite de 90 mensajes/s y expulsión tras 30 entradas inválidas o 3 ráfagas.
+- **Snapshots**: snapshot público por tick, cuantizado (cm, mrad, cm/s) en 10 enteros por jugador
+  (~21 B/jugador en MessagePack); corrección privada (`CharacterSnapshot`) al propietario solo si su estado
+  cambió. Ancho de banda medido con 16 jugadores: ~19 KB/s de bajada y ~1,8 KB/s de subida por cliente.
+- **Conexión/desconexión**: saludo en dos pasos (`ready` → `welcome`) para no perder mensajes; reserva
+  de 15 s para reconectar tras una caída (el SDK reintenta solo y pide una bienvenida nueva); al salir se
+  avisa al resto. Si un cliente deja de enviar entradas, el servidor sigue aplicando la gravedad sin
+  consumir secuencia. Códigos de cierre propios ≥ 4100 con mensajes claros en castellano.
+- **Cliente** (`src/net/OnlineSession.ts`): predice al jugador local con `CharacterBody` +
+  `PredictionController` (fase 2.2) y reconcilia con las correcciones; interpola a los remotos 3 ticks en el
+  pasado (`SnapshotInterpolator`, sin basura por frame). `Game` crea/retira avatares remotos con colores de
+  la paleta y vuelve a offline automáticamente (conservando la posición) si se pierde la conexión.
+- **Interfaz**: botón "Jugar en línea" (nombre, código de sala, servidor) y estado de la sala (jugadores,
+  ping, salir). Enlace directo `?online&server=…&name=…&code=…`. Escribir en los campos ya no mueve al
+  personaje.
+- **Móvil**: el modo offline sigue siendo el predeterminado; el SDK de Colyseus (~54 KB gzip) se descarga
+  solo al conectar. Los remotos no tienen cuerpo físico en el cliente.
+- **Pruebas**: 120 (las 93 anteriores + 27 nuevas): códec, identidad, puntos de aparición, interpolación,
+  `ServerWorld` (cola, anti speed-hack, gravedad sin entradas, snapshots), **cliente predictivo + servidor
+  con 3 ticks de retraso → estado idéntico**, integración real con **dos clientes simultáneos**
+  (Colyseus SDK y `OnlineSession`), salas por código, protocolo viejo rechazado, expulsión, caída del servidor
+  e interfaz. E2E en navegador: escritorio + celular en la misma sala, ambos se ven y se mueven (teclado y
+  joystick), y vuelta a offline al apagar el servidor.
+
+**Limitaciones conocidas / siguientes pasos**
+- GitHub Pages sirve por https: desde ahí el navegador solo acepta servidores `wss://` (TLS). Hoy el
+  modo en línea se prueba en local o en red local (`http://` + `ws://`). Publicar un servidor con TLS
+  queda para una fase con hosting decidido.
+- Corrección privada ~300 B/tick: cuantizarla o enviarla a 15 Hz si el ancho de banda móvil lo exige.
+- Las correcciones grandes se aplican de golpe (sin suavizado visual del error).
+- Avatares remotos: ~5 draw calls cada uno; con muchos jugadores habrá que instanciarlos.
+- Sin nombres sobre los avatares, sin colisión entre jugadores y sin "lag compensation" (llega con combate).
+- Una sola instancia de servidor (sin presencia/Redis); suficiente para pruebas y partidas pequeñas.
 
 ## Fase 2.2 — Reconciliación y validación compartida (2026-11-26)
 - Sincronización de colisionadores después de cada desplazamiento cinemático, también en resimulación
@@ -121,5 +167,8 @@ npm install
 npm run dev        # http://localhost:5173  (?q=low para simular gama baja, ?debug)
 # Controles: WASD/flechas, Shift correr, Espacio saltar, rueda o +/- zoom, F3 rendimiento.
 # Mando: stick o cruceta, A saltar, L3/LB correr. Móvil: joystick izquierdo, botones Correr y Saltar.
-npm run check      # typecheck + tests + build
+npm run check      # typecheck + tests + build (cliente y servidor)
+npm run server     # servidor multijugador en ws://localhost:2567 (otra terminal)
+# Jugar en línea: botón "Jugar en línea", o http://localhost:5173/?online&name=Ana&code=SALA1
+# Para un celular en la misma red: npm run dev y abrir http://<IP-del-PC>:5173/?online&server=ws://<IP-del-PC>:2567
 ```

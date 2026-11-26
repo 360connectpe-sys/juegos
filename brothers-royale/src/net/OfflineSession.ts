@@ -1,7 +1,7 @@
 import { CharacterBody } from '@/physics/CharacterBody';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import type { PlayerInput, PlayerState, Vec3 } from '@shared/types';
-import type { GameSession } from './GameSession';
+import type { GameSession, PlayerIdentity } from './GameSession';
 
 /** Sesión de un solo jugador: la simulación corre entera en el navegador. */
 export class OfflineSession implements GameSession {
@@ -29,6 +29,10 @@ export class OfflineSession implements GameSession {
 
   players(): readonly PlayerState[] {
     return this.list;
+  }
+
+  identity(): PlayerIdentity {
+    return { name: this.local.state.name, color: 0 };
   }
 
   localPlayer(): PlayerState {

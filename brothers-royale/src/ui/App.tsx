@@ -3,6 +3,8 @@ import { Game } from '@/game/Game';
 import type { InputDevice } from '@/game/input/sources';
 import { detectQuality, readDeviceInfo, readQualityOverride } from '@/engine/quality';
 import { Hud } from './components/Hud';
+import { OnlinePanel } from './components/OnlinePanel';
+import { loadSavedName, readOnlineParams } from '@/net/config';
 import { LoadingScreen } from './components/LoadingScreen';
 import { TouchControls } from './components/TouchControls';
 
@@ -21,6 +23,7 @@ export function App() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isTouch] = useState(() => readDeviceInfo().isTouch);
+  const [onlineParams] = useState(() => readOnlineParams(window.location.search, window.location, import.meta.env.VITE_SERVER_URL, loadSavedName()));
   const [device, setDevice] = useState<InputDevice>(() => (readDeviceInfo().isTouch ? 'touch' : 'keyboard'));
   const [hint, setHint] = useState(true);
 
@@ -45,7 +48,12 @@ export function App() {
       setDevice(d);
       setHint(true);
     });
-    g.init().catch(() => undefined);
+    g.init()
+      .then(() => {
+        // ?online&server=…&name=…&code=… conecta al cargar (útil para pruebas y enlaces de sala).
+        if (onlineParams.auto) void g.goOnline({ url: onlineParams.server, name: onlineParams.name || 'Jugador', code: onlineParams.code });
+      })
+      .catch(() => undefined);
     return () => {
       if (window.__BR_GAME__ === g) delete window.__BR_GAME__;
       g.dispose();
@@ -65,7 +73,21 @@ export function App() {
   return (
     <main className="app">
       <canvas ref={canvasRef} className="app__canvas" aria-label="Escena del juego" />
-      {ready && game && <Hud events={game.events} device={device} showHint={hint} />}
+      {ready && game && (
+        <Hud
+          events={game.events}
+          device={device}
+          showHint={hint}
+          online={
+            <OnlinePanel
+              events={game.events}
+              initial={onlineParams}
+              onConnect={(req) => void game.goOnline(req)}
+              onDisconnect={() => game.goOffline()}
+            />
+          }
+        />
+      )}
       {showTouch && <TouchControls touch={game.input.touch} />}
       <LoadingScreen progress={progress.value} label={progress.label} error={error} hidden={ready} />
     </main>

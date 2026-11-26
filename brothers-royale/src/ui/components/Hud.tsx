@@ -2,12 +2,15 @@ import type { EventBus } from '@/core/EventBus';
 import type { GameEvents } from '@/game/Game';
 import type { InputDevice } from '@/game/input/sources';
 import { FpsCounter } from './FpsCounter';
+import type { ReactNode } from 'react';
 import { Logo } from './Logo';
 
 interface Props {
   events: EventBus<GameEvents>;
   device: InputDevice;
   showHint: boolean;
+  /** Panel de juego en línea (debajo del logo). */
+  online?: ReactNode;
 }
 
 function Hint({ device }: { device: InputDevice }) {
@@ -29,11 +32,12 @@ function Hint({ device }: { device: InputDevice }) {
   return null;
 }
 
-export function Hud({ events, device, showHint }: Props) {
+export function Hud({ events, device, showHint, online }: Props) {
   return (
     <div className="hud">
       <div className="hud__corner">
         <Logo size="small" />
+        {online}
       </div>
       <FpsCounter events={events} />
       {showHint && <Hint device={device} />}

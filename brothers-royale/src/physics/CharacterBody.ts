@@ -12,7 +12,7 @@ import {
 import { isValidPlayerInput } from '@shared/inputValidation';
 import type { CharacterSnapshot } from '@shared/reconciliation';
 export type { CharacterSnapshot } from '@shared/reconciliation';
-import type { PlayerInput, PlayerState, Vec3 } from '@shared/types';
+import { emptyInput, type PlayerInput, type PlayerState, type Vec3 } from '@shared/types';
 import { PLAYER_GROUPS } from './groups';
 import type { PhysicsWorld } from './PhysicsWorld';
 
@@ -41,6 +41,7 @@ export class CharacterBody {
   readonly state: PlayerState;
   readonly lastEvents: StepEvents = { jumped: false, landed: false, impactSpeed: 0 };
   private readonly desired = { x: 0, y: 0, z: 0 };
+  private readonly idleInput: PlayerInput = emptyInput(0);
 
   constructor(
     private readonly physics: PhysicsWorld,
@@ -81,6 +82,26 @@ export class CharacterBody {
     this.lastEvents.landed = false;
     this.lastEvents.impactSpeed = 0;
     if (!isValidPlayerInput(input, this.state.lastProcessedSeq)) return this.state;
+    this.simulate(input, dt, replaying);
+    this.state.lastProcessedSeq = input.seq;
+    return this.state;
+  }
+
+  /**
+   * Paso sin entrada (el servidor lo usa si un cliente deja de enviar entradas:
+   * la gravedad sigue actuando). No consume secuencia, así que no altera la
+   * reconciliación del cliente cuando vuelve a enviar.
+   */
+  stepIdle(dt: number = SIMULATION.fixedDt): PlayerState {
+    this.lastEvents.jumped = false;
+    this.lastEvents.landed = false;
+    this.lastEvents.impactSpeed = 0;
+    this.idleInput.aimYaw = this.motor.yaw;
+    this.simulate(this.idleInput, dt, false);
+    return this.state;
+  }
+
+  private simulate(input: PlayerInput, dt: number, replaying: boolean): void {
     const m = this.motor;
     const wasGrounded = m.grounded;
     const vyBefore = m.vy;
@@ -118,8 +139,6 @@ export class CharacterBody {
     s.yaw = m.yaw;
     s.grounded = grounded;
     s.locomotion = deriveLocomotion(grounded, m.vx, m.vy, m.vz);
-    s.lastProcessedSeq = input.seq;
-    return s;
   }
 
   snapshot(): CharacterSnapshot {

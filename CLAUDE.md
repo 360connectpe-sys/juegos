@@ -5,4 +5,5 @@ Cada carpeta es un juego independiente servido como sitio estático; `index.html
 - **BROTHERS ROYALE** vive en `brothers-royale/` (Vite + TypeScript). Sus instrucciones permanentes
   están en `brothers-royale/CLAUDE.md` y el estado del proyecto en `brothers-royale/PROJECT.md`.
   Antes de terminar cualquier cambio allí: `cd brothers-royale && npm run check`.
+  Su servidor multijugador (Colyseus) vive en `brothers-royale/server/` y se arranca con `npm run server`.
 - No modificar los otros juegos salvo que se pida.

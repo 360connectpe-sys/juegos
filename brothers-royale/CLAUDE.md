@@ -6,11 +6,16 @@ arte, música, mapas ni el aspecto de ningún juego existente.
 
 ## Stack
 Vite 8 · TypeScript 5.9 (strict) · React 19 (solo UI/HUD) · Three.js (render) ·
-Rapier (`@dimforge/rapier3d-compat`, física) · Colyseus (multijugador, fase futura) · Vitest.
+Rapier (`@dimforge/rapier3d-compat`, física) · Colyseus 0.18 (`@colyseus/core` + `ws-transport` en el
+servidor, `@colyseus/sdk` en el cliente, cargado de forma diferida) · Vitest.
 
 ## Comandos (desde `brothers-royale/`)
 - `npm run dev` — servidor de desarrollo (`?q=low|medium|high` fuerza calidad, `?debug` expone `window.__BR_GAME__`).
-- `npm run check` — typecheck + tests + build. **Ejecutarlo antes de cada commit; debe pasar.**
+- `npm run check` — typecheck + tests + build del cliente + build del servidor. **Ejecutarlo antes de cada commit; debe pasar.**
+- `npm run server` — compila (`vite.server.config.ts` → `dist-server/`) y arranca el servidor Colyseus en
+  `ws://localhost:2567` (`PORT`, `HOST` configurables). `npm run build:server` solo compila.
+- Probar en línea: `npm run server` + `npm run dev`, y en el juego "Jugar en línea", o abrir
+  `?online&server=ws://localhost:2567&name=Ana&code=SALA1` (dos pestañas o dispositivos = dos jugadores).
 - `npm test`, `npm run typecheck`, `npm run build`, `npm run preview`.
 - `npm run build:pages` — regenera `jugar/` (versión publicada en GitHub Pages). Ejecutarlo y commitear `jugar/` al cerrar cada avance.
 
@@ -21,7 +26,10 @@ src/shared/   Lógica PURA y determinista (sin Three, sin DOM): constantes, tipo
 src/physics/  Rapier, sin Three ni DOM (reutilizable en Node/Colyseus).
 src/engine/   Render genérico: renderer, cámara isométrica, luces, calidad, bucle de paso fijo.
 src/game/     Juego: mundo visual, entidades (vistas), entrada, orquestador `Game`.
-src/net/      Frontera de red: `GameSession` (OfflineSession hoy, ColyseusSession después).
+src/net/      Frontera de red: `GameSession` → `OfflineSession` (por defecto) y `OnlineSession`
+              (Colyseus: predicción + reconciliación + interpolación de remotos).
+server/       Servidor Node: `ServerWorld` (simulación autoritativa pura, sin red) y
+              `BrothersRoom` (sala Colyseus: identidad, validación, snapshots, conexión).
 src/ui/       React: carga, HUD, controles táctiles. React NO toca la escena 3D por frame.
 tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/React).
 ```
@@ -30,7 +38,16 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 2. **Simulación ≠ render**: la simulación avanza a `SIMULATION.tickRate` (30 Hz) con `FixedStepLoop`;
    las vistas interpolan entre ticks. Las entidades visuales nunca son la fuente de verdad.
 3. **Red**: el juego solo habla con `GameSession`. La entrada viaja como `PlayerInput` (ejes del
-   mundo, con `seq`); el estado como `PlayerState`. Mensajes en `shared/protocol.ts`.
+   mundo, con `seq`); el estado público como snapshot cuantizado (`shared/netcodec.ts`) y el privado
+   del propietario como `CharacterSnapshot` (`correction`). Mensajes y límites en `shared/protocol.ts`.
+3b. **Servidor autoritativo**: nunca confiar en el cliente. Toda entrada pasa por `isValidPlayerInput`
+   y por la cola de `ServerWorld` (máx. `NET.maxInputsPerTick` por tick y 1 de media: anti speed-hack);
+   opciones de unión por `validateJoinOptions`; límite de mensajes por segundo. Cambiar el formato de
+   un mensaje = subir `PROTOCOL_VERSION`. Códigos de cierre propios ≥ 4100 (Colyseus usa 4000-4010).
+   El servidor y el cliente deben usar el mismo mapa (semilla), colisionadores y paso fijo: la
+   bienvenida verifica la semilla. `ServerWorld` se prueba sin red; la sala solo conecta.
+3c. **Modo offline primero**: el juego arranca sin conexión y el SDK de red solo se descarga al
+   pulsar "Jugar en línea". Si la conexión se pierde, `Game` vuelve a offline conservando la posición.
 4. **Lo que se ve es lo que choca**: los edificios se definen como prefabs de datos
    (`shared/world/prefab.ts`, `structures.ts`); de la misma lista de piezas salen la malla (`PrefabView`)
    y los colisionadores (`prefabColliders`). Escaleras = peldaños ≤ 0,4 m + rampa invisible (`stairs()`).
