@@ -15,12 +15,36 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | 6 | Tormenta, partida completa, salas, lobby | Pendiente |
 
 ## Fase 3.1 — Servidor autoritativo con Colyseus (2026-11-26)
+
+**Máximo actual de ocho jugadores**
+
+- NET.maxPlayersPerRoom comparte el límite de 8 entre servidor y cliente. Colyseus limita
+  las plazas activas y reservadas para reconexión. ServerWorld también rechaza un noveno cuerpo
+  antes de asignar recursos físicos.
+- OnlineSession rechaza bienvenidas o altas que excedan ocho y OnlinePanel muestra n/8 jugadores.
+- La unión por roomId a una sala llena se rechaza, incluso si un jugador está desconectado y
+  conserva su reserva. El matchmaking joinOrCreate conserva su comportamiento de poder crear
+  otra sala con capacidad disponible.
+- Se conservan los 134 casos anteriores, adaptando las cargas de 16 a la capacidad actual de 8.
+  Cuatro nuevas regresiones cubren capacidad física, rechazo de unión y límites del cliente.
+- La prueba prolongada se reproduce con BR_SOAK_SECONDS=600 seguido de
+  ./node_modules/.bin/vitest run tests/audit.integration.test.ts -t 'sostiene 8 clientes'
+  --disableConsoleIntercept --reporter=verbose. En la suite normal dura cinco segundos.
+  Los resultados de diez minutos se registran en SOAK-8-PLAYERS.md.
+
+
+**Auditoría posterior de cf307f9**
+
+134 pruebas aprobadas tras las correcciones de cuotas, simulación, reconexión y recursos.
+La medición histórica, anterior al límite de ocho, con 16 clientes sostuvo 29,81 Hz y un p95 de simulación de 3,56 ms.
+El informe AUDIT-3.1.md detalla regresiones, mediciones y límites pendientes de gráficos, memoria y seguridad global.
+
 **Hecho**
 - **Servidor** (`server/`, Colyseus 0.18 sobre WebSocket, Node 22, sin servicios externos):
   - `ServerWorld`: simulación autoritativa a **30 Hz** con el mismo mapa, colisionadores y `CharacterBody`
     que el cliente. Sin dependencia de Colyseus: se prueba directamente en Node.
   - `BrothersRoom`: bucle de paso fijo propio (`FixedStepLoop`) medido con `performance.now()` (el
-    `deltaTime` del reloj de la sala no era fiable y daba 10 ticks/s), hasta 16 jugadores por sala.
+    `deltaTime` del reloj de la sala no era fiable y daba 10 ticks/s), hasta 8 jugadores por sala.
 - **Salas**: sala pública por defecto y salas privadas por código (`filterBy(['code'])`, letras y números).
 - **Identificación**: `sessionId` de Colyseus + `netId` corto (0-255, reutilizable) + nombre saneado y
   único en la sala ("Ana", "Ana 2") + color de avatar. Roster en la bienvenida y eventos `join`/`leave`.
@@ -29,7 +53,7 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
   (anti speed-hack), límite de 90 mensajes/s y expulsión tras 30 entradas inválidas o 3 ráfagas.
 - **Snapshots**: snapshot público por tick, cuantizado (cm, mrad, cm/s) en 10 enteros por jugador
   (~21 B/jugador en MessagePack); corrección privada (`CharacterSnapshot`) al propietario solo si su estado
-  cambió. Ancho de banda medido con 16 jugadores: ~19 KB/s de bajada y ~1,8 KB/s de subida por cliente.
+  cambió. Ancho de banda histórico medido antes del límite de ocho, con 16 jugadores: ~19 KB/s de bajada y ~1,8 KB/s de subida por cliente.
 - **Conexión/desconexión**: saludo en dos pasos (`ready` → `welcome`) para no perder mensajes; reserva
   de 15 s para reconectar tras una caída (el SDK reintenta solo y pide una bienvenida nueva); al salir se
   avisa al resto. Si un cliente deja de enviar entradas, el servidor sigue aplicando la gravedad sin

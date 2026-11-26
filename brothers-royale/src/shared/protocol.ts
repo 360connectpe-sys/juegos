@@ -15,7 +15,7 @@ export const NET = {
   /** Ticks por segundo del servidor (mismo paso fijo que el cliente). */
   tickRate: 30,
   defaultPort: 2567,
-  maxPlayersPerRoom: 16,
+  maxPlayersPerRoom: 8,
   /** Entradas en cola por jugador; las que excedan se descartan. */
   maxQueuedInputs: 12,
   /** Entradas que puede procesar un jugador por tick si llegan en ráfaga. */
@@ -40,6 +40,8 @@ export const CloseCodes = {
   PROTOCOL_MISMATCH: 4100,
   INVALID_INPUT: 4101,
   FLOODING: 4102,
+  SLOW_CONSUMER: 4103,
+  ROOM_CAPACITY: 4104,
 } as const;
 
 /** Mensaje claro para el jugador según cómo se cerró la conexión. */
@@ -57,6 +59,10 @@ export function closeReason(code: number, reason?: string): string {
       return 'Tu versión del juego no coincide con la del servidor; recarga la página';
     case CloseCodes.INVALID_INPUT:
       return 'El servidor rechazó demasiados datos de control no válidos';
+    case CloseCodes.ROOM_CAPACITY:
+      return 'La sala supera el máximo de 8 jugadores';
+    case CloseCodes.SLOW_CONSUMER:
+      return 'La conexión no puede recibir el estado del juego a tiempo';
     case CloseCodes.FLOODING:
       return 'Se enviaron demasiados mensajes al servidor';
     default:

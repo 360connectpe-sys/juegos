@@ -19,12 +19,13 @@ export class SnapshotInterpolator {
   constructor(private readonly capacity = 32) {}
 
   push(tick: number, players: readonly PublicPlayer[]): void {
-    if (tick <= this.latestTick - this.capacity) return; // muy viejo
+    if (!Number.isFinite(tick) || tick <= this.latestTick - this.capacity) return; // muy viejo
     this.latestTick = Math.max(this.latestTick, tick);
     const seen = new Set<number>();
     for (const p of players) {
       seen.add(p.netId);
       let buf = this.buffers.get(p.netId);
+      if (!buf && tick < this.latestTick) continue; // No resucitar jugadores retirados.
       if (!buf) {
         buf = [];
         this.buffers.set(p.netId, buf);
@@ -38,6 +39,11 @@ export class SnapshotInterpolator {
     }
     // Quien ya no aparece en el snapshot más reciente se olvida.
     if (tick === this.latestTick) for (const id of [...this.buffers.keys()]) if (!seen.has(id)) this.buffers.delete(id);
+  }
+
+  clear(): void {
+    this.buffers.clear();
+    this.latestTick = -1;
   }
 
   remove(netId: number): void {

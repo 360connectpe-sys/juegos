@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import type { EventBus } from '@/core/EventBus';
 import type { GameEvents, NetEvent, OnlineRequest } from '@/game/Game';
+import { NET } from '@shared/protocol';
 import { checkServerUrl, saveName } from '@/net/config';
 import { sanitizeName, sanitizeRoomCode } from '@shared/session';
 
@@ -61,7 +62,7 @@ export function OnlinePanel({ events, initial, onConnect, onDisconnect }: Props)
         <span className={`net__dot net__dot--${net.status}`} aria-hidden="true" />
         <span className="net__text">
           <strong>{STATUS_LABEL[net.status]}</strong>
-          {net.code ? `, sala ${net.code}` : ', sala pública'}, {net.players ?? 1} {net.players === 1 ? 'jugador' : 'jugadores'}
+          {net.code ? `, sala ${net.code}` : ', sala pública'}, {net.players ?? 1}/{NET.maxPlayersPerRoom} jugadores
           {net.rtt ? `, ${net.rtt} ms` : ''}
         </span>
         <button type="button" className="net__btn" onClick={onDisconnect}>

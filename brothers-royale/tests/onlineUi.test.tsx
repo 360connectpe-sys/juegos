@@ -36,7 +36,7 @@ describe('OnlinePanel', () => {
   it('muestra el estado en línea, permite salir y avisa al volver a offline', () => {
     const { events, onDisconnect } = setup();
     act(() => events.emit('net', { status: 'connected', code: 'AB1', players: 2, rtt: 40 }));
-    expect(screen.getByRole('status').textContent).toBe('En línea, sala AB1, 2 jugadores, 40 msSalir');
+    expect(screen.getByRole('status').textContent).toBe('En línea, sala AB1, 2/8 jugadores, 40 msSalir');
     fireEvent.click(screen.getByRole('button', { name: 'Salir' }));
     expect(onDisconnect).toHaveBeenCalled();
     act(() => events.emit('net', { status: 'offline', reason: 'El servidor se apagó' }));

@@ -73,6 +73,7 @@ export class ServerWorld {
   }
 
   addPlayer(id: string, name: string): ServerPlayer {
+    if (this.players.size >= NET.maxPlayersPerRoom) throw new Error('Sala llena (máximo 8 jugadores)');
     if (this.players.has(id)) throw new Error(`Jugador duplicado: ${id}`);
     const netId = this.allocNetId();
     const spawn = spawnPoint(this.layout, this.spawnCounter++);
@@ -145,6 +146,7 @@ export class ServerWorld {
         // Sin entradas (lag fuerte, pestaña en segundo plano, desconexión):
         // la gravedad sigue actuando, sin consumir secuencia.
         p.body.stepIdle(dt);
+        p.credits = 0; // Este tick ya avanzó la simulación: no se puede gastar dos veces.
         p.correctionDirty = true;
       }
       if (p.body.state.position.y < -20) {

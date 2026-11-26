@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, PCFShadowMap, Scene, SRGBColorSpace, Timer, WebGLRenderer } from 'three';
+import { ACESFilmicToneMapping, BufferGeometry, DirectionalLight, InstancedMesh, Material, Mesh, PCFShadowMap, Scene, SRGBColorSpace, Timer, WebGLRenderer } from 'three';
 import { AdaptiveResolution } from './AdaptiveResolution';
 import { IsometricCamera } from './IsometricCamera';
 import type { QualitySettings } from './quality';
@@ -139,6 +139,19 @@ export class Engine {
     this.resizeObserver.disconnect();
     document.removeEventListener('visibilitychange', this.handleVisibility);
     this.timer.dispose();
+    const geometries = new Set<BufferGeometry>();
+    const materials = new Set<Material>();
+    this.scene.traverse((object) => {
+      if (object instanceof Mesh) {
+        geometries.add(object.geometry);
+        for (const material of Array.isArray(object.material) ? object.material : [object.material]) materials.add(material);
+      }
+      if (object instanceof InstancedMesh) object.dispose();
+      if (object instanceof DirectionalLight) object.dispose();
+    });
+    for (const geometry of geometries) geometry.dispose();
+    for (const material of materials) material.dispose();
+    this.scene.clear();
     this.renderer.dispose();
   }
 }

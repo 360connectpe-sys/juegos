@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Room } from '@colyseus/sdk';
+import { matchMaker } from '@colyseus/core';
+import type { BrothersRoom } from '../server/BrothersRoom';
+import type { WebSocketClient } from '@colyseus/ws-transport';
 import { createServer } from '../server/index';
 import { OnlineSession, type OnlineInfo } from '@/net/OnlineSession';
 import { loadRapier, PhysicsWorld } from '@/physics/PhysicsWorld';
 import { SIMULATION } from '@shared/constants';
 import { screenToWorld } from '@shared/movement';
+import { CloseCodes, NET, PROTOCOL_VERSION } from '@shared/protocol';
+import type { RosterEntry, CorrectionMessage, WelcomeMessage } from '@shared/protocol';
 import { emptyInput } from '@shared/types';
 import { worldColliders } from '@shared/world/colliders';
 import { generateWorldLayout } from '@shared/world/layout';
@@ -80,6 +86,104 @@ describe('OnlineSession: dos clientes simultáneos contra el servidor', () => {
     a.physics.dispose();
     b.physics.dispose();
   }, 30000);
+
+  it('reconecta una caída temprana conservando identidad y vuelve a confirmar entradas', async () => {
+    const c = await makeClient('Reconectar', 'RECON');
+    try {
+      const id = c.session.localPlayerId;
+      const sdk = (c.session as unknown as { room: Room }).room;
+      const room = matchMaker.getLocalRoomById(sdk.roomId) as BrothersRoom;
+      (room.clients[0] as WebSocketClient).ref.terminate();
+      for (let i = 0; i < 150 && !c.infos.some((info) => info.status === 'reconnecting'); i++) await wait(10);
+      expect(c.infos.some((info) => info.status === 'reconnecting')).toBe(true);
+      for (let i = 0; i < 300 && c.session.status !== 'connected'; i++) await wait(10);
+      expect(c.session.status).toBe('connected');
+      expect(c.session.localPlayerId).toBe(id);
+      expect(room.world.players.size).toBe(1);
+      await play([c], 20, () => ({ x: 1, y: 0 }), 1);
+      await play([c], 15, () => ({ x: 0, y: 0 }), 21);
+      expect(c.session.localPlayer().lastProcessedSeq).toBeGreaterThanOrEqual(30);
+      expect(c.session.pendingInputs).toBeLessThan(5);
+    } finally {
+      c.session.dispose();
+      c.physics.dispose();
+    }
+  }, 15000);
+
+  it('descarta correcciones antiguas y limpia el estado anterior al recibir otra bienvenida', async () => {
+    const c = await makeClient('Corrección', 'CORRECT');
+    try {
+      const sdk = (c.session as unknown as { room: Room }).room;
+      const room = matchMaker.getLocalRoomById(sdk.roomId) as BrothersRoom;
+      const player = room.world.players.get(c.session.localPlayerId)!;
+      const internals = c.session as unknown as {
+        onCorrection(message: CorrectionMessage): void;
+        onWelcome(message: WelcomeMessage): void;
+        pendingCorrection: CorrectionMessage | null;
+      };
+      const state = player.body.snapshot();
+      const tick = room.world.tick + 100;
+      internals.onCorrection({ tick, state });
+      c.session.tick(emptyInput(1), SIMULATION.fixedDt);
+      internals.onCorrection({ tick: tick - 1, state });
+      expect(internals.pendingCorrection).toBeNull();
+      internals.onCorrection({ tick: tick + 1, state });
+      expect(internals.pendingCorrection).not.toBeNull();
+      internals.onWelcome({
+        protocol: 3, playerId: player.id, netId: player.netId, roomId: room.roomId,
+        code: room.code, seed: room.world.seed, tick: tick + 2, tickRate: 30,
+        roster: room.world.roster(), state,
+      });
+      expect(internals.pendingCorrection).toBeNull();
+      expect(c.session.pendingInputs).toBe(0);
+      expect(c.session.status).toBe('connected');
+    } finally {
+      c.session.dispose();
+      c.physics.dispose();
+    }
+  });
+
+  it('cancelar durante la conexión evita crear un personaje en física liberada', async () => {
+    const physics = new PhysicsWorld(await loadRapier());
+    const abort = new AbortController();
+    const connecting = OnlineSession.connect({ url: URL, name: 'Cancelar', code: 'CANCEL', physics, seed: layout.seed, signal: abort.signal });
+    abort.abort();
+    physics.dispose();
+    await expect(connecting).rejects.toThrow();
+  });
+
+  it.each(['join', 'welcome'] as const)('el cliente rechaza más de ocho jugadores mediante %s', async (message) => {
+    const c = await makeClient('Capacidad', 'CAP' + message);
+    try {
+      const sdk = (c.session as unknown as { room: Room }).room;
+      const room = matchMaker.getLocalRoomById(sdk.roomId) as BrothersRoom;
+      const local = room.world.players.get(c.session.localPlayerId)!;
+      const roster = [room.world.rosterEntry(local)];
+      for (let i = 1; i <= NET.maxPlayersPerRoom; i++) roster.push({ id: 'extra' + i, netId: i, name: 'Extra', color: 0 });
+      const internals = c.session as unknown as {
+        onJoin(entry: RosterEntry): void;
+        onWelcome(message: WelcomeMessage): void;
+      };
+      if (message === 'join') {
+        for (const entry of roster.slice(1, 8)) internals.onJoin(entry);
+        expect(c.session.info.players).toBe(8);
+        internals.onJoin(roster[8]!);
+      } else {
+        internals.onWelcome({
+          protocol: PROTOCOL_VERSION, playerId: local.id, netId: local.netId,
+          roomId: room.roomId, code: room.code, seed: room.world.seed,
+          tick: room.world.tick, tickRate: 30, roster, state: local.body.snapshot(),
+        });
+      }
+      expect(c.session.status).toBe('disconnected');
+      expect(c.session.info.players).toBeLessThanOrEqual(8);
+      expect(c.session.info.reason).toContain('8 jugadores');
+      expect(CloseCodes.ROOM_CAPACITY).toBe(4104);
+    } finally {
+      c.session.dispose();
+      c.physics.dispose();
+    }
+  });
 
   it('rechaza un servidor con otro mapa y avisa si el servidor cae', async () => {
     const R = await loadRapier();

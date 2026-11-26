@@ -111,6 +111,16 @@ describe('SnapshotInterpolator', () => {
     expect(it.ids()).toEqual([1]);
     expect(it.sample(2, 6)).toBeNull();
   });
+  it('un snapshot atrasado no resucita a un jugador que ya salió', () => {
+    const it = new SnapshotInterpolator();
+    it.push(5, [p(1, 5), p(2, 0)]);
+    it.push(6, [p(1, 6)]);
+    it.push(4, [p(1, 4), p(2, 0)]);
+    expect(it.ids()).toEqual([1]);
+    it.clear();
+    expect(it.latestTick).toBe(-1);
+    expect(it.ids()).toEqual([]);
+  });
   it('reutiliza el objeto de salida (sin basura por frame)', () => {
     const it = new SnapshotInterpolator();
     it.push(1, [p(1, 0)]);

@@ -1,3 +1,4 @@
+import type { WebSocketClient } from '@colyseus/ws-transport';
 import { type Client, Room, ServerError } from '@colyseus/core';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
 import { SIMULATION } from '@shared/constants';
@@ -27,6 +28,7 @@ export interface CreateOptions {
  */
 export class BrothersRoom extends Room {
   maxClients: number = NET.maxPlayersPerRoom;
+  maxMessagesPerSecond = NET.maxMessagesPerSecond * 2; // Límite bruto antes de decodificar, incluidos tipos desconocidos.
   patchRate: number | null = null; // sin estado Schema: enviamos snapshots propios
   autoDispose = true;
 
@@ -40,6 +42,13 @@ export class BrothersRoom extends Room {
     this.world = await ServerWorld.create();
     await this.setMetadata({ code: this.code });
 
+    this.onMessage('*', (client) => {
+      if (!this.countMessage(client)) return;
+      const player = this.world.players.get(client.sessionId);
+      if (player && ++player.invalidInputs > NET.maxInvalidInputs) {
+        client.leave(CloseCodes.INVALID_INPUT, 'Tipo de mensaje inválido');
+      }
+    });
     this.onMessage('ready', (client) => this.handleReady(client));
     this.onMessage('input', (client, message) => this.handleInput(client, message));
     this.onMessage('ping', (client, message: { t?: unknown }) => {
@@ -74,7 +83,7 @@ export class BrothersRoom extends Room {
   private handleReady(client: Client): void {
     const meta = this.meta.get(client.sessionId);
     const player = this.world.players.get(client.sessionId);
-    if (!meta || !player) return;
+    if (!this.countMessage(client) || !meta || !player || meta.ready) return;
     meta.ready = true;
     const welcome: WelcomeMessage = {
       protocol: PROTOCOL_VERSION,
@@ -93,7 +102,7 @@ export class BrothersRoom extends Room {
   }
 
   private handleInput(client: Client, message: unknown): void {
-    if (!this.countMessage(client)) return;
+    if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready) return;
     const result = this.world.queueInput(client.sessionId, message);
     const p = this.world.players.get(client.sessionId);
     if (result === 'invalid' && p && p.invalidInputs > NET.maxInvalidInputs) {
@@ -120,7 +129,14 @@ export class BrothersRoom extends Room {
   private tick(): void {
     this.world.step();
     if (this.clients.length === 0) return;
-    this.broadcast('snapshot', this.world.snapshot());
+    const snapshot = this.world.snapshot();
+    for (const client of this.clients) {
+      if ((client as WebSocketClient).ref.bufferedAmount > 256 * 1024) {
+        client.leave(CloseCodes.SLOW_CONSUMER, 'Conexión saturada');
+        continue;
+      }
+      if (this.meta.get(client.sessionId)?.ready) client.send('snapshot', snapshot);
+    }
     for (const client of this.clients) {
       if (!this.meta.get(client.sessionId)?.ready) continue;
       const state = this.world.takeCorrection(client.sessionId);
@@ -130,7 +146,11 @@ export class BrothersRoom extends Room {
 
   async onDrop(client: Client): Promise<void> {
     const p = this.world.players.get(client.sessionId);
-    if (p) p.connected = false;
+    if (p) {
+      p.connected = false;
+      p.queue.length = 0;
+      p.credits = 0;
+    }
     try {
       await this.allowReconnection(client, NET.reconnectSeconds);
     } catch {

@@ -64,6 +64,7 @@ export class Game {
   private readonly remotes = new Map<string, PlayerAvatar>();
   private fallbackReason: string | null = null;
   private connecting = false;
+  private connectionAbort: AbortController | null = null;
   private loop: FixedStepLoop | null = null;
   private layout: WorldLayout | null = null;
   private readonly structures: PrefabView[] = [];
@@ -232,11 +233,14 @@ export class Game {
   async goOnline(req: OnlineRequest): Promise<void> {
     if (!this.physics || !this.layout || this.connecting || this.online()) return;
     this.connecting = true;
+    const abort = new AbortController();
+    this.connectionAbort = abort;
     this.events.emit('net', { status: 'connecting' });
     let current: OnlineSession | null = null;
     try {
       const { OnlineSession } = await import('@/net/OnlineSession');
       const online = await OnlineSession.connect({
+        signal: abort.signal,
         url: req.url,
         name: req.name,
         code: req.code ?? '',
@@ -265,6 +269,7 @@ export class Game {
       this.events.emit('net', { status: 'offline', reason });
     } finally {
       this.connecting = false;
+      if (this.connectionAbort === abort) this.connectionAbort = null;
     }
   }
 
@@ -306,10 +311,12 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    this.connectionAbort?.abort();
+    this.clearRemotes();
+    this.avatar?.dispose();
     this.engine.dispose();
     this.input.dispose();
     this.session?.dispose();
-    this.clearRemotes();
     this.physics?.dispose();
     this.events.clear();
   }

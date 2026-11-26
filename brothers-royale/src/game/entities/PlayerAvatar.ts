@@ -39,6 +39,8 @@ interface Pose {
   bob: number;
 }
 
+const POSE_KEYS: (keyof Pose)[] = ['armSwing', 'legSwing', 'cadence', 'lean', 'armsUp', 'legsTuck', 'bob'];
+
 const POSES: Record<Locomotion, Pose> = {
   idle: { armSwing: 0.05, legSwing: 0, cadence: 0, lean: 0, armsUp: 0, legsTuck: 0, bob: 0.02 },
   walk: { armSwing: 0.7, legSwing: 0.75, cadence: 2.1, lean: 0.06, armsUp: 0, legsTuck: 0, bob: 0.05 },
@@ -151,7 +153,7 @@ export class PlayerAvatar {
     const target = POSES[this.locomotion];
     const p = this.pose;
     const k = 12;
-    for (const key of Object.keys(p) as (keyof Pose)[]) p[key] = damp(p[key], target[key], k, dt);
+    for (const key of POSE_KEYS) p[key] = damp(p[key], target[key], k, dt);
 
     this.phase += dt * this.speed * p.cadence;
     const s = Math.sin(this.phase);
@@ -189,12 +191,14 @@ export class PlayerAvatar {
   /** Libera geometrías y materiales (al salir un jugador remoto). */
   dispose(): void {
     this.root.removeFromParent();
+    const materials = new Set<MeshLambertMaterial | MeshBasicMaterial>();
     this.root.traverse((o) => {
       const m = o as Mesh;
       if (!m.isMesh) return;
       m.geometry.dispose();
       const mat = m.material;
-      (Array.isArray(mat) ? mat : [mat]).forEach((x) => x.dispose());
+      (Array.isArray(mat) ? mat : [mat]).forEach((x) => materials.add(x as MeshLambertMaterial | MeshBasicMaterial));
     });
+    for (const material of materials) material.dispose();
   }
 }
