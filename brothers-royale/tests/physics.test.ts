@@ -162,15 +162,116 @@ describe('física (Rapier)', () => {
       const authoritative = structuredClone(body.state);
       const snap = body.snapshot();
       const prediction = new PredictionController(body, SIMULATION.fixedDt);
-      const input = { ...emptyInput(100), moveZ: 1 };
+      const input = { ...emptyInput(++seq), moveZ: 1 };
       prediction.predict(input);
       run(body, physics, {}, 40);
       expect(body.state.locomotion).not.toBe(authoritative.locomotion);
-      expect(prediction.reconcile(snap, 100)).toBe(0);
+      expect(prediction.reconcile(snap, input.seq)).toBe(0);
       expect(body.state).toEqual(authoritative);
       expect(body.lastEvents).toEqual({ jumped: false, landed: false, impactSpeed: 0 });
       body.state.velocity.x = 999;
       expect(snap.velocity).toEqual(authoritative.velocity);
+    } finally {
+      physics.dispose();
+    }
+  });
+
+  it('reconcilia entradas pendientes con Rapier sin world.step y sin repetir eventos', () => {
+    const physics = makeWorld();
+    const body = new CharacterBody(physics, 'pending', 'P', { x: layout.spawn.x, y: 0.2, z: layout.spawn.z });
+    try {
+      run(body, physics, {}, 10);
+      const snapshot = JSON.parse(JSON.stringify(body.snapshot()));
+      const prediction = new PredictionController(body, SIMULATION.fixedDt);
+      let jumps = 0;
+      let landings = 0;
+      for (let i = 0; i < 90; i++) {
+        prediction.predict({
+          ...emptyInput(++seq),
+          moveZ: -1,
+          buttons: i === 3 ? Buttons.JUMP : 0,
+        });
+        physics.step();
+        if (body.lastEvents.jumped) jumps++;
+        if (body.lastEvents.landed) landings++;
+      }
+      expect(jumps).toBe(1);
+      expect(landings).toBeGreaterThan(0);
+      const expected = structuredClone(body.state);
+      const expectedSnapshot = body.snapshot();
+      body.modifiers.speedMultiplier = 0.1;
+      expect(prediction.reconcile(snapshot, snapshot.lastProcessedSeq)).toBe(90);
+      expect(body.state.position.x).toBeCloseTo(expected.position.x, 6);
+      expect(body.state.position.y).toBeCloseTo(expected.position.y, 6);
+      expect(body.state.position.z).toBeCloseTo(expected.position.z, 6);
+      expect(body.snapshot()).toEqual(expectedSnapshot);
+      expect(body.lastEvents).toEqual({ jumped: false, landed: false, impactSpeed: 0 });
+      // La última entrada re-simulada puede ser justo un salto o un aterrizaje.
+      body.restore(snapshot);
+      run(body, physics, { buttons: Buttons.JUMP }, 1);
+      expect(body.lastEvents.jumped).toBe(true);
+      const jumpSeq = seq;
+      body.restore(snapshot);
+      body.step({ ...emptyInput(jumpSeq), buttons: Buttons.JUMP }, SIMULATION.fixedDt, true);
+      expect(body.lastEvents.jumped).toBe(false);
+      for (let i = 0; i < 60; i++) {
+        body.step(emptyInput(++seq), SIMULATION.fixedDt, true);
+        expect(body.lastEvents).toEqual({ jumped: false, landed: false, impactSpeed: 0 });
+      }
+      expect(body.state.grounded).toBe(true);
+    } finally {
+      physics.dispose();
+    }
+  });
+
+  it.each(['house', 'tower'] as const)('reconcilia la subida de escaleras de %s con colisiones exactas', (structure) => {
+    const physics = makeWorld();
+    const stairX = house.x - HOUSE.width / 2 + HOUSE.wallThickness + 0.6;
+    const towerX = tower.x - TOWER.size / 2 + TOWER.stairWidth / 2;
+    const start = structure === 'house'
+      ? { x: stairX, y: 0.2, z: house.z + 3.7 }
+      : { x: towerX, y: 0.2, z: tower.z + TOWER.size / 2 + TOWER.stairRun + 1.5 };
+    const targetZ = structure === 'house' ? house.z - 1.5 : tower.z;
+    const height = structure === 'house' ? HOUSE.groundHeight : tower.y + TOWER.height;
+    const body = new CharacterBody(physics, structure, 'Escalera', start);
+    try {
+      run(body, physics, {}, 10);
+      const snapshot = body.snapshot();
+      const prediction = new PredictionController(body, SIMULATION.fixedDt, 512);
+      let ticks = 0;
+      while (Math.abs(targetZ - body.state.position.z) > 0.2 && ticks < 200) {
+        prediction.predict({
+          ...emptyInput(++seq),
+          moveZ: Math.max(-1, Math.min(1, targetZ - body.state.position.z)),
+        });
+        physics.step();
+        ticks++;
+      }
+      for (let i = 0; i < 10; i++) {
+        prediction.predict(emptyInput(++seq));
+        physics.step();
+        ticks++;
+      }
+      expect(body.state.position.y).toBeCloseTo(height, 1);
+      expect(body.state.grounded).toBe(true);
+      const expected = body.snapshot();
+      expect(prediction.reconcile(snapshot, snapshot.lastProcessedSeq)).toBe(ticks);
+      expect(body.snapshot()).toEqual(expected);
+      expect(body.lastEvents).toEqual({ jumped: false, landed: false, impactSpeed: 0 });
+    } finally {
+      physics.dispose();
+    }
+  });
+
+  it('rechaza entradas inválidas y repetidas antes de mover la física', () => {
+    const physics = makeWorld();
+    const body = new CharacterBody(physics, 'invalid', 'I', { x: 2.5, y: 0.2, z: 7.5 });
+    try {
+      run(body, physics, {}, 10);
+      const snapshot = body.snapshot();
+      body.step({ ...emptyInput(++seq), moveX: NaN });
+      body.step(emptyInput(snapshot.lastProcessedSeq));
+      expect(body.snapshot()).toEqual(snapshot);
     } finally {
       physics.dispose();
     }

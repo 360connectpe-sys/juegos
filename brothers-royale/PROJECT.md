@@ -14,6 +14,23 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | 5 | Construcción | Pendiente |
 | 6 | Tormenta, partida completa, salas, lobby | Pendiente |
 
+## Fase 2.2 — Reconciliación y validación compartida (2026-11-26)
+- Sincronización de colisionadores después de cada desplazamiento cinemático, también en resimulación
+  sin world.step. Regresión con 90 entradas pendientes: snapshot final idéntico al de la ejecución normal.
+- Validación pura compartida de entradas antes de simular o añadir al historial: valores finitos,
+  magnitud ≤ 1 (tolerancia de redondeo 1e-12), secuencia entera segura y estrictamente creciente,
+  máscara de botones conocidos. Las entradas rechazadas no consumen secuencia ni modifican el motor.
+- Contrato privado CharacterSnapshot en shared/reconciliation.ts: posición, velocidad pública,
+  locomoción, motor completo (incluidos coyote, jumpBuffer y jumpHeld), modificadores y última
+  secuencia procesada. Protocolo v2 con mensaje correction para el propietario. El servidor futuro
+  deberá enviar el estado al final del tick confirmado y compartir mapa, colisiones y paso fijo.
+- PredictionController marca explícitamente los pasos de resimulación. Estos actualizan la física
+  y la locomoción sin volver a emitir eventos de salto o aterrizaje. El historial conserva copias
+  de las entradas aceptadas para evitar cambios posteriores del llamador.
+- Validación final: 93 pruebas, tipos y compilación. Incluye entradas malformadas, secuencias
+  duplicadas, multitouch, física, reconciliación al subir ambas escaleras y snapshots
+  serializados como JSON. La implementación de Colyseus continúa pendiente.
+
 ## Fase 2.1 — Estabilidad y corrección técnica (2026-11-26)
 - La UI captura los fallos de creación de WebGL y muestra el mensaje de error de carga.
 - El mapa físico y sus 140 árboles son iguales en todas las calidades. Todos los obstáculos se dibujan

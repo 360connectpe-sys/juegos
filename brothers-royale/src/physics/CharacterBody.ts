@@ -9,18 +9,12 @@ import {
   type MotorModifiers,
   type MotorState,
 } from '@shared/movement';
+import { isValidPlayerInput } from '@shared/inputValidation';
+import type { CharacterSnapshot } from '@shared/reconciliation';
+export type { CharacterSnapshot } from '@shared/reconciliation';
 import type { PlayerInput, PlayerState, Vec3 } from '@shared/types';
 import { PLAYER_GROUPS } from './groups';
 import type { PhysicsWorld } from './PhysicsWorld';
-
-/** Todo lo necesario para restaurar exactamente un personaje (predicción en red). */
-export interface CharacterSnapshot {
-  position: Vec3;
-  motor: MotorState;
-  velocity: Vec3;
-  locomotion: PlayerState['locomotion'];
-  lastProcessedSeq: number;
-}
 
 export interface StepEvents {
   jumped: boolean;
@@ -82,7 +76,11 @@ export class CharacterBody {
     };
   }
 
-  step(input: PlayerInput, dt: number = SIMULATION.fixedDt): PlayerState {
+  step(input: PlayerInput, dt: number = SIMULATION.fixedDt, replaying = false): PlayerState {
+    this.lastEvents.jumped = false;
+    this.lastEvents.landed = false;
+    this.lastEvents.impactSpeed = 0;
+    if (!isValidPlayerInput(input, this.state.lastProcessedSeq)) return this.state;
     const m = this.motor;
     const wasGrounded = m.grounded;
     const vyBefore = m.vy;
@@ -103,10 +101,11 @@ export class CharacterBody {
     // Aplica ya la posición (sin esperar a world.step) para que pasos
     // consecutivos (p. ej. al re-simular en reconciliación) sean coherentes.
     this.body.setTranslation(next, true);
+    this.physics.world.propagateModifiedBodyPositionsToColliders();
 
     const ev = this.lastEvents;
-    ev.jumped = jumped;
-    ev.landed = !wasGrounded && grounded;
+    ev.jumped = !replaying && jumped;
+    ev.landed = !replaying && !wasGrounded && grounded;
     ev.impactSpeed = ev.landed ? -vyBefore : 0;
 
     const s = this.state;
@@ -127,6 +126,7 @@ export class CharacterBody {
     return {
       position: { ...this.state.position },
       motor: { ...this.motor },
+      modifiers: { ...this.modifiers },
       velocity: { ...this.state.velocity },
       locomotion: this.state.locomotion,
       lastProcessedSeq: this.state.lastProcessedSeq,
@@ -135,6 +135,7 @@ export class CharacterBody {
 
   restore(snap: CharacterSnapshot): void {
     this.motor = { ...snap.motor };
+    this.modifiers = { ...snap.modifiers };
     this.setFeet(snap.position);
     this.state.velocity = { ...snap.velocity };
     this.state.locomotion = snap.locomotion;

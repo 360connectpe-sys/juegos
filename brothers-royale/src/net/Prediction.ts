@@ -1,10 +1,11 @@
+import { isValidPlayerInput } from '@shared/inputValidation';
 import type { PlayerInput } from '@shared/types';
 
 /** Lo mínimo que necesita la reconciliación de una simulación. */
 export interface Predictable<S> {
   snapshot(): S;
   restore(s: S): void;
-  step(input: PlayerInput, dt: number): void;
+  step(input: PlayerInput, dt: number, replaying?: boolean): void;
 }
 
 /** Búfer circular de entradas aún no confirmadas por el servidor. */
@@ -52,6 +53,7 @@ export class InputHistory {
  */
 export class PredictionController<S> {
   readonly history: InputHistory;
+  private lastPredictedSeq = -1;
 
   constructor(
     private readonly sim: Predictable<S>,
@@ -63,8 +65,11 @@ export class PredictionController<S> {
 
   /** Aplica localmente una entrada nueva (predicción). */
   predict(input: PlayerInput): void {
-    this.history.push(input);
-    this.sim.step(input, this.dt);
+    if (!isValidPlayerInput(input, this.lastPredictedSeq)) return;
+    const accepted = { ...input };
+    this.history.push(accepted);
+    this.lastPredictedSeq = accepted.seq;
+    this.sim.step(accepted, this.dt);
   }
 
   /** Corrige con el estado del servidor y re-simula lo pendiente. Devuelve cuántos ticks re-simuló. */
@@ -73,7 +78,7 @@ export class PredictionController<S> {
     this.sim.restore(authoritative);
     let n = 0;
     for (const input of this.history.pending()) {
-      this.sim.step(input, this.dt);
+      this.sim.step(input, this.dt, true);
       n++;
     }
     return n;
