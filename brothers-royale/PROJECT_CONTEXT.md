@@ -12,7 +12,7 @@ Estado a 27 de noviembre de 2026, tras cerrar la **fase 6 (armas, combate y cura
 |---|---|
 | Repositorio | `360connectpe-sys/juegos`, carpeta `brothers-royale/` (el resto de carpetas son otros juegos: no tocarlos) |
 | Rama de trabajo | `brothers-royale-phase-3.1` (todas las fases desde la 3.1 se acumulan en ella) |
-| Último trabajo | Fase 6 sobre `c20346d` (este documento) — ver historial abajo |
+| Último trabajo | Fase 6 en `4ca37e2` (sobre `c20346d`) |
 | `main` | En `85dee86` (fase 2.2). **No fusionar con `main` salvo que se pida explícitamente.** |
 | Pruebas | **281 pruebas en 32 archivos, todas en verde** (`npm run check`): 237 previas + 44 de combate |
 | Bundle publicado | `jugar/` regenerado e idéntico a `dist/` (`diff -qr dist jugar` sin diferencias) |
@@ -36,7 +36,7 @@ Estado a 27 de noviembre de 2026, tras cerrar la **fase 6 (armas, combate y cura
 | `5103899` | Claude | Fase 5: mapa ampliado, cofres e inventario |
 | `db67122` | Codex | Auditoría integral 3.2–5 y validación endurecida (AUDIT-3.2-5.md) |
 | `c20346d` | Claude | PROJECT_CONTEXT.md (sin funcionalidades nuevas) |
-| (fase 6) | Claude | Armas, combate y curación — commit siguiente a `c20346d` |
+| `4ca37e2` | Claude | Fase 6: armas, combate y curación |
 
 Los commits de Codex figuran con la identidad git "Hoàng Ý Tiến"; es la del agente externo, no un error.
 
