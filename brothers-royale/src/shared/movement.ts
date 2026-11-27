@@ -145,8 +145,8 @@ export function motorIntent(
   // En el suelo mantenemos una pequeña velocidad hacia abajo para seguir pendientes.
   if (s.grounded && s.vy < 0) s.vy = -2;
 
-  // Giro suave: hacia donde apunta (AIM) o hacia donde camina.
-  if (hasButton(input.buttons, Buttons.AIM)) {
+  // Giro suave: hacia donde apunta (AIM o atacando) o hacia donde camina.
+  if (hasButton(input.buttons, Buttons.AIM) || hasButton(input.buttons, Buttons.FIRE)) {
     s.yaw = rotateTowards(s.yaw, input.aimYaw, PLAYER.turnSpeed * 1.5 * dt);
   } else if (mods.faceMovement && moving) {
     s.yaw = stepYaw(s.yaw, target.x, target.y, dt);

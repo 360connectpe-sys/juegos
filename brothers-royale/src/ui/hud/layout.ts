@@ -17,6 +17,8 @@ export type HudElementId =
   | 'interact'
   | 'build'
   | 'health'
+  | 'ammo'
+  | 'killfeed'
   | 'lives'
   | 'inventory'
   | 'minimap';
@@ -53,6 +55,8 @@ export const HUD_ELEMENTS: readonly HudElementInfo[] = [
   { id: 'interact', label: 'Usar', kind: 'control', action: Buttons.INTERACT },
   { id: 'build', label: 'Construir', kind: 'control', action: Buttons.BUILD },
   { id: 'health', label: 'Salud', kind: 'info' },
+  { id: 'ammo', label: 'Munición', kind: 'info' },
+  { id: 'killfeed', label: 'Bajas', kind: 'info' },
   { id: 'lives', label: 'Vidas', kind: 'info' },
   { id: 'inventory', label: 'Inventario', kind: 'info' },
   { id: 'minimap', label: 'Minimapa', kind: 'info' },
@@ -85,6 +89,8 @@ export function defaultHudLayout(): HudLayout {
     interact: el(0.66, 0.92, 0.8, 0.9),
     build: el(0.565, 0.92, 0.8, 0.9),
     health: el(0.36, 0.95),
+    ammo: el(0.5, 0.17, 0.9),
+    killfeed: el(0.16, 0.36, 0.85),
     lives: el(0.36, 0.86, 0.9),
     inventory: el(0.5, 0.06, 0.9),
     minimap: el(0.92, 0.27),

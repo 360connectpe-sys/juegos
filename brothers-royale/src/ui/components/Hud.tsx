@@ -24,7 +24,7 @@ function Hint({ device, mode }: { device: InputDevice; mode: CameraMode }) {
     return (
       <p className="hud__hint">
         <kbd>Stick</kbd> para moverte, {perspective ? <><kbd>Stick derecho</kbd> para mirar, </> : <><kbd>Stick derecho</kbd> para apuntar, </>}
-        <kbd>A</kbd> saltar, <kbd>LB</kbd> correr
+        <kbd>A</kbd> saltar, <kbd>LB</kbd> correr, <kbd>RT</kbd> atacar, <kbd>LT</kbd> apuntar, <kbd>X</kbd> recargar, <kbd>RB</kbd> cambiar arma
       </p>
     );
   if (device === 'keyboard')
@@ -42,6 +42,7 @@ function Hint({ device, mode }: { device: InputDevice; mode: CameraMode }) {
         ) : (
           <>botón derecho para apuntar, rueda para acercar</>
         )}
+        , clic para atacar, <kbd>R</kbd> recargar, <kbd>1</kbd>-<kbd>5</kbd> cambiar arma
       </p>
     );
   return null;

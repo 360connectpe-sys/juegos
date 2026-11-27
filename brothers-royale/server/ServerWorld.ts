@@ -12,6 +12,10 @@ import { packPlayer } from '@shared/netcodec';
 import { NET, type RosterEntry, type SnapshotMessage } from '@shared/protocol';
 import type { CharacterSnapshot } from '@shared/reconciliation';
 import { MatchState, type LineOfSight, type MatchEvent } from '@shared/match/MatchState';
+import { CombatState, type AttackContext, type CombatEvent, type TargetPose } from '@shared/combat/CombatState';
+import { PoseHistory } from '@shared/combat/lagcomp';
+import { addItem } from '@shared/inventory';
+import { ITEMS } from '@shared/items';
 import { Buttons, hasButton, type PlayerInput } from '@shared/types';
 import { worldColliders } from '@shared/world/colliders';
 import { generateWorldLayout, spawnPoint, type WorldLayout } from '@shared/world/layout';
@@ -41,6 +45,9 @@ export interface ServerPlayer {
   interactHeld: boolean;
 }
 
+/** Entrada neutra que se simula mientras el jugador está eliminado (consume su secuencia). */
+const deadInput = (input: PlayerInput): PlayerInput => ({ seq: input.seq, moveX: 0, moveZ: 0, buttons: 0, aimYaw: input.aimYaw });
+
 export type QueueResult = 'queued' | 'invalid' | 'dropped' | 'unknown-player';
 
 export class ServerWorld {
@@ -50,14 +57,44 @@ export class ServerWorld {
   /** Cofres, objetos e inventarios: SOLO el servidor los modifica. */
   readonly match: MatchState;
   readonly los: LineOfSight;
+  /** Disparos, salud, curación y muertes: SOLO el servidor los decide. */
+  readonly combat: CombatState;
+  /** Poses recientes de todos para la compensación de latencia. */
+  readonly history = new PoseHistory();
   tick = 0;
   private spawnCounter = 0;
+  private readonly ctx: AttackContext;
 
   private constructor(physics: PhysicsWorld, layout: WorldLayout, matchSeed: number) {
     this.physics = physics;
     this.layout = layout;
     this.match = new MatchState(layout.chests, matchSeed);
+    this.combat = new CombatState(this.match, matchSeed);
     this.los = (from, to) => physics.lineOfSight(from, to);
+    this.ctx = {
+      feet: { x: 0, y: 0, z: 0 },
+      grounded: true,
+      speed: 0,
+      dt: SIMULATION.fixedDt,
+      tick: 0,
+      targets: (viewTick) => this.targetsAt(viewTick),
+      castStatic: (o, d, max) => physics.castStatic(o, d, max),
+    };
+    // Vuelta provisional de los eliminados (fase 6): a un punto de aparición.
+    this.combat.onRespawn = (id) => {
+      const p = this.players.get(id);
+      if (p) this.respawnAt(p, this.spawnCounter++);
+    };
+  }
+
+  /** Objetivos rebobinados al tick que veía el atacante (limitado a LAG_COMPENSATION). */
+  targetsAt(viewTick: number | undefined): Iterable<TargetPose> {
+    return this.history.at(this.tick, viewTick, this.players.keys());
+  }
+
+  /** Eventos de combate pendientes. */
+  drainCombatEvents(): CombatEvent[] {
+    return this.combat.drain();
   }
 
   /**
@@ -77,6 +114,19 @@ export class ServerWorld {
   /** Eventos de partida pendientes (cofres, objetos, inventarios, avisos). */
   drainMatchEvents(): MatchEvent[] {
     return this.match.drain();
+  }
+
+  /** Pruebas de carga: un arma (según netId) con munición, ya en la mano. */
+  giveBenchLoadout(id: string, netId: number): void {
+    const kinds = ['rifle', 'smg', 'pistol', 'shotgun'] as const;
+    const kind = kinds[netId % kinds.length]!;
+    const ammo = ITEMS[kind].ammo!;
+    let inv = this.match.inventory(id);
+    if (!inv) return;
+    inv = addItem(inv, { kind, qty: 1, rarity: 'rare' }).inventory;
+    inv = addItem(inv, { kind: ammo, qty: ITEMS[ammo].stack }).inventory;
+    this.match.setInventory(id, inv);
+    this.match.selectSlot(id, 1);
   }
 
   /** Selección de hueco del inventario (mensaje validado por la sala). */
@@ -121,6 +171,8 @@ export class ServerWorld {
     };
     this.players.set(id, player);
     this.match.addPlayer(id);
+    this.combat.addFighter(id);
+    this.history.record(this.tick, id, body.state.position);
     return player;
   }
 
@@ -128,6 +180,8 @@ export class ServerWorld {
     const p = this.players.get(id);
     if (!p) return undefined;
     this.match.removePlayer(id, p.body.state.position);
+    this.combat.removeFighter(id);
+    this.history.forget(id);
     p.body.dispose();
     this.players.delete(id);
     return p;
@@ -147,8 +201,11 @@ export class ServerWorld {
       return 'dropped';
     }
     // Copia campo a campo: no guardamos propiedades extra que mande el cliente.
-    const { seq, moveX, moveZ, buttons, aimYaw } = raw;
-    p.queue.push({ seq, moveX, moveZ, buttons, aimYaw });
+    const { seq, moveX, moveZ, buttons, aimYaw, aimPitch, viewTick } = raw;
+    const input: PlayerInput = { seq, moveX, moveZ, buttons, aimYaw };
+    if (aimPitch !== undefined) input.aimPitch = aimPitch;
+    if (viewTick !== undefined) input.viewTick = viewTick;
+    p.queue.push(input);
     p.lastQueuedSeq = seq;
     return 'queued';
   }
@@ -159,13 +216,19 @@ export class ServerWorld {
       p.credits = Math.min(p.credits + 1, NET.maxInputsPerTick);
       let processed = 0;
       while (p.credits > 0 && p.queue.length > 0) {
-        const input = p.queue.shift()!;
+        const raw = p.queue.shift()!;
+        // Eliminado: no se mueve ni actúa, pero su secuencia avanza.
+        const dead = this.combat.isDead(p.id);
+        const input = dead ? deadInput(raw) : raw;
         p.body.step(input, dt);
         // Interacción (abrir cofre / recoger): solo en el flanco de pulsación y
         // con la posición AUTORITATIVA tras ese mismo paso.
         const interact = hasButton(input.buttons, Buttons.INTERACT);
         if (interact && !p.interactHeld) this.match.interact(p.id, p.body.state.position, this.los);
         p.interactHeld = interact;
+        // Combate con la misma posición autoritativa (y el tick visto, rebobinado).
+        if (dead) this.combat.idle(p.id, dt);
+        else this.combat.step(p.id, raw, this.attackContext(p, dt));
         p.credits--;
         processed++;
       }
@@ -176,23 +239,38 @@ export class ServerWorld {
         // Sin entradas (lag fuerte, pestaña en segundo plano, desconexión):
         // la gravedad sigue actuando, sin consumir secuencia.
         p.body.stepIdle(dt);
+        this.combat.idle(p.id, dt);
         p.credits = 0; // Este tick ya avanzó la simulación: no se puede gastar dos veces.
         p.correctionDirty = true;
       }
-      if (p.body.state.position.y < -20) {
-        const s = spawnPoint(this.layout, p.netId);
-        p.body.teleport({ x: s.x, y: terrainHeight(s.x, s.z, this.layout.terrain) + 0.1, z: s.z });
-        p.correctionDirty = true;
-      }
+      if (p.body.state.position.y < -20) this.respawnAt(p, p.netId);
     }
     this.physics.step();
     this.tick++;
+    for (const p of this.players.values()) this.history.record(this.tick, p.id, p.body.state.position);
+  }
+
+  private respawnAt(p: ServerPlayer, index: number): void {
+    const s = spawnPoint(this.layout, index);
+    p.body.teleport({ x: s.x, y: terrainHeight(s.x, s.z, this.layout.terrain) + 0.1, z: s.z });
+    p.correctionDirty = true;
+  }
+
+  private attackContext(p: ServerPlayer, dt: number): AttackContext {
+    const c = this.ctx;
+    const st = p.body.state;
+    c.feet = st.position;
+    c.grounded = st.grounded;
+    c.speed = Math.hypot(st.velocity.x, st.velocity.z);
+    c.dt = dt;
+    c.tick = this.tick;
+    return c;
   }
 
   /** Snapshot público de todos los jugadores (se difunde a la sala). */
   snapshot(): SnapshotMessage {
     const p: number[] = [];
-    for (const pl of this.players.values()) packPlayer(p, pl.netId, pl.body.state);
+    for (const pl of this.players.values()) packPlayer(p, pl.netId, pl.body.state, this.combat.gear(pl.id));
     return { tick: this.tick, p };
   }
 

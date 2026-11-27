@@ -3,12 +3,17 @@
  * Mensajes pequeños y planos: el servidor emite a 30 Hz y el cliente envía
  * una entrada por tick. Los estados públicos viajan cuantizados (netcodec.ts).
  */
+import type { CombatEvent, Vitals } from './combat/CombatState';
 import type { CharacterSnapshot } from './reconciliation';
 import type { Inventory } from './inventory';
 import type { MatchEvent, MatchSnapshot, NoticeCode } from './match/MatchState';
 import type { PlayerInput } from './types';
 
-export const PROTOCOL_VERSION = 4;
+/**
+ * v5 (fase 6): entrada con aimPitch y viewTick, estado de combate en los flags
+ * del snapshot y mensajes `combat`, `hits` y `vitals`.
+ */
+export const PROTOCOL_VERSION = 5;
 
 /** Nombre de la sala registrada en el servidor. */
 export const ROOM_NAME = 'brothers';
@@ -119,7 +124,18 @@ export interface WelcomeMessage {
   match?: MatchSnapshot;
   /** Inventario propio (siempre enviado; validado en el cliente). */
   inventory?: Inventory;
+  /** Salud y acciones propias (siempre enviado; validado en el cliente). */
+  vitals?: Vitals;
 }
+
+/** Combate visible para toda la sala: disparos, golpes, eliminaciones y vueltas. */
+export type PublicCombatEvent = Extract<CombatEvent, { type: 'shot' | 'melee' | 'death' | 'respawn' }>;
+
+export const isPublicCombatEvent = (e: CombatEvent): e is PublicCombatEvent =>
+  e.type === 'shot' || e.type === 'melee' || e.type === 'death' || e.type === 'respawn';
+
+/** Daño: solo lo reciben el atacante (marcador) y la víctima (indicador). */
+export type DamageEvent = Extract<CombatEvent, { type: 'damage' }>;
 
 /** Cambios públicos de la partida (se agrupan por tick). */
 export type PublicMatchEvent = Extract<MatchEvent, { type: 'chestOpened' | 'pickupAdded' | 'pickupRemoved' | 'pickupUpdated' }>;
@@ -152,5 +168,13 @@ export interface ServerMessages {
   inventory: Inventory;
   /** Aviso solo para el dueño (inventario lleno, cofre ya abierto…). */
   notice: { code: NoticeCode };
+  /** Combate público de un tick. */
+  combat: { tick: number; events: PublicCombatEvent[] };
+  /** Daños en los que participa el receptor (como atacante o víctima). */
+  hits: { tick: number; events: DamageEvent[] };
+  /** Salud y acciones propias (al cambiar). */
+  vitals: Vitals;
+  /** Curación terminada o arma sin balas (solo al dueño). */
+  self: { type: 'healed'; amount: number } | { type: 'empty' };
   pong: { t: number; tick: number };
 }

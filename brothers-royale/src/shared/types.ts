@@ -15,8 +15,8 @@ export type PlayerId = string;
 
 /**
  * Botones como máscara de bits: compacto para red y extensible.
- * Solo JUMP y SPRINT tienen efecto en esta fase; el resto queda reservado
- * para combate y construcción.
+ * Fase 6: FIRE ataca o usa (botiquín), AIM apunta, RELOAD recarga e INTERACT
+ * abre/recoge. CROUCH y BUILD siguen reservados.
  */
 export const Buttons = {
   JUMP: 1 << 0,
@@ -46,6 +46,17 @@ export interface PlayerInput {
   buttons: number;
   /** Orientación de apuntado (rad, eje Y). Se usa cuando AIM está activo. */
   aimYaw: number;
+  /**
+   * Inclinación del apuntado (rad, + arriba). Junto con aimYaw da la dirección
+   * del disparo desde los ojos. Opcional: sin ella se dispara en horizontal.
+   */
+  aimPitch?: number;
+  /**
+   * Tick del servidor que el cliente estaba viendo de los demás jugadores
+   * (interpolación). El servidor rebobina hasta ahí, con un límite, para
+   * comprobar los impactos (compensación de latencia).
+   */
+  viewTick?: number;
 }
 
 export type Locomotion = 'idle' | 'walk' | 'run' | 'jump' | 'fall';
@@ -63,6 +74,8 @@ export interface PlayerState {
   locomotion: Locomotion;
   /** Última entrada procesada (para reconciliación). */
   lastProcessedSeq: number;
+  /** Estado de combate visible (arma en mano, acción, muerte): ver shared/combat/gear.ts. */
+  gear?: number;
 }
 
 export const emptyInput = (seq = 0): PlayerInput => ({ seq, moveX: 0, moveZ: 0, buttons: 0, aimYaw: 0 });

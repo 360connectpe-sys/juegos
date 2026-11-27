@@ -1,7 +1,7 @@
 /**
  * Objetos del juego (datos puros, compartidos con el servidor).
- * Fase 5: armas, munición y botiquines existen y se recogen, pero aún no
- * disparan ni curan. NO hay escudos.
+ * Fase 6: las armas disparan (shared/combat), la munición se recarga y los
+ * botiquines curan. NO hay escudos.
  */
 export type WeaponKind = 'pistol' | 'smg' | 'shotgun' | 'rifle';
 export type AmmoKind = 'ammo_light' | 'ammo_medium' | 'ammo_shells';
@@ -46,6 +46,11 @@ export interface ItemStack {
   qty: number;
   /** Solo armas. */
   rarity?: Rarity;
+  /**
+   * Solo armas: balas en el cargador. Sin definir = cargador lleno (arma nueva
+   * de un cofre). Se conserva al soltar y recoger: no hay recarga gratis.
+   */
+  mag?: number;
 }
 
 export function itemName(s: ItemStack): string {

@@ -96,14 +96,19 @@ export class InteriorBatch {
   readonly mesh: BatchedMesh;
   private readonly ids: number[] = [];
 
-  constructor(placed: readonly PlacedPrefab[], castShadow: boolean) {
+  /**
+   * @param reserve Capacidad extra (instancias y vértices) para otros objetos
+   * con el MISMO material que comparten este draw call (fase 6: lo que llevan
+   * los jugadores en la mano, ver WeaponBatch).
+   */
+  constructor(placed: readonly PlacedPrefab[], castShadow: boolean, reserve: { instances: number; vertices: number } = { instances: 0, vertices: 0 }) {
     const geos = placed.map((p) => {
       const all: BufferGeometry[] = [];
       for (const list of buildPrefabBuckets(p).values()) all.push(...list);
       return merge(all);
     });
     const vertices = geos.reduce((n, g) => n + g.getAttribute('position').count, 0);
-    this.mesh = new BatchedMesh(Math.max(placed.length, 1), Math.max(vertices, 3), 0, sharedStaticMaterial());
+    this.mesh = new BatchedMesh(Math.max(placed.length + reserve.instances, 1), Math.max(vertices + reserve.vertices, 3), 0, sharedStaticMaterial());
     this.mesh.name = 'buildings';
     placed.forEach((p, i) => {
       const id = this.mesh.addInstance(this.mesh.addGeometry(geos[i]!));

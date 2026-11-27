@@ -26,10 +26,24 @@ import type { InputDevice } from './input/sources';
 import { createStaticPrefabBatch, InteriorBatch, PrefabView } from './world/PrefabView';
 import { ChestView, PickupView } from './world/Loot';
 import type { ClientMatchEvent } from '@/net/MatchView';
-import type { Inventory } from '@shared/inventory';
+import { addItem, type Inventory } from '@shared/inventory';
 import { itemName } from '@shared/items';
 import { findTarget, type InteractTarget, type NoticeCode } from '@shared/match/MatchState';
 import { createTerrainMesh, createWater } from './world/Terrain';
+import { CombatFx } from './combat/CombatFx';
+import { CombatOverlay } from './combat/CombatOverlay';
+import { LocalWeapon } from './combat/LocalWeapon';
+import { SoundFx, type SoundName } from './combat/SoundFx';
+import { GRIP_IN_ARM, heldKey, MUZZLE, WeaponBatch, type HeldKind } from './combat/WeaponModels';
+import type { ClientCombatEvent } from '@/net/CombatView';
+import { fullVitals } from '@/net/CombatView';
+import type { Vitals } from '@shared/combat/CombatState';
+import { packGear, unpackGear } from '@shared/combat/gear';
+import { applySpread, rayHitbox } from '@shared/combat/hitscan';
+import { AIM_PITCH_LIMIT, directionFromAim, EYE_HEIGHT, MELEE, rarityOf, WEAPON_STATS } from '@shared/combat/weapons';
+import { createRng } from '@shared/random';
+import { wrapAngle } from '@shared/math';
+import type { PlayerInput } from '@shared/types';
 import { createTrees } from './world/Trees';
 
 export interface GameStats {
@@ -68,7 +82,21 @@ export interface InteractInfo {
   label: string;
 }
 
+/** Entrada del registro de bajas visible (killfeed). */
+export interface KillFeedEntry {
+  killer: string;
+  victim: string;
+  weapon: string;
+  /** La baja la hizo el jugador local / el eliminado es el jugador local. */
+  mine: boolean;
+  me: boolean;
+}
+
 export type GameEvents = {
+  vitals: Vitals;
+  killfeed: KillFeedEntry;
+  /** Te eliminó… (nombre de quien lo hizo). */
+  eliminated: { by: string };
   net: NetEvent;
   camera: CameraMode;
   inventory: Inventory;
@@ -123,6 +151,22 @@ export class Game {
   private chestView: ChestView | null = null;
   private readonly pickupView = new PickupView();
   private interactKey = '';
+  // --- Combate (fase 6): solo vista, sonido y predicción visual ---------------
+  /** Lo que llevan en la mano: se aloja en el lote de edificios al crear el mundo. */
+  private weapons = new WeaponBatch();
+  private readonly fx = new CombatFx();
+  readonly sound = new SoundFx();
+  private readonly overlay: CombatOverlay | null = typeof document === 'undefined' ? null : new CombatOverlay();
+  private readonly localWeapon = new LocalWeapon();
+  private vitals: Vitals = fullVitals();
+  private readonly fxRng = createRng(0xf00d);
+  /** Matriz de lo que lleva en la mano cada avatar (para la boca del cañón). */
+  private readonly heldMatrix = new Map<string, Matrix4>();
+  private readonly mTmp = new Matrix4();
+  private readonly vTmp = new Vector3();
+  private readonly viewmodel = new Matrix4();
+  private kickBack = 0;
+  private lastAiming = false;
   private statsTimer = 0;
   private disposed = false;
 
@@ -138,6 +182,16 @@ export class Game {
     this.engine.scene.add(this.blobs.mesh);
     this.input = new InputManager(window, undefined, initialDevice);
     this.input.onDeviceChange = (d) => this.events.emit('device', d);
+    this.engine.scene.add(this.fx.mesh);
+  }
+
+  /** Capa DOM del combate (mira, números de daño) sobre el lienzo. */
+  attachOverlay(parent: HTMLElement): void {
+    this.overlay?.attach(parent);
+  }
+
+  setVolume(v: number): void {
+    this.sound.volume = v;
   }
 
   async init(): Promise<void> {
@@ -160,7 +214,7 @@ export class Game {
 
       report(0.8, 'Llamando a tu personaje');
       const spawn = { x: layout.spawn.x, y: terrainHeight(layout.spawn.x, layout.spawn.z, layout.terrain) + 0.1, z: layout.spawn.z };
-      this.session = new OfflineSession(physics, spawn, 'Jugador', layout.chests);
+      this.session = new OfflineSession(physics, spawn, 'Jugador', layout.chests, undefined, this.dummySpots(layout));
       this.attachSession(this.session);
       this.avatar = new PlayerAvatar(0, this.quality.shadows);
       this.engine.scene.add(this.avatar.root);
@@ -188,6 +242,16 @@ export class Game {
     }
   }
 
+  /** Muñecos de práctica sin conexión: delante del punto de aparición, en el suelo. */
+  private dummySpots(layout: WorldLayout): { x: number; y: number; z: number }[] {
+    const s = layout.spawn;
+    return [
+      { x: s.x + 7, z: s.z + 4 },
+      { x: s.x + 9, z: s.z - 1.5 },
+      { x: s.x + 13, z: s.z + 2 },
+    ].map((p) => ({ ...p, y: terrainHeight(p.x, p.z, layout.terrain) }));
+  }
+
   private buildWorldVisuals(layout: WorldLayout): void {
     const scene = this.engine.scene;
     scene.add(createWater(layout.terrain.size));
@@ -195,8 +259,11 @@ export class Game {
     // Edificios con interior: todos en un BatchedMesh (1 draw call); cada uno con su
     // vista recortable para cuando el jugador entra. El resto (sin interior), en un lote estático.
     const interiors = layout.structures.filter((p) => p.def.interior);
-    const buildings = new InteriorBatch(interiors, this.quality.shadows);
+    const buildings = new InteriorBatch(interiors, this.quality.shadows, WeaponBatch.reserve());
     scene.add(buildings.mesh);
+    // Armas, hacha y botiquines en la mano: en el MISMO lote (0 draw calls extra).
+    this.weapons.dispose();
+    this.weapons = new WeaponBatch(buildings.mesh);
     this.shadowCasters.push(buildings.mesh);
     interiors.forEach((placed, i) => {
       const view = new PrefabView(placed, this.quality.shadows, { setVisible: (v) => buildings.setVisible(i, v) });
@@ -234,13 +301,261 @@ export class Game {
       input.moveZ = 0;
       input.buttons = 0;
     }
+    if (this.vitals.dead) {
+      // Eliminado: no se mueve ni actúa (la autoridad hace lo mismo).
+      input.moveX = 0;
+      input.moveZ = 0;
+      input.buttons = 0;
+    }
     const slot = this.input.consumeSlotRequest(session.match.inventory?.selected ?? 0);
     if (slot !== null && !this.inputSuspended) session.selectSlot(slot);
+    this.computeAim(session, input);
+    const attack = this.localWeapon.tick(input, session.match.inventory, this.vitals, dt);
+    if (attack) this.playLocalAttack(session, input, attack.type === 'shot' ? attack.weapon : 'axe');
+    this.lastAiming = (input.buttons & Buttons.AIM) !== 0;
     session.tick(input, dt);
     this.updateInteractTarget(session);
     const local = session.localPlayer();
-    if (local) this.avatar.pushState(local);
+    if (local) {
+      local.gear = this.localGear(session);
+      this.avatar.pushState(local);
+    }
     this.syncRemotes(session);
+  }
+
+  /** Estado de combate visible del jugador local (lo mismo que verán los demás). */
+  private localGear(session: GameSession): number {
+    const inv = session.match.inventory;
+    const item = inv?.slots[inv.selected] ?? null;
+    const v = this.vitals;
+    const action = v.reload > 0 ? 'reload' : v.heal > 0 ? 'heal' : this.lastAiming ? 'aim' : 'none';
+    return packGear({ held: item?.kind ?? null, rarity: rarityOf(item?.rarity), action, dead: v.dead });
+  }
+
+  /**
+   * Dirección del disparo (yaw + pitch desde los ojos). En 1ª/3ª persona: hacia
+   * el punto que hay en el centro de la pantalla (lo que tapa una pared, lo
+   * tapa también para el servidor). En isométrica: el yaw de apuntado y una
+   * ligera ayuda vertical hacia el pecho del rival más alineado.
+   */
+  private computeAim(session: GameSession, input: PlayerInput): void {
+    const local = session.localPlayer();
+    const cams = this.cameras;
+    const physics = this.physics;
+    if (!local || !cams || !physics) return;
+    const ex = local.position.x;
+    const ey = local.position.y + EYE_HEIGHT;
+    const ez = local.position.z;
+    if (cams.mode !== 'isometric') {
+      const cam = cams.perspective;
+      const o = cam.position;
+      const f = cams.forward();
+      const origin = { x: o.x, y: o.y, z: o.z };
+      const dir = { x: f.x, y: f.y, z: f.z };
+      let t = physics.castStatic(origin, dir, 150) ?? 150;
+      for (const st of session.players()) {
+        if (st.id === session.localPlayerId) continue;
+        const h = rayHitbox(origin, dir, st.position, t);
+        if (h !== null) t = h;
+      }
+      let dx = o.x + f.x * t - ex;
+      let dy = o.y + f.y * t - ey;
+      let dz = o.z + f.z * t - ez;
+      if (dx * f.x + dy * f.y + dz * f.z < 1) {
+        dx = f.x;
+        dy = f.y;
+        dz = f.z;
+      }
+      input.aimYaw = wrapAngle(Math.atan2(dx, dz));
+      input.aimPitch = Math.max(-AIM_PITCH_LIMIT, Math.min(AIM_PITCH_LIMIT, Math.atan2(dy, Math.hypot(dx, dz))));
+      return;
+    }
+    // Isométrica: sin apuntar se dispara hacia donde mira el personaje.
+    if ((input.buttons & Buttons.AIM) === 0) input.aimYaw = local.yaw;
+    let best = 0.2; // ±11° de ayuda vertical (nunca cambia el yaw)
+    let pitch = 0;
+    for (const st of session.players()) {
+      if (st.id === session.localPlayerId) continue;
+      if (unpackGear(st.gear).dead) continue;
+      const dx = st.position.x - ex;
+      const dz = st.position.z - ez;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.5 || dist > 50) continue;
+      const off = Math.abs(wrapAngle(Math.atan2(dx, dz) - input.aimYaw));
+      if (off >= best) continue;
+      best = off;
+      pitch = Math.atan2(st.position.y + 1.0 - ey, dist);
+    }
+    input.aimPitch = Math.max(-AIM_PITCH_LIMIT, Math.min(AIM_PITCH_LIMIT, pitch));
+  }
+
+  /** Efectos inmediatos del ataque propio (predicción visual: el servidor decide si acierta). */
+  private playLocalAttack(session: GameSession, input: PlayerInput, weapon: HeldKind | 'axe'): void {
+    const local = session.localPlayer();
+    const physics = this.physics;
+    if (!local || !physics) return;
+    const eye = { x: local.position.x, y: local.position.y + EYE_HEIGHT, z: local.position.z };
+    if (weapon === 'axe') {
+      this.avatar?.swing();
+      this.sound.play('axe');
+      this.kickBack = MELEE.kick;
+      return;
+    }
+    if (weapon === 'medkit') return;
+    const kind = weapon;
+    const inv = session.match.inventory;
+    const s = WEAPON_STATS[kind];
+    const muzzle = this.muzzleOf(session.localPlayerId, kind) ?? eye;
+    const base = directionFromAim(input.aimYaw, input.aimPitch ?? 0);
+    const spread = this.localWeapon.spread(inv, (input.buttons & Buttons.AIM) !== 0, Math.hypot(local.velocity.x, local.velocity.z), local.grounded);
+    const pellets = Math.min(s.pellets, 5);
+    for (let i = 0; i < pellets; i++) {
+      const d = applySpread(base, spread, this.fxRng);
+      let t = physics.castStatic(eye, d, s.range) ?? s.range;
+      let onPlayer = false;
+      for (const st of session.players()) {
+        if (st.id === session.localPlayerId) continue;
+        const h = rayHitbox(eye, d, st.position, t);
+        if (h !== null) {
+          t = h;
+          onPlayer = true;
+        }
+      }
+      const end = { x: eye.x + d.x * t, y: eye.y + d.y * t, z: eye.z + d.z * t };
+      this.fx.tracer(muzzle, end);
+      if (t < s.range) this.fx.impact(end, onPlayer);
+    }
+    this.fx.flash(muzzle, kind === 'shotgun' ? 0.14 : 0.09);
+    this.sound.play(kind);
+    this.avatar?.kick();
+    this.kickBack = s.kick;
+    // Retroceso visual de la cámara (solo vista, la dispersión real la decide el servidor).
+    this.cameras?.addLook((this.fxRng() - 0.5) * s.kick * 0.4, -s.kick);
+  }
+
+  /** Boca del cañón de lo que lleva en la mano `owner` (último frame dibujado). */
+  private muzzleOf(owner: string, kind: HeldKind): { x: number; y: number; z: number } | null {
+    const m = this.heldMatrix.get(owner);
+    if (!m) return null;
+    const v = this.vTmp.set(0, 0.06, MUZZLE[kind]).applyMatrix4(m);
+    return { x: v.x, y: v.y, z: v.z };
+  }
+
+  /** Eventos de combate autoritativos: FX de los demás, daño, bajas, salud y sonidos. */
+  private onCombatEvent(e: ClientCombatEvent): void {
+    const session = this.session;
+    if (!session) return;
+    const me = session.localPlayerId;
+    switch (e.type) {
+      case 'vitals': {
+        const started = e.vitals.reload > 0 && this.vitals.reload <= 0;
+        this.vitals = e.vitals;
+        if (started) this.sound.play('reload');
+        this.events.emit('vitals', e.vitals);
+        break;
+      }
+      case 'shot': {
+        if (e.by === me) break; // ya se mostró con la predicción visual
+        const muzzle = this.muzzleOf(e.by, e.weapon) ?? e.origin;
+        const step = Math.max(1, Math.floor(e.ends.length / 4)); // escopeta: unas pocas trazadoras
+        for (let i = 0; i < e.ends.length; i += step) {
+          this.fx.tracer(muzzle, e.ends[i]!);
+          this.fx.impact(e.ends[i]!, e.hits[i]!);
+        }
+        this.fx.flash(muzzle, e.weapon === 'shotgun' ? 0.14 : 0.09);
+        this.remotes.get(e.by)?.kick();
+        this.playAt(e.weapon, e.origin);
+        break;
+      }
+      case 'melee':
+        if (e.by === me) break;
+        this.remotes.get(e.by)?.swing();
+        if (e.hit) this.fx.impact(e.end, true);
+        this.playAt('axe', e.origin);
+        break;
+      case 'damage':
+        if (e.by === me) {
+          this.overlay?.damage(e.at, e.amount, e.hp <= 0);
+          this.overlay?.hit(e.hp <= 0);
+          this.sound.play(e.hp <= 0 ? 'kill' : 'hit');
+        }
+        if (e.victim === me) {
+          this.overlay?.hurtFlash();
+          this.sound.play('hurt');
+        }
+        break;
+      case 'death': {
+        const killer = e.killer === me ? 'Tú' : session.identity(e.killer).name;
+        const victim = e.victim === me ? 'ti' : session.identity(e.victim).name;
+        this.events.emit('killfeed', { killer, victim, weapon: e.weapon, mine: e.killer === me, me: e.victim === me });
+        if (e.victim === me) this.events.emit('eliminated', { by: e.killer === me ? 'ti mismo' : session.identity(e.killer).name });
+        break;
+      }
+      case 'healed':
+        this.sound.play('heal');
+        break;
+      case 'empty':
+        this.sound.play('empty');
+        break;
+      case 'respawn':
+        break;
+    }
+  }
+
+  /** Sonido posicional sencillo respecto al jugador local y la cámara. */
+  private playAt(name: SoundName, at: { x: number; y: number; z: number }): void {
+    const p = this.avatar?.position;
+    if (!p) return this.sound.play(name);
+    const dx = at.x - p.x;
+    const dz = at.z - p.z;
+    const dist = Math.hypot(dx, dz);
+    // Derecha de la cámara: en isométrica es (+1, 0, -1)/√2; en perspectiva, según su yaw.
+    const yaw = this.cameras && this.cameras.mode !== 'isometric' ? this.cameras.yaw : Math.PI * 0.75;
+    const rx = -Math.cos(yaw);
+    const rz = Math.sin(yaw);
+    const pan = dist > 0.5 ? (dx * rx + dz * rz) / dist : 0;
+    this.sound.play(name, dist, pan * 0.8);
+  }
+
+  /** Coloca armas, hacha y botiquines en la mano de todos (y el arma de 1ª persona). */
+  private placeHeldItems(dt: number): void {
+    const w = this.weapons;
+    w.begin();
+    const session = this.session;
+    const cams = this.cameras;
+    const first = cams?.mode === 'first';
+    const place = (owner: string, av: PlayerAvatar) => {
+      const g = av.gear;
+      if (!g.held || av.downed || !av.root.visible) return;
+      av.root.updateMatrixWorld(true);
+      const m = this.heldMatrix.get(owner) ?? new Matrix4();
+      m.multiplyMatrices(av.handBone.matrixWorld, GRIP_IN_ARM);
+      this.heldMatrix.set(owner, m);
+      w.place(owner, heldKey(g.held as HeldKind, g.rarity), m);
+    };
+    if (session && this.avatar) {
+      if (first && cams && !this.vitals.dead) {
+        // 1ª persona: el arma delante de la cámara, con retroceso y bajada al recargar.
+        const g = this.avatar.gear;
+        if (g.held) {
+          this.kickBack = Math.max(0, this.kickBack - dt * 0.6);
+          const reload = g.action === 'reload' ? 0.12 : 0;
+          const cam = cams.perspective;
+          cam.updateMatrixWorld();
+          this.mTmp.makeRotationY(Math.PI).scale(this.vTmp.set(0.72, 0.72, 0.72));
+          this.viewmodel.makeTranslation(0.19, -0.19 - reload, -0.3 + this.kickBack * 1.2).multiply(this.mTmp);
+          this.viewmodel.premultiply(cam.matrixWorld);
+          const m = this.heldMatrix.get(session.localPlayerId) ?? new Matrix4();
+          m.copy(this.viewmodel);
+          this.heldMatrix.set(session.localPlayerId, m);
+          w.place(session.localPlayerId, heldKey(g.held as HeldKind, g.rarity), m);
+        }
+      } else {
+        place(session.localPlayerId, this.avatar);
+      }
+    }
+    for (const [id, av] of this.remotes) place(id, av);
+    w.end();
   }
 
   private render(alpha: number, dt: number): void {
@@ -277,6 +592,21 @@ export class Game {
     for (const s of this.structures) s.update(p.x, p.y, p.z, dt, cutaway);
     this.chestView?.update(dt);
     this.pickupView.animate(dt);
+    this.placeHeldItems(dt);
+    this.fx.update(dt);
+    if (cameras) cameras.aiming = this.lastAiming && !this.vitals.dead;
+    if (this.overlay) {
+      const rect = this.engine.canvas.getBoundingClientRect();
+      let gap = 0;
+      const inv = this.session?.match.inventory ?? null;
+      const item = inv?.slots[inv.selected];
+      if (cameras && cameras.mode !== 'isometric' && item && (item.kind === 'axe' || WEAPON_STATS[item.kind as keyof typeof WEAPON_STATS]) && !this.vitals.dead) {
+        const spread = this.localWeapon.spread(inv, this.lastAiming, Math.hypot(avatar.velocity.x, avatar.velocity.z), true);
+        const half = ((cameras.perspective.fov * Math.PI) / 180) / 2;
+        gap = 5 + (Math.tan(spread) / Math.tan(half)) * (rect.height / 2);
+      }
+      this.overlay.frame(cam, rect.width, rect.height, dt, gap);
+    }
 
     this.statsTimer += dt;
     if (this.statsTimer >= 0.5) {
@@ -353,6 +683,11 @@ export class Game {
     };
   }
 
+  /** Salud y acciones propias actuales (lo decide la autoridad). */
+  get currentVitals(): Vitals {
+    return this.vitals;
+  }
+
   /** Inventario propio actual (lo decide la autoridad). */
   get inventory(): Inventory | null {
     return this.session?.match.inventory ?? null;
@@ -371,6 +706,10 @@ export class Game {
   /** Conecta la sesión con las vistas de cofres/objetos y el HUD. */
   private attachSession(session: GameSession): void {
     session.onMatchEvent = (e) => this.onMatchEvent(e);
+    session.onCombatEvent = (e) => this.onCombatEvent(e);
+    this.vitals = { ...session.combat.vitals };
+    this.events.emit('vitals', this.vitals);
+    this.localWeapon.sync(session.match.inventory);
     this.chestView?.sync(session.match.opened);
     this.pickupView.reset(session.match.pickups.values());
     this.interactKey = '';
@@ -392,6 +731,7 @@ export class Game {
         this.pickupView.remove(e.id);
         break;
       case 'inventory':
+        this.localWeapon.sync(e.inventory);
         this.events.emit('inventory', e.inventory);
         break;
       case 'notice':
@@ -491,11 +831,17 @@ export class Game {
       if (seen.has(id)) continue;
       av.dispose();
       this.remotes.delete(id);
+      this.weapons.release(id);
+      this.heldMatrix.delete(id);
     }
   }
 
   private clearRemotes(): void {
-    for (const av of this.remotes.values()) av.dispose();
+    for (const [id, av] of this.remotes) {
+      av.dispose();
+      this.weapons.release(id);
+      this.heldMatrix.delete(id);
+    }
     this.remotes.clear();
   }
 
@@ -551,6 +897,11 @@ export class Game {
         return;
       }
       const old = this.session;
+      if (old) {
+        this.weapons.release(old.localPlayerId);
+        this.heldMatrix.delete(old.localPlayerId);
+      }
+      this.clearRemotes();
       this.session = online;
       current = online;
       old?.dispose();
@@ -575,7 +926,9 @@ export class Game {
     online.dispose();
     this.clearRemotes();
     // Sin conexión la partida empieza de nuevo: cofres cerrados y el hacha de siempre.
-    this.session = new OfflineSession(this.physics, pos, 'Jugador', this.layout?.chests ?? []);
+    this.weapons.release(online.localPlayerId);
+    this.heldMatrix.delete(online.localPlayerId);
+    this.session = new OfflineSession(this.physics, pos, 'Jugador', this.layout?.chests ?? [], undefined, this.layout ? this.dummySpots(this.layout) : []);
     this.attachSession(this.session);
     this.replaceLocalAvatar(0);
     this.events.emit('net', reason ? { status: 'offline', reason } : { status: 'offline' });
@@ -590,8 +943,10 @@ export class Game {
     net: NetStatus;
     remoteAvatars: number;
     camera: { mode: CameraMode; distance: number; hit: number | null; yaw: number; avatarVisible: boolean };
+    combat: { vitals: Vitals; heldItems: number; fx: number };
   } {
     return {
+      combat: { vitals: { ...this.vitals }, heldItems: this.weapons.count, fx: this.fx.active },
       camera: {
         mode: this.cameraMode,
         distance: this.cameras?.distance ?? 0,
@@ -608,6 +963,15 @@ export class Game {
     };
   }
 
+  /** Solo depuración (?debug, sin conexión): da un objeto al jugador local. */
+  debugGive(item: import('@shared/items').ItemStack): void {
+    const s = this.session;
+    if (!(s instanceof OfflineSession)) return;
+    const inv = s.state.inventory(s.localPlayerId);
+    if (!inv) return;
+    s.state.setInventory(s.localPlayerId, addItem(inv, item).inventory);
+  }
+
   /** Solo depuración: teletransporta al jugador local. */
   debugTeleport(x: number, y: number, z: number): void {
     if (this.session instanceof OfflineSession) this.session.local.teleport({ x, y, z });
@@ -618,6 +982,10 @@ export class Game {
     this.connectionAbort?.abort();
     this.clearRemotes();
     this.avatar?.dispose();
+    this.weapons.dispose();
+    this.fx.dispose();
+    this.overlay?.dispose();
+    this.sound.dispose();
     this.engine.dispose();
     this.input.dispose();
     this.session?.dispose();

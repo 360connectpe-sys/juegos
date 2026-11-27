@@ -1,4 +1,5 @@
 import type { PlayerId, PlayerInput, PlayerState } from '@shared/types';
+import type { ClientCombatEvent, CombatView } from './CombatView';
 import type { ClientMatchEvent, MatchView } from './MatchView';
 
 /** Identidad visible de un jugador (para pintar su avatar). */
@@ -33,5 +34,9 @@ export interface GameSession {
   onMatchEvent: ((e: ClientMatchEvent) => void) | null;
   /** Pide cambiar el hueco seleccionado del inventario (lo valida la autoridad). */
   selectSlot(slot: number): void;
+  /** Salud y acciones propias (lo decide la autoridad). */
+  readonly combat: CombatView;
+  /** Disparos, daño, bajas y salud (para FX, sonido y HUD). */
+  onCombatEvent: ((e: ClientCombatEvent) => void) | null;
   dispose(): void;
 }

@@ -96,6 +96,8 @@ export const CAMERA_RIG = {
   thirdPitch: { min: -0.55, max: 1.1 },
   fov: 70,
   firstFov: 78,
+  /** Factor del campo de visión al apuntar (1ª/3ª persona). */
+  aimZoom: 0.78,
   near: 0.05,
   // = fin de la niebla (95 m) con margen: lo que no se ve ni se dibuja.
   far: 100,

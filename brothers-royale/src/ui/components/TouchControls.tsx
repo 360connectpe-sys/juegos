@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import type { CameraMode } from '@/engine/camera/cameraMath';
 import type { TouchSource } from '@/game/input/sources';
+import type { Game } from '@/game/Game';
+import type { Inventory } from '@shared/inventory';
 import { HudSlot } from '../hud/HudSlot';
 import { defaultHudLayout, HUD_ELEMENTS, type HudElementId, type HudLayout } from '../hud/layout';
 
@@ -8,12 +10,26 @@ interface Props {
   touch: TouchSource;
   layout?: HudLayout;
   mode?: CameraMode;
+  /** Para adaptar el botón de ataque a lo que se lleva en la mano. */
+  game?: Game | null;
 }
+
+/** Texto del botón de ataque según lo que hay en la mano. */
+export function attackLabel(inv: Inventory | null | undefined): string {
+  const kind = inv?.slots[inv.selected]?.kind;
+  if (kind === 'axe') return 'Golpear';
+  if (kind === 'medkit') return 'Curar';
+  if (kind === 'pistol' || kind === 'smg' || kind === 'rifle' || kind === 'shotgun') return 'Disparar';
+  return 'Atacar';
+}
+
+/** Acciones con efecto en la fase 6 (las demás siguen reservadas). */
+const ACTIVE_ACTIONS = new Set<HudElementId>(['attack', 'aim', 'reload', 'interact']);
 
 const RADIUS = 56; // px de recorrido del stick (a escala 1)
 const AIM_RADIUS = 60; // px del "stick" de apuntado isométrico
 
-/** Botones de acción reservada (envían su bit; aún sin efecto en el juego). */
+/** Botones de acción (envían su bit; construir aún no tiene efecto). */
 const ACTION_BUTTONS = HUD_ELEMENTS.filter((e) => e.action !== undefined) as readonly { id: HudElementId; label: string; action: number }[];
 
 /**
@@ -25,7 +41,13 @@ const ACTION_BUTTONS = HUD_ELEMENTS.filter((e) => e.action !== undefined) as rea
  *    recarga, interacción, construcción), cada uno con su propio dedo.
  * El DOM se mueve con refs (sin re-render de React en cada movimiento).
  */
-export function TouchControls({ touch, layout = defaultHudLayout(), mode = 'isometric' }: Props) {
+export function TouchControls({ touch, layout = defaultHudLayout(), mode = 'isometric', game = null }: Props) {
+  const [attack, setAttack] = useState(() => attackLabel(game?.inventory));
+  useEffect(() => {
+    if (!game) return;
+    setAttack(attackLabel(game.inventory));
+    return game.events.on('inventory', (inv) => setAttack(attackLabel(inv)));
+  }, [game]);
   const zoneRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
@@ -202,10 +224,10 @@ export function TouchControls({ touch, layout = defaultHudLayout(), mode = 'isom
             <button
               type="button"
               className={`touch__btn touch__action touch__action--${b.id}${held & b.action ? ' is-on' : ''}`}
-              title={b.id === 'aim' ? undefined : 'Acción reservada: llega en una próxima fase'}
+              title={ACTIVE_ACTIONS.has(b.id) ? undefined : 'Acción reservada: llega en una próxima fase'}
               {...actionProps(b.action)}
             >
-              {b.label}
+              {b.id === 'attack' ? attack : b.label}
             </button>
           </HudSlot>
         ))}

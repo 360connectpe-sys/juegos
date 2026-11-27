@@ -129,6 +129,13 @@ export class MatchState {
     return this.inventories.get(id);
   }
 
+  /** Sustituye el inventario (combate: cargador, recarga, botiquín usado). Solo la autoridad. */
+  setInventory(id: string, inv: Inventory): void {
+    if (!this.inventories.has(id)) return;
+    this.inventories.set(id, inv);
+    this.events.push({ type: 'inventory', playerId: id, inventory: inv });
+  }
+
   selectSlot(id: string, slot: unknown): boolean {
     const inv = this.inventories.get(id);
     if (!inv || typeof slot !== 'number') return false;

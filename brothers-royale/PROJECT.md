@@ -1,5 +1,9 @@
 # BROTHERS ROYALE — Estado del proyecto
 
+## Estado actual (fase 6 cerrada)
+Fases 1–6 hechas. Combate con armas, curación y muertes provisionales, autoritativo y con compensación de
+latencia. **281 pruebas** en 32 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
+
 ## Auditoría integral de fases 3.2, 4 y 5
 
 Revisión de 5103899 frente a 5da1a88. Informe completo en AUDIT-3.2-5.md.
@@ -21,12 +25,155 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 |------|-----------|--------|
 | 1 | Base técnica: arquitectura, escena isométrica, mapa de prueba, personaje, física, tests | ✅ Hecha |
 | 2 | Controlador de personaje, cámara, entrada (táctil/teclado/mando), edificios con plantas y escaleras, animaciones, FPS | ✅ Hecha |
-| 3 | Multijugador con Colyseus: servidor autoritativo, salas, predicción y reconciliación | 🟡 3.1 (red) y 3.2 (gráficos móviles) hechas |
+| 3 | Multijugador con Colyseus: servidor autoritativo, salas, predicción y reconciliación | ✅ 3.1 (red) y 3.2 (gráficos móviles) |
 | 4 | Cámaras (isométrica, 3ª y 1ª persona), controles con apuntado y HUD personalizable | ✅ Hecha |
 | 5 | Mapa ampliado (casas pequeñas), cofres, botín e inventario sincronizado | ✅ Hecha |
-| 4b | Armas y combate | Pendiente |
-| 5 | Construcción | Pendiente |
-| 6 | Tormenta, partida completa, salas, lobby | Pendiente |
+| 6 | Armas, combate y curación (autoridad del servidor, compensación de latencia) | ✅ Hecha |
+| 7 | Siguiente fase (contenido a confirmar; no iniciada) | Pendiente |
+| 8 | Tres vidas y reaparición definitiva (sobre los eventos de muerte de la fase 6) | Pendiente |
+| — | Tala, construcción, tormenta, partida completa, lobby | Pendiente |
+
+## Fase 6 — Armas, combate y curación (2026-11-27)
+**Hecho**
+- **Armas**: pistola, subfusil, rifle y escopeta (disparo instantáneo, «hitscan») y hacha cuerpo a cuerpo
+  (`shared/combat/weapons.ts`). Cadencia, cargador, recarga (`R`, mando X, botón «Recargar», o automática al
+  vaciar el cargador si hay bolsa), dispersión (apuntando / sin apuntar, al moverse ×1,35, en el aire ×1,9),
+  retroceso (dispersión creciente por disparo seguido + patada visual de cámara), alcance y caída de daño.
+  El cargador vive en el objeto (`ItemStack.mag`, sin definir = lleno): soltar y recoger no recarga gratis.
+  Cambiar de hueco tarda 0,3 s (`EQUIP_SECONDS`), así alternar armas no salta la cadencia.
+- **Salud**: 100, sin escudos. Ningún disparo supera 65 (`HEALTH.maxShotDamage`): nadie cae de un disparo con
+  salud completa. El daño se maneja en décimas y la salud se muestra redondeada hacia arriba.
+- **Botiquín**: con el botiquín en la mano, «atacar» (clic, RT o el botón, que pasa a llamarse «Curar») empieza
+  5 s de uso; al terminar cura 50 sin pasar de 100 y gasta uno. Recibir daño, atacar o cambiar de hueco lo
+  cancela (sin gastarlo). Con 100 de salud no empieza. Se puede caminar mientras se cura.
+- **Muerte (provisional)**: con 0 de salud el jugador queda eliminado 3 s (no se mueve ni actúa; el servidor
+  convierte su entrada en neutra y su secuencia avanza), aparece el aviso «Eliminado / Te eliminó X» y vuelve
+  con 100 en un punto de aparición, conservando el inventario. **Fase 8** sustituirá esto por las tres vidas:
+  el evento `death` (víctima, autor, arma, tick, lugar) y el gancho `CombatState.onDeath` ya están listos.
+- **Registro**: `CombatLog` guarda cada daño y baja (tick, autor, víctima, arma, cantidad, distancia; acotado
+  a 2000) y estadísticas por jugador (disparos, aciertos, daño hecho/recibido, bajas, muertes, curado). El
+  registro de bajas (killfeed) del HUD usa los eventos `death`.
+- **Autoridad y anti-trampas**: `CombatState` (`shared/combat/`) lo ejecutan `ServerWorld` y, sin conexión,
+  `OfflineSession`. El cliente solo envía botones, `aimYaw` y `aimPitch` (dirección desde los ojos) y
+  `viewTick`. Protecciones (con pruebas): balas cortadas por el primer obstáculo estático de Rapier
+  (`PhysicsWorld.castStatic`) y salidas de los ojos del cuerpo autoritativo (nunca dentro de una pared); golpes
+  de hacha con alcance, cono y línea de visión; daño solo desde las tablas (campos extra del cliente se
+  descartan); cadencia medida con el tiempo de las entradas procesadas (1 por tick de media: ráfagas de 12
+  entradas/tick no disparan más rápido); munición del servidor; muertos sin acciones.
+- **Compensación de latencia** (`shared/combat/lagcomp.ts`): el servidor guarda 32 ticks de poses y rebobina
+  a los objetivos al `viewTick` que veía el atacante (su interpolación), limitado a 12 ticks (400 ms).
+- **Red (protocolo v5)**: `PlayerInput` gana `aimPitch` y `viewTick` (opcionales: sin ellos, tiro horizontal y
+  sin rebobinado). El snapshot lleva en los flags 10 bits de estado visible (`shared/combat/gear.ts`: arma en
+  mano, rareza, acción y muerte) sin cambiar su tamaño. Mensajes nuevos: `combat` (disparos, golpes, bajas y
+  vueltas, uno por tick para la sala), `hits` (daño: solo al atacante y a la víctima), `vitals` (salud, recarga
+  y curación propias) y `self` (curado, sin balas). El cliente valida todo (`net/CombatView.ts`).
+- **Muñecos de práctica** sin conexión (3, delante del punto de aparición): reciben daño, caen y vuelven. Así se
+  pueden probar las armas en GitHub Pages sin servidor.
+- **Vista (cliente)**: modelos low poly de armas, hacha y botiquín con franja del color de la rareza
+  (`game/combat/WeaponModels.ts`) en la mano de cada avatar y delante de la cámara en 1ª persona; todo en el
+  **mismo BatchedMesh que los edificios** (mismo material): 0 draw calls extra. Trazadoras, fogonazos y
+  chispas en una sola InstancedMesh (`CombatFx`, 1 draw call solo mientras hay efectos). Números de daño
+  flotantes, mira con apertura según la dispersión, marcador de acierto/baja y destello al recibir daño en
+  una capa DOM sin React por frame (`CombatOverlay`). Sonidos sintetizados con WebAudio (`SoundFx`, sin
+  archivos, máx. 10 voces, volumen en Ajustes guardado en `br.volume.v1`). Animaciones: brazos al frente con
+  arma, retroceso, recarga, hachazo, botiquín y caída al ser eliminado (`PlayerAvatar.combatPose`).
+- **Predicción visual** (`LocalWeapon`): el fogonazo, la trazadora, el sonido y el retroceso propios salen
+  al instante con la misma cadencia y cargador que la autoridad; el daño y los números esperan al servidor.
+- **Apuntado** en las 3 perspectivas: en 1ª/3ª el disparo va desde los ojos al punto del centro de la pantalla
+  (lo que tapa una pared también lo tapa para el servidor); apuntar acerca la cámara (×0,78) y en 3ª la separa
+  del hombro. En isométrica se dispara hacia donde se apunta (ratón derecho, stick derecho, arrastre táctil) o,
+  sin apuntar, hacia donde mira el personaje, con una ligera ayuda vertical (nunca horizontal) hacia el pecho
+  del rival más alineado. Atacar también orienta al personaje (`movement.ts`).
+- **HUD**: salud real (verde/amarilla/roja), munición «cargador/capacidad · bolsa» con barra de recarga y de
+  curación (`ammo`), registro de bajas (`killfeed`) y aviso de eliminación; los nuevos elementos son
+  editables en el editor del HUD. El botón táctil de ataque dice «Disparar», «Golpear» o «Curar».
+
+**Balance** (`expectedTimeToKill`: tiempo esperado para eliminar a un jugador quieto, con dispersión, bloom y
+recargas; pruebas en `tests/combatBalance.test.ts`)
+
+| Arma (común) | Daño | Cadencia | Cargador | Recarga | Alcance | Caída de daño | Dispersión cadera / apuntando |
+|---|---|---|---|---|---|---|---|
+| Pistola | 20 | 3/s | 12 | 1,3 s | 60 m | 18→50 m hasta ×0,65 | 0,030 / 0,012 rad |
+| Subfusil | 12 | 8/s | 30 | 1,9 s | 45 m | 9→30 m hasta ×0,45 | 0,045 / 0,028 |
+| Rifle | 24 | **3,5/s** | 30 | 2,3 s | 90 m | 35→80 m hasta ×0,75 | 0,060 / 0,006 |
+| Escopeta | 10 × 6,2 = 62 | 1/s | 5 | 2,6 s | 24 m | 6→20 m hasta ×0,25 | 0,070 / 0,055 |
+| Hacha | 15 | 1,5/s | — | — | 1,9 m (cono 50°) | — | — |
+
+Tiempo esperado para eliminar (s, común; apuntando desde 8 m):
+
+| Distancia | Pistola | Subfusil | Rifle | Escopeta |
+|---|---|---|---|---|
+| 2 m | 1,33 | **1,00** | 1,14 | **1,00** |
+| 10 m | 1,33 | **1,00** | 1,14 | 3,0 |
+| 20 m | 1,67 | 2,50 | **1,14** | 69 |
+| 45 m | 3,67 | 30 | **1,14** | — |
+
+Decisiones tomadas con las pruebas:
+- **Rifle 4 → 3,5 disparos/s**: con 4/s igualaba al subfusil de cerca y le ganaba en todo lo demás (1,0 s en
+  todas las distancias). Con 3,5/s el subfusil gana hasta ~12 m y el rifle desde ~15 m.
+- **Escopeta**: 10 perdigones; 62 (común) / 63,5 (rara) / **65 (épica, el máximo pedido)**. Dispersión
+  0,11 → 0,07 rad y caída 4–16 → 6–20 m: con los valores iniciales necesitaba 3 s para eliminar a 5 m.
+- **Rarezas**: el daño sube poco (pistola 20/21/22, subfusil 12/12,2/12,4, rifle 24/24,4/24,8, escopeta
+  62/63,5/65) para que la épica **nunca ahorre un disparo a quemarropa** (con +5 %/+10 % el rifle raro pasaba de
+  5 a 4 disparos: un 25 % más rápido). La dispersión (×0,95 / ×0,9: cuenta al cuadrado en la probabilidad de
+  acierto) y la recarga (×0,93 / ×0,86) completan la ventaja: de media un 1–6 % más rápida en el alcance útil
+  de cada arma (con daño discreto siempre hay alguna distancia umbral en la que ahorra un disparo).
+- **Bloom del rifle** 0,004 rad/disparo con recuperación 0,012 rad/s: castiga el fuego continuo a distancia sin
+  anularlo; la pistola es el arma de reserva (precisa, nunca la mejor, nunca inútil).
+- **Compensación 9 → 12 ticks**: con 150 ms de ida + jitter el rebobinado quedaba al límite.
+
+**Pruebas** (237 → 281, todas en verde)
+- `combat.test.ts` (18): geometría del rayo y la cápsula, dispersión determinista dentro del cono, estado
+  visible en 10 bits, cadencia de pistola y subfusil sin acumular disparos, munición finita y recarga
+  automática, tiempos de recarga, cambio de arma, ningún disparo elimina (4 armas × 3 rarezas × 4 distancias),
+  escopeta épica = 65, pared, muerte + registro + vuelta, hacha (cono y alcance), botiquín (curación, tope,
+  cancelación por daño y al atacar), rebobinado limitado.
+- `combatServer.test.ts` (5): con Rapier y `ServerWorld` reales: impacto y estado en el snapshot, pared real
+  que bloquea, compensación dentro y fuera del límite, ráfagas de 12 entradas/tick con un campo `damage` falso
+  (cadencia intacta, daño ignorado), eliminado sin moverse ni disparar y vuelta con 100.
+- `combat.integration.test.ts` (2): **8 clientes SDK reales** disparándose en anillo durante 3 s con latencia
+  simulada de 60–135 ms ± 25 ms (orden conservado): todos aciertan, daño hecho = recibido, disparos = balas
+  gastadas (sin munición infinita), ningún impacto > 65, todos los clientes reciben las mismas bajas en el mismo
+  orden, la salud de cada cliente = la del servidor y nadie recibe daños ajenos. Y **compensación de latencia**:
+  con 150 ms ± 20 ms, blanco cruzando a 5 m/s: **9/9 aciertos** (sin rebobinado: **1/9**).
+- `combatBalance.test.ts` (6), `combatClient.test.tsx` (12: validación de mensajes v5, predicción visual,
+  armas en el lote de edificios, FX en una malla, números de daño con DOM reutilizado, HUD, volumen),
+  `combatOffline.test.ts` (1: muñecos de práctica con física real).
+
+**Rendimiento** (Chromium + SwiftShader, pixel ratio fijo en 1, 8 jugadores: local + 7 bots SDK reales;
+«antes» = c20346d con los bots caminando; «después» = los 7 bots **disparando sin parar**; máximo de draw calls
+en 5 s)
+
+| Vista | Calidad | Draw calls antes → después | Triángulos | FPS antes → después | CPU/frame p50 |
+|---|---|---|---|---|---|
+| Móvil horizontal, isométrica | Baja | 17 → 18 | 20,1k → 20,6k | 60,4 → 60,2 | 0,8 → 0,8 ms |
+| Móvil horizontal, isométrica | Normal | 28 → 28 | 30,6k → 31,8k | 32,4 → 31,2 | 1,2 → 1,1 ms |
+| Escritorio, isométrica | Baja | 17 → 18 | 20,2k → 21,1k | 30,6 → 32,2 | 1,2 → 1,1 ms |
+| Escritorio, isométrica | Normal | 28 → 29 | 31,5k → 31,8k | 13,6 → 14,6 | 1,5 → 1,6 ms |
+| Móvil horizontal, 3ª persona (después) | Baja / Normal | — / — → 11 / 25 | 18,5k / 31,2k | 60,2 / 54,8 | 0,7 / 0,8 ms |
+| Móvil horizontal, 1ª persona (después) | Baja / Normal | — / — → 11 / 25 | 18,9k / 31,4k | 60,2 / 53,0 | 0,7 / 1,0 ms |
+
+- Primera versión: 31 draw calls en Normal (armas +1, trazadoras +1, chispas +1). Se corrigió alojando las
+  armas en el `BatchedMesh` de los edificios (mismo material) y uniendo trazadoras, fogonazos y chispas en una
+  sola `InstancedMesh`: el combate cuesta **+1 draw call solo mientras hay efectos**. Presupuestos cumplidos
+  (< 30 Normal, < 20 Baja). 1 programa de shader más (MeshBasic de los efectos). Memoria JS ≈ igual (+0,5 MB).
+- Servidor (`ServerWorld.step`, 8 jugadores, 1800 ticks): sin disparar p50 0,64 / p95 1,04 ms; los 8 disparando
+  sin parar (1277 disparos) p50 0,66 / p95 1,05 ms.
+- Red: con los 8 disparando sin parar, `combat` suma ≈ 3,7 KB/s por cliente (el snapshot ≈ 4,9 KB/s); los
+  mensajes privados ≈ 0,2 KB/s en total.
+- Banco reproducible: `BR_BENCH_LOADOUT=Bot npm run server` (SOLO pruebas: los jugadores cuyo nombre empieza
+  por ese prefijo entran armados) + bots SDK con `FIRE`.
+
+**Limitaciones conocidas de la fase 6**
+- La muerte es provisional (vuelta a los 3 s con el inventario); las tres vidas y la reaparición definitiva son
+  de la fase 8. No hay daño por caída.
+- Sin multiplicador por cabeza (decisión: con él un rifle épico se acercaría al «one-shot»).
+- El arma de 1ª persona puede atravesar visualmente una pared si se pega mucho (solo vista).
+- La predicción visual puede mostrar un disparo de más o de menos al final del cargador si la latencia es alta
+  (el servidor manda: el daño y la munición son siempre los suyos).
+- La compensación no pasa de 400 ms: con más latencia hay que adelantar el tiro.
+- Los mensajes de combate van en JSON/msgpack con nombres de campo; se podrían cuantizar como el snapshot.
+- Los FPS de SwiftShader no representan celulares reales (pendiente medir en dispositivos).
 
 ## Fase 5 — Mapa ampliado, cofres e inventario (2026-11-26)
 **Hecho**

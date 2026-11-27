@@ -2,7 +2,7 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 27 de noviembre de 2026.
+Estado a 27 de noviembre de 2026, tras cerrar la **fase 6 (armas, combate y curación)**.
 
 ---
 
@@ -12,12 +12,13 @@ Estado a 27 de noviembre de 2026.
 |---|---|
 | Repositorio | `360connectpe-sys/juegos`, carpeta `brothers-royale/` (el resto de carpetas son otros juegos: no tocarlos) |
 | Rama de trabajo | `brothers-royale-phase-3.1` (todas las fases desde la 3.1 se acumulan en ella) |
-| Base sincronizada | `db67122` (auditoría de Codex de las fases 3.2–5), más el commit que añade este documento |
+| Último trabajo | Fase 6 sobre `c20346d` (este documento) — ver historial abajo |
 | `main` | En `85dee86` (fase 2.2). **No fusionar con `main` salvo que se pida explícitamente.** |
-| Pruebas | **237 pruebas en 26 archivos, todas en verde** (`npm run check`) |
+| Pruebas | **281 pruebas en 32 archivos, todas en verde** (`npm run check`): 237 previas + 44 de combate |
 | Bundle publicado | `jugar/` regenerado e idéntico a `dist/` (`diff -qr dist jugar` sin diferencias) |
-| Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5 |
-| Siguiente | Fase 6 (no iniciada; requiere petición explícita). Véase §9 |
+| Protocolo de red | v5 (`PROTOCOL_VERSION`) |
+| Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6 |
+| Siguiente | Fase 7 (no iniciada; requiere petición explícita). La fase 8 = tres vidas y reaparición definitiva. Véase §9 |
 
 ### Historial de commits de la rama (antiguo → reciente)
 
@@ -34,6 +35,8 @@ Estado a 27 de noviembre de 2026.
 | `05c5e41` | Claude | Fase 4: cámaras, controles y HUD personalizable |
 | `5103899` | Claude | Fase 5: mapa ampliado, cofres e inventario |
 | `db67122` | Codex | Auditoría integral 3.2–5 y validación endurecida (AUDIT-3.2-5.md) |
+| `c20346d` | Claude | PROJECT_CONTEXT.md (sin funcionalidades nuevas) |
+| (fase 6) | Claude | Armas, combate y curación — commit siguiente a `c20346d` |
 
 Los commits de Codex figuran con la identidad git "Hoàng Ý Tiến"; es la del agente externo, no un error.
 
@@ -55,7 +58,7 @@ Stack: Vite 8 · TypeScript 5.9 strict · React 19 (solo UI) · Three.js · Rapi
 |---|---|
 | `npm ci` | Instalar dependencias |
 | `npm run dev` | Desarrollo. `?q=low\|normal` fuerza calidad; `?debug` expone `window.__BR_GAME__` |
-| `npm run check` | Tipos + 237 tests + build cliente + build servidor. **Obligatorio antes de cada commit** |
+| `npm run check` | Tipos + 281 tests + build cliente + build servidor. **Obligatorio antes de cada commit** |
 | `npm run server` | Compila y arranca Colyseus en `ws://localhost:2567` (`PORT`, `HOST`) |
 | `npm run build:pages` | Regenera `jugar/` (lo que sirve GitHub Pages). Commitear `jugar/` al cerrar cada avance |
 | Online local | `npm run server` + `npm run dev`, botón "Jugar en línea" o `?online&server=ws://localhost:2567&name=Ana&code=SALA1` |
@@ -71,10 +74,13 @@ brothers-royale/
                      validación, snapshots, reconexión), ServerWorld.ts (simulación autoritativa PURA, sin red)
   src/shared/        Lógica pura y determinista, compartida cliente/servidor:
                      constants, types, math, random (createRng), movement (motor), inputValidation,
-                     reconciliation, protocol (v4, mensajes y límites), netcodec (snapshots cuantizados),
-                     session, items (catálogo), inventory (+ validación),
-                     match/{MatchState.ts, loot.ts}, world/{terrain, layout, prefab, structures, colliders}
-  src/physics/       PhysicsWorld (Rapier, heightfield, lineOfSight, castCameraSphere), CharacterBody
+                     reconciliation, protocol (v5, mensajes y límites), netcodec (snapshots cuantizados),
+                     session, items (catálogo), inventory (+ validación, cargador, recarga, consumo),
+                     match/{MatchState.ts, loot.ts}, world/{terrain, layout, prefab, structures, colliders},
+                     combat/{weapons.ts (armas, rarezas, balance, salud, constantes), hitscan.ts (rayo-cápsula,
+                     dispersión), CombatState.ts (autoridad: disparos, golpes, cadencia, cargador, recarga,
+                     salud, botiquín, muertes, CombatLog), lagcomp.ts (PoseHistory), gear.ts (estado visible)}
+  src/physics/       PhysicsWorld (Rapier, heightfield, lineOfSight, castCameraSphere, castStatic), CharacterBody
                      (KinematicCharacterController), groups (capas de colisión, incl. `build`)
   src/engine/        Engine (renderer, dispose), quality (Baja/Normal), AdaptiveResolution,
                      ContextLossMonitor, FixedStepLoop (30 Hz), IsometricCamera, Lighting,
@@ -82,13 +88,16 @@ brothers-royale/
   src/game/          Game (orquestador), settings, camera/CameraController,
                      entities/PlayerAvatar (SkinnedMesh), input/{InputManager, sources},
                      world/{PrefabView (InteriorBatch, createStaticPrefabBatch), Loot (ChestView, PickupView),
-                     Terrain, Trees, geometry}
-  src/net/           GameSession (interfaz) → OfflineSession | OnlineSession (carga diferida),
-                     Prediction (PredictionController), Interpolation, MatchView (ReplicatedMatch), config
+                     Terrain, Trees, geometry},
+                     combat/{WeaponModels (modelos + WeaponBatch), CombatFx, CombatOverlay (DOM: mira, daño),
+                     SoundFx (WebAudio), LocalWeapon (predicción visual)}
+  src/net/           GameSession (interfaz) → OfflineSession (+ muñecos de práctica) | OnlineSession (carga diferida),
+                     Prediction (PredictionController), Interpolation, MatchView (ReplicatedMatch),
+                     CombatView (validación de mensajes de combate), config
   src/ui/            App, styles.css, components/ (Hud, FpsCounter, QualityToggle, GraphicsNotice,
-                     OrientationHint, SettingsPanel, InteractPrompt, OnlinePanel, TouchControls,
+                     OrientationHint, SettingsPanel, InteractPrompt, OnlinePanel, TouchControls, DeathScreen,
                      LoadingScreen, Logo), hud/{layout.ts, HudSlot.tsx, HudEditor.tsx, widgets.tsx}
-  tests/             26 archivos Vitest (§7)
+  tests/             32 archivos Vitest (§7)
   jugar/             Bundle publicado en GitHub Pages
   CLAUDE.md          Reglas permanentes  ·  PROJECT.md  Bitácora por fase  ·  PROJECT_CONTEXT.md  Este archivo
   AUDIT-3.1.md, SOAK-8-PLAYERS.md, AUDIT-3.2-5.md   Informes de Codex
@@ -97,13 +106,20 @@ brothers-royale/
 ### Flujo de un tick
 1. `InputManager` combina las `InputSource` (teclado, ratón con pointer lock, táctil multitouch, mando)
    en ejes de pantalla y las convierte a ejes del mundo con `moveToWorld` de la cámara activa.
-2. `Game` produce un `PlayerInput` (`seq`, ejes, `aimYaw`, bits `Buttons`) por tick de `FixedStepLoop` (30 Hz).
+2. `Game` produce un `PlayerInput` (`seq`, ejes, `aimYaw`, `aimPitch`, bits `Buttons`) por tick de
+   `FixedStepLoop` (30 Hz). `computeAim` calcula la dirección del disparo desde los ojos (1ª/3ª: al punto del
+   centro de la pantalla; isométrica: yaw de apuntado + ayuda vertical). `LocalWeapon` decide los efectos
+   visuales inmediatos del arma propia. La sesión online añade `viewTick` (tick visto de los demás).
 3. La `GameSession` lo aplica:
-   - **Offline**: simulación local + `MatchState` local.
+   - **Offline**: simulación local + `MatchState` + `CombatState` locales (+ 3 muñecos de práctica).
    - **Online**: se envía al servidor y se predice localmente (`PredictionController`); el servidor
      responde con snapshot público cuantizado a todos y `correction` (`CharacterSnapshot`) privada al dueño;
      el cliente reconcilia re-simulando desde la corrección. Los remotos se interpolan.
-4. Las vistas (avatar, cofres, objetos, HUD) interpolan entre ticks; nunca son fuente de verdad.
+   - En el servidor, por cada entrada: movimiento → interacción (cofres) → combate (`CombatState.step` con la
+     posición autoritativa y los objetivos rebobinados a `viewTick`). Eventos de combate: `combat` (sala),
+     `hits` (atacante y víctima), `vitals`/`self` (dueño).
+4. Las vistas (avatar con arma y poses de combate, cofres, objetos, efectos, HUD) interpolan entre ticks;
+   nunca son fuente de verdad.
 
 ---
 
@@ -169,6 +185,23 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 - Cliente: `ReplicatedMatch` valida todo lo recibido; cofres y objetos en `InstancedMesh`;
   edificios con interior en un `BatchedMesh` (`InteriorBatch`). Minimapa con casas y cofres.
 
+### Fase 6 — Armas, combate y curación
+- Pistola, subfusil, rifle y escopeta (hitscan) + hacha cuerpo a cuerpo; rarezas común/rara/épica.
+- Disparo, apuntado (zoom en 1ª/3ª), retroceso (bloom + patada de cámara), dispersión (cadera/apuntando,
+  moverse, aire), alcance, caída de daño, cadencia, cargador (`ItemStack.mag`) y recarga (manual o automática).
+- Salud 100 sin escudos; **ningún disparo > 65**. Botiquín: 5 s → +50 (tope 100), cancelable al atacar,
+  recibir daño o cambiar de hueco.
+- Muerte **provisional**: 3 s eliminado y vuelta con 100 (fase 8 pondrá las tres vidas). Evento `death` +
+  gancho `CombatState.onDeath` + `CombatLog` (daño y bajas con estadísticas por jugador).
+- Autoridad del servidor sobre impactos, salud, munición y cadencia; balas cortadas por paredes; daño solo de
+  las tablas; compensación de latencia limitada a 12 ticks (400 ms).
+- Vista: armas low poly en la mano (y en 1ª persona) dentro del lote de edificios (0 draw calls), efectos en 1
+  InstancedMesh, números de daño, mira, marcador de acierto, destello al recibir daño, sonidos WebAudio,
+  animaciones de ataque/recarga/hachazo/botiquín/caída, HUD de salud, munición, registro de bajas y aviso de
+  eliminación, botón táctil «Disparar/Golpear/Curar», volumen en Ajustes.
+- Muñecos de práctica sin conexión (para probar en GitHub Pages).
+- Detalle, tablas de balance y mediciones: `PROJECT.md` → «Fase 6».
+
 ---
 
 ## 5. Decisiones técnicas clave (y por qué)
@@ -191,6 +224,16 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 9. **React no re-renderiza por frame**: HUD y joystick escriben en el DOM con refs.
 10. **Cámara = solo vista**: nunca toca física ni protocolo; solo aporta `moveToWorld` y el yaw de apuntado.
 11. Código y comentarios en español, identificadores en inglés.
+12. **Combate autoritativo y puro** (`CombatState`, misma clase en servidor y offline): el cliente nunca decide
+    impactos ni daño; su predicción es solo visual (`LocalWeapon`). Disparos hitscan (baratos en CPU y red).
+13. **Balance por tiempo esperado para eliminar** (`expectedTimeToKill`) con pruebas de roles: escopeta/subfusil
+    cerca, subfusil a media distancia, rifle lejos, pistola de reserva. Rifle 4 → 3,5 disparos/s. La rareza
+    nunca ahorra un disparo a quemarropa (daño casi igual; mejora dispersión y recarga).
+14. **Compensación de latencia** por rebobinado de poses (no por extrapolación en el cliente), limitada.
+15. **Estado visible en los flags del snapshot** (10 bits) en vez de un campo nuevo: mismo tamaño de paquete.
+16. **Combate sin draw calls nuevos en reposo**: armas en el `BatchedMesh` de edificios (mismo material),
+    efectos en una InstancedMesh oculta sin efectos, números de daño en DOM.
+17. **Muerte provisional** (3 s) para poder jugar ya, con el evento y el gancho listos para la fase 8.
 
 ---
 
@@ -222,7 +265,7 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 
 ---
 
-## 7. Pruebas: 237 en 26 archivos
+## 7. Pruebas: 281 en 32 archivos
 
 | Archivo | Nº | Cubre |
 |---|---|---|
@@ -252,8 +295,14 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 | `ui.test.tsx` | 9 | App, carga, HUD básico |
 | `onlineUi.test.tsx` | 4 | Panel online |
 | `stability.test.tsx` | 2 | Ciclos de montaje/desmontaje sin fugas |
+| `combat.test.ts` | 18 | Fase 6: rayo-cápsula, dispersión, estado visible, cadencia, munición finita, recarga, cambio de arma, ningún one-shot, pared, muerte/registro/vuelta, hacha, botiquín, rebobinado |
+| `combatServer.test.ts` | 5 | Fase 6 con `ServerWorld` y Rapier reales: impacto, pared real, compensación con límite, ráfagas tramposas, eliminado inactivo |
+| `combat.integration.test.ts` | 2 | Fase 6: 8 clientes SDK disparándose con latencia simulada (coherencia total) y blanco en movimiento con 150 ms (9/9 con compensación; 1/9 sin ella) |
+| `combatBalance.test.ts` | 6 | Fase 6: valores pedidos, ajuste del rifle, sin one-shot, roles por distancia, ninguna arma domina, rarezas moderadas |
+| `combatClient.test.tsx` | 12 | Fase 6: validación v5, predicción visual, armas en el lote de edificios, FX en 1 malla, números de daño, HUD, volumen |
+| `combatOffline.test.ts` | 1 | Fase 6: muñecos de práctica con física real |
 
-Regla: no bajar de 237; cada sistema nuevo llega con tests de su parte pura.
+Regla: no bajar de 281; cada sistema nuevo llega con tests de su parte pura.
 
 ---
 
@@ -265,7 +314,8 @@ Regla: no bajar de 237; cada sistema nuevo llega con tests de su parte pura.
 - La detección de refresco no distingue un navegador limitado a 30 Hz de una GPU que solo llega a 30 FPS.
 
 **Render**
-- Normal con todos los avatares visibles y sin culling: 31 draw calls (objetivo < 30).
+- Normal con todos los avatares visibles y sin culling: 31 draw calls (objetivo < 30). Con el banco de 8
+  jugadores disparando (culling normal) la fase 6 mide 28-29 en Normal y 18 en Baja.
 - Normal isométrica dio 15 FPS en SwiftShader (no representativo, pero vigilar).
 - La cámara de 3ª persona no colisiona con las copas de los árboles.
 
@@ -278,13 +328,22 @@ Regla: no bajar de 237; cada sistema nuevo llega con tests de su parte pura.
 
 **Juego**
 - Los cofres no se rellenan: no hay fin de partida ni reinicio de sala.
-- Armas, botiquines y hacha existen en el inventario pero aún no tienen efecto.
+- Muerte provisional (vuelta a los 3 s con el inventario); sin daño por caída; sin multiplicador por cabeza.
+- El rifle épico deja a 0,8 de salud con 4 disparos (99,2): diseño deliberado (la rareza no ahorra disparos).
+
+**Combate (fase 6)**
+- La compensación de latencia no pasa de 400 ms (con más latencia hay que adelantar el tiro).
+- La predicción visual puede mostrar un disparo de más/menos al final del cargador con latencia alta.
+- El arma de 1ª persona puede atravesar visualmente una pared si el jugador se pega mucho (solo vista).
+- Los mensajes de combate no están cuantizados (~3,7 KB/s por cliente con 8 disparando sin parar).
+- `BR_BENCH_LOADOUT` arma a jugadores por prefijo de nombre: SOLO para pruebas de carga; no activarlo en
+  producción.
 
 ---
 
 ## 9. Cómo continuar
 
-1. `cd brothers-royale && npm ci && npm run check` → deben salir 237 tests en verde.
+1. `cd brothers-royale && npm ci && npm run check` → deben salir 281 tests en verde.
 2. Leer `CLAUDE.md` (reglas, presupuestos de rendimiento, fuera de alcance) y la sección de la fase
    correspondiente en `PROJECT.md`.
 3. Trabajar en la rama indicada por el usuario (hasta ahora `brothers-royale-phase-3.1`), sin fusionar con
@@ -292,9 +351,15 @@ Regla: no bajar de 237; cada sistema nuevo llega con tests de su parte pura.
 4. Al cerrar un avance: tests nuevos, actualizar `PROJECT.md` (y este archivo si cambia la arquitectura,
    el estado o los errores conocidos), `npm run build:pages`, `npm run check`, commit y push a la rama.
 
-**Fuera de alcance hasta que se pida**: daño, disparos, curación, tala de árboles, construcción funcional y
-tormenta. Los ganchos ya existen (bits `Buttons`, `MotorModifiers`, capa `build`, `PredictionController`).
+**Fuera de alcance hasta que se pida**: fase 7 (no iniciarla sin petición), tres vidas y reaparición definitiva
+(fase 8), tala de árboles, construcción funcional y tormenta. Ganchos listos: evento `death` y
+`CombatState.onDeath`, `CombatLog`, bit `BUILD`, `MotorModifiers`, capa `build`, `PredictionController`.
 
-**Roadmap pendiente** (PROJECT.md): armas y combate; construcción; tormenta, partida completa, salas y lobby
-(fase 6). Candidatos técnicos: suavizar correcciones, recortar el draw call extra de Normal, colisión de cámara
-con copas, fin de partida/reinicio de sala, despliegue de un servidor `wss://`, medición en móviles reales.
+**Probar el combate**: sin conexión hay 3 muñecos de práctica delante del punto de aparición; en `?debug`,
+`__BR_GAME__.debugGive({ kind: 'rifle', qty: 1, rarity: 'epic' })` y `debugGive({ kind: 'ammo_medium', qty: 90 })`
+dan objetos. En línea: `npm run server` + «Jugar en línea» en dos pestañas (las armas salen de los cofres).
+
+**Roadmap pendiente** (PROJECT.md): fase 7 (contenido a confirmar), fase 8 (tres vidas y reaparición
+definitiva), tala, construcción, tormenta, partida completa y lobby. Candidatos técnicos: suavizar correcciones,
+cuantizar los mensajes de combate, colisión de cámara con copas, fin de partida/reinicio de sala, despliegue de
+un servidor `wss://`, medición en móviles reales.

@@ -2,7 +2,17 @@ import type { WebSocketClient } from '@colyseus/ws-transport';
 import { type Client, Room, ServerError } from '@colyseus/core';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
 import { SIMULATION } from '@shared/constants';
-import { CloseCodes, isPublicMatchEvent, NET, PROTOCOL_VERSION, type PublicMatchEvent, type WelcomeMessage } from '@shared/protocol';
+import {
+  CloseCodes,
+  isPublicCombatEvent,
+  isPublicMatchEvent,
+  NET,
+  PROTOCOL_VERSION,
+  type DamageEvent,
+  type PublicCombatEvent,
+  type PublicMatchEvent,
+  type WelcomeMessage,
+} from '@shared/protocol';
 import { sanitizeRoomCode, uniqueName, validateJoinOptions } from '@shared/session';
 import { ServerWorld } from './ServerWorld';
 
@@ -80,6 +90,11 @@ export class BrothersRoom extends Room {
     }
     const name = uniqueName(v.options.name, [...this.world.players.values()].map((p) => p.name));
     const player = this.world.addPlayer(client.sessionId, name);
+    // SOLO pruebas de carga (variable de entorno del SERVIDOR, nunca del cliente):
+    // los jugadores cuyo nombre empiece por ese prefijo (p. ej. "Bot") entran
+    // armados para medir el combate.
+    const bench = process.env.BR_BENCH_LOADOUT;
+    if (bench && name.startsWith(bench)) this.world.giveBenchLoadout(player.id, player.netId);
     this.meta.set(client.sessionId, { ready: false, msgWindowStart: Date.now(), msgCount: 0, floodStrikes: 0 });
     this.broadcast('join', this.world.rosterEntry(player), { except: client });
   }
@@ -103,6 +118,7 @@ export class BrothersRoom extends Room {
       state: player.body.snapshot(),
       match: this.world.match.snapshot(),
       inventory: this.world.match.inventory(player.id)!,
+      vitals: this.world.combat.vitals(player.id)!,
     };
     client.send('welcome', welcome);
     player.correctionDirty = false;
@@ -137,9 +153,11 @@ export class BrothersRoom extends Room {
     this.world.step();
     if (this.clients.length === 0) {
       this.world.drainMatchEvents();
+      this.world.drainCombatEvents();
       return;
     }
     this.sendMatchEvents();
+    this.sendCombatEvents();
     // Fase 3.2: el snapshot se codifica UNA vez y se difunde; antes se codificaba
     // una vez por cliente. Se excluye a quien aún no está listo o va saturado.
     const skip = this.skipScratch;
@@ -182,6 +200,37 @@ export class BrothersRoom extends Room {
     if (pub.length === 0) return;
     const notReady = this.clients.filter((c) => !this.meta.get(c.sessionId)?.ready);
     this.broadcast('match', { tick: this.world.tick, events: pub }, notReady.length ? { except: notReady } : undefined);
+  }
+
+  /**
+   * Combate: disparos, golpes, bajas y vueltas en un mensaje por tick para la
+   * sala; el daño solo al atacante y a la víctima; salud y avisos al dueño.
+   */
+  private sendCombatEvents(): void {
+    const events = this.world.drainCombatEvents();
+    if (events.length === 0) return;
+    const pub: PublicCombatEvent[] = [];
+    const hits = new Map<string, DamageEvent[]>();
+    const ready = (id: string) => {
+      const client = this.clients.find((c) => c.sessionId === id);
+      return client && this.meta.get(id)?.ready ? client : null;
+    };
+    for (const e of events) {
+      if (isPublicCombatEvent(e)) pub.push(e);
+      else if (e.type === 'damage') {
+        for (const id of new Set([e.by, e.victim])) {
+          const list = hits.get(id) ?? [];
+          list.push(e);
+          hits.set(id, list);
+        }
+      } else if (e.type === 'vitals') ready(e.id)?.send('vitals', e.vitals);
+      else if (e.type === 'healed') ready(e.id)?.send('self', { type: 'healed', amount: e.amount });
+      else if (e.type === 'empty') ready(e.id)?.send('self', { type: 'empty' });
+    }
+    for (const [id, list] of hits) ready(id)?.send('hits', { tick: this.world.tick, events: list });
+    if (pub.length === 0) return;
+    const notReady = this.clients.filter((c) => !this.meta.get(c.sessionId)?.ready);
+    this.broadcast('combat', { tick: this.world.tick, events: pub }, notReady.length ? { except: notReady } : undefined);
   }
 
   async onDrop(client: Client): Promise<void> {

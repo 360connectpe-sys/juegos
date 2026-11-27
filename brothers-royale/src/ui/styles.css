@@ -1213,3 +1213,156 @@ kbd {
     height: 22px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Fase 6 — combate: mira, marcador de acierto, daño recibido, números de daño,
+   munición, registro de bajas y aviso de eliminación. Todo DOM ligero.
+   --------------------------------------------------------------------------- */
+.app__combat,
+.combat-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 3;
+}
+.combat-hurt {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgb(255 60 70 / 0.55) 100%);
+}
+.crosshair {
+  --gap: 8px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.crosshair i {
+  position: absolute;
+  background: var(--foam);
+  box-shadow: 0 0 0 1px rgb(23 19 63 / 0.7);
+  border-radius: 1px;
+}
+.crosshair__t,
+.crosshair__b {
+  width: 2px;
+  height: 8px;
+  left: -1px;
+}
+.crosshair__t { bottom: var(--gap); }
+.crosshair__b { top: var(--gap); }
+.crosshair__l,
+.crosshair__r {
+  width: 8px;
+  height: 2px;
+  top: -1px;
+}
+.crosshair__l { right: var(--gap); }
+.crosshair__r { left: var(--gap); }
+.hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  opacity: 0;
+  background:
+    linear-gradient(45deg, transparent 44%, var(--foam) 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, var(--foam) 44% 56%, transparent 56%);
+  -webkit-mask: radial-gradient(circle, transparent 4px, #000 5px);
+  mask: radial-gradient(circle, transparent 4px, #000 5px);
+}
+.hitmarker--kill {
+  background:
+    linear-gradient(45deg, transparent 42%, var(--coral) 42% 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 42%, var(--coral) 42% 58%, transparent 58%);
+}
+.dmg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font: 900 1.05rem/1 var(--display);
+  color: var(--foam);
+  text-shadow: 0 2px 0 var(--ink), 0 0 6px rgb(23 19 63 / 0.6);
+  will-change: transform, opacity;
+}
+.dmg--big { color: var(--sun); font-size: 1.3rem; }
+.dmg--kill { color: var(--coral); font-size: 1.45rem; }
+
+.w-health.is-mid .w-health__fill { background: var(--sun); }
+.w-health.is-low .w-health__fill { background: var(--coral); }
+
+.w-mag {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  font: 800 0.8rem/1 var(--body);
+  font-variant-numeric: tabular-nums;
+  color: var(--foam);
+  background: rgb(23 19 63 / 0.62);
+  border-radius: 10px;
+}
+.w-mag__count b { font: 900 1.25rem/1 var(--display); }
+.w-mag__reserve { opacity: 0.75; }
+.w-mag__reserve::before { content: '· '; }
+.w-mag__hint { color: var(--sun); font-size: 0.72rem; }
+.w-mag.is-empty .w-mag__count b { color: var(--coral); }
+.w-mag__bar {
+  align-self: center;
+  width: 70px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgb(245 247 255 / 0.2);
+  overflow: hidden;
+}
+.w-mag__bar span {
+  display: block;
+  height: 100%;
+  background: var(--sun);
+  transform-origin: left center;
+}
+.w-mag--heal .w-mag__bar span { background: var(--mint); }
+
+.w-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  min-width: 140px;
+  font: 700 0.72rem/1.2 var(--body);
+  color: var(--foam);
+}
+.w-feed li {
+  padding: 3px 8px;
+  background: rgb(23 19 63 / 0.58);
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.w-feed li.is-mine { box-shadow: inset 3px 0 0 var(--sun); }
+.w-feed li.is-me { box-shadow: inset 3px 0 0 var(--coral); }
+.w-feed__w { opacity: 0.7; }
+
+.death {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  padding: 14px 26px;
+  text-align: center;
+  color: var(--foam);
+  background: rgb(23 19 63 / 0.78);
+  border-radius: 14px;
+  pointer-events: none;
+}
+.death p { margin: 0; }
+.death__title { font: 400 2rem/1.1 var(--display); color: var(--coral); }
+.death__by { font: 700 0.95rem/1.4 var(--body); }
+.death__wait { font: 700 0.8rem/1.4 var(--body); opacity: 0.8; }

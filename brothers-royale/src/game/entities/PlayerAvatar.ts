@@ -17,6 +17,7 @@ import {
 import { PLAYER } from '@shared/constants';
 import { damp, wrapAngle } from '@shared/math';
 import type { Locomotion, PlayerState } from '@shared/types';
+import { unpackGear, type Gear } from '@shared/combat/gear';
 import { box, merge } from '../world/geometry';
 
 export interface AvatarColors {
@@ -159,6 +160,14 @@ export class PlayerAvatar {
   /** Pose actual suavizada. */
   private readonly pose: Pose = { ...POSES.idle };
   readonly velocity = new Vector3();
+  /** Combate visible (arma en mano, acción, eliminado). */
+  gear: Gear = unpackGear(0);
+  private gearRaw = -1;
+  /** Mezcla 0..1 de la pose de combate y temporizadores de animación. */
+  private hold = 0;
+  private kickT = 0;
+  private swingT = 0;
+  private deadT = 0;
 
   /**
    * @param colors Colores del personaje (o índice de la paleta).
@@ -206,7 +215,27 @@ export class PlayerAvatar {
     this.velocity.set(s.velocity.x, s.velocity.y, s.velocity.z);
     this.speed = Math.hypot(s.velocity.x, s.velocity.z);
     this.locomotion = s.locomotion;
+    this.setGear(s.gear ?? 0);
     if (landed && impactSpeed > 4) this.landTimer = Math.min(0.22, 0.08 + impactSpeed * 0.012);
+  }
+
+  /** Estado de combate visible (empaquetado). */
+  setGear(raw: number): void {
+    if (raw === this.gearRaw) return;
+    const prev = this.gear;
+    this.gearRaw = raw;
+    this.gear = unpackGear(raw);
+    if (this.gear.action === 'melee' && prev.action !== 'melee') this.swingT = 0.3;
+  }
+
+  /** Retroceso de un disparo (lo dispara el evento del servidor o la predicción local). */
+  kick(): void {
+    this.kickT = 0.12;
+  }
+
+  /** Golpe de hacha (evento). */
+  swing(): void {
+    this.swingT = 0.3;
   }
 
   /**
@@ -255,6 +284,60 @@ export class PlayerAvatar {
     }
     root.position.y = bob;
     root.scale.set(2 - squash, squash, 2 - squash);
+    this.combatPose(dt);
+  }
+
+  /**
+   * Capa de combate sobre la locomoción: brazos al frente con arma, retroceso
+   * al disparar, recarga, hachazo, botiquín y caída al ser eliminado.
+   */
+  private combatPose(dt: number): void {
+    const g = this.gear;
+    const [root, body, armL, armR] = this.bones as [Bone, Bone, Bone, Bone];
+    this.deadT = damp(this.deadT, g.dead ? 1 : 0, 10, dt);
+    root.rotation.x = -this.deadT * 1.45;
+    root.position.y += this.deadT * 0.25;
+    if (this.deadT > 0.5) return;
+    const gun = g.held === 'pistol' || g.held === 'smg' || g.held === 'rifle' || g.held === 'shotgun';
+    const holding = gun || g.held === 'axe' || g.held === 'medkit';
+    this.hold = damp(this.hold, holding ? 1 : 0, 14, dt);
+    this.kickT = Math.max(0, this.kickT - dt);
+    this.swingT = Math.max(0, this.swingT - dt);
+    const w = this.hold;
+    if (w < 0.01) return;
+    const mix = (cur: number, target: number) => cur + (target - cur) * w;
+    if (gun) {
+      const reload = g.action === 'reload';
+      const kick = (this.kickT / 0.12) * (g.held === 'shotgun' ? 0.45 : 0.22);
+      const t = this.time * 9;
+      armR.rotation.x = mix(armR.rotation.x, reload ? -0.7 + Math.sin(t) * 0.12 : -Math.PI / 2 - kick);
+      armR.rotation.z = mix(armR.rotation.z, 0.08);
+      armL.rotation.x = mix(armL.rotation.x, reload ? -1.0 - Math.sin(t) * 0.2 : -Math.PI / 2 * 0.92 - kick * 0.6);
+      armL.rotation.z = mix(armL.rotation.z, reload ? -0.3 : -0.55);
+      body.rotation.x = mix(body.rotation.x, reload ? 0.12 : 0.04);
+    } else if (g.held === 'axe') {
+      // Hachazo de arriba abajo en 0,3 s; en reposo, el hacha delante.
+      const k = this.swingT > 0 ? 1 - this.swingT / 0.3 : 1;
+      const swing = this.swingT > 0 ? -2.7 + k * 2.4 : -0.5;
+      armR.rotation.x = mix(armR.rotation.x, swing);
+      armR.rotation.z = mix(armR.rotation.z, 0.1);
+    } else if (g.held === 'medkit') {
+      const heal = g.action === 'heal';
+      const t = this.time * 6;
+      armR.rotation.x = mix(armR.rotation.x, heal ? -1.0 + Math.sin(t) * 0.1 : -0.7);
+      armL.rotation.x = mix(armL.rotation.x, heal ? -1.0 - Math.sin(t) * 0.1 : armL.rotation.x);
+      armL.rotation.z = mix(armL.rotation.z, heal ? -0.45 : armL.rotation.z);
+    }
+  }
+
+  /** Hueso del brazo derecho (para colocar lo que lleva en la mano). */
+  get handBone(): Bone {
+    return this.bones[3]!;
+  }
+
+  /** Eliminado (y casi en el suelo): no se dibuja lo que llevaba en la mano. */
+  get downed(): boolean {
+    return this.deadT > 0.5;
   }
 
   get position(): Vector3 {

@@ -2,7 +2,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { Game } from '@/game/Game';
 import { HudSlot } from './HudSlot';
 import { defaultHudLayout, HUD_ELEMENTS, HUD_LIMITS, moveElement, resetElement, updateElement, type HudElementId, type HudLayout } from './layout';
-import { renderInfoWidget } from './widgets';
+import { renderInfoWidget, type InfoWidgetId } from './widgets';
 
 interface Props {
   initial: HudLayout;
@@ -146,7 +146,7 @@ export function HudEditor({ initial, game, isTouch, onSave, onCancel }: Props) {
                 onPointerDown={onDown(el.id)}
                 onFocus={() => setSelected(el.id)}
               >
-                {el.kind === 'control' ? <ControlPreview id={el.id} /> : renderInfoWidget(el.id as 'health' | 'lives' | 'inventory' | 'minimap', game)}
+                {el.kind === 'control' ? <ControlPreview id={el.id} /> : renderInfoWidget(el.id as InfoWidgetId, game, true)}
                 <span className="hud-edit-item__label">{el.label}</span>
               </div>
             </HudSlot>

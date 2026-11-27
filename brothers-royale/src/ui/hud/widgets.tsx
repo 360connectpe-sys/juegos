@@ -1,21 +1,143 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Game } from '@/game/Game';
-import type { Inventory as InventoryState } from '@shared/inventory';
-import { ITEMS, itemName, type ItemKind, type ItemStack } from '@shared/items';
+import type { Game, KillFeedEntry } from '@/game/Game';
+import { magOf, type Inventory as InventoryState } from '@shared/inventory';
+import { isWeapon, ITEMS, itemName, type ItemKind, type ItemStack } from '@shared/items';
+import type { Vitals } from '@shared/combat/CombatState';
+import { HEALTH, WEAPON_STATS } from '@shared/combat/weapons';
 import { terrainHeight } from '@shared/world/terrain';
 
-/** Barra de salud (preparada: aún no hay daño, siempre llena). */
+/** Barra de salud (0..100, sin escudos). Se muestra redondeada hacia arriba: 0,4 sigue siendo 1. */
 export function HealthBar({ value = 100, max = 100 }: { value?: number; max?: number }) {
   const pct = Math.max(0, Math.min(1, value / max));
+  const shown = Math.ceil(value - 1e-6);
+  const level = pct <= 0.25 ? ' is-low' : pct <= 0.5 ? ' is-mid' : '';
   return (
-    <div className="w-health" role="meter" aria-label="Salud" aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}>
+    <div className={`w-health${level}`} role="meter" aria-label="Salud" aria-valuemin={0} aria-valuemax={max} aria-valuenow={shown}>
       <span className="w-health__label">Salud</span>
       <span className="w-health__bar">
         <span className="w-health__fill" style={{ transform: `scaleX(${pct})` }} />
       </span>
-      <span className="w-health__num">{Math.round(value)}</span>
+      <span className="w-health__num">{shown}</span>
     </div>
   );
+}
+
+/** Salud conectada al juego (solo se redibuja al cambiar). */
+export function LiveHealth({ game }: { game: Game | null }) {
+  const [v, setV] = useState<Vitals | null>(() => game?.currentVitals ?? null);
+  useEffect(() => {
+    if (!game) return;
+    setV(game.currentVitals);
+    return game.events.on('vitals', setV);
+  }, [game]);
+  return <HealthBar value={v?.hp ?? HEALTH.max} max={HEALTH.max} />;
+}
+
+/**
+ * Munición del arma en la mano (cargador / bolsa) con la barra de recarga, o
+ * la curación en curso con botiquín. Sin datos (editor) muestra un ejemplo.
+ */
+export function AmmoCounter({ inventory = null, vitals = null }: { inventory?: InventoryState | null; vitals?: Vitals | null }) {
+  const item = inventory ? inventory.slots[inventory.selected] : ({ kind: 'rifle', qty: 1, mag: 24 } as ItemStack);
+  const [, tick] = useState(0);
+  const busy = (vitals?.reload ?? 0) > 0 || (vitals?.heal ?? 0) > 0;
+  const started = useRef({ at: 0, total: 0, left: 0 });
+  // Las barras avanzan localmente entre mensajes (el servidor solo avisa al empezar y al terminar).
+  useEffect(() => {
+    if (!vitals || !busy) return;
+    const left = vitals.reload > 0 ? vitals.reload : vitals.heal;
+    const total = vitals.reload > 0 ? vitals.reloadTotal : vitals.healTotal;
+    started.current = { at: performance.now(), total, left };
+    const t = window.setInterval(() => tick((n) => n + 1), 100);
+    return () => window.clearInterval(t);
+  }, [vitals, busy]);
+  const progress = busy && started.current.total > 0 ? Math.min(1, 1 - (started.current.left - (performance.now() - started.current.at) / 1000) / started.current.total) : 0;
+  if (vitals && vitals.heal > 0)
+    return (
+      <div className="w-mag w-mag--heal" role="status" aria-label="Curándote">
+        <span className="w-mag__label">Curando</span>
+        <span className="w-mag__bar"><span style={{ transform: `scaleX(${progress})` }} /></span>
+      </div>
+    );
+  if (!item || !isWeapon(item.kind)) {
+    if (item?.kind === 'medkit')
+      return (
+        <div className="w-mag" role="status" aria-label="Botiquín">
+          <span className="w-mag__label">Botiquín ×{item.qty}</span>
+          <span className="w-mag__hint">Atacar = curar 50</span>
+        </div>
+      );
+    return null;
+  }
+  const mag = magOf(item);
+  const reserve = inventory ? inventory.ammo[ITEMS[item.kind].ammo!] : 90;
+  const reloading = (vitals?.reload ?? 0) > 0;
+  return (
+    <div className={`w-mag${mag === 0 ? ' is-empty' : ''}`} role="status" aria-label={`Munición: ${mag} de ${WEAPON_STATS[item.kind].magazine}, ${reserve} en la bolsa`}>
+      <span className="w-mag__count">
+        <b>{mag}</b>/{WEAPON_STATS[item.kind].magazine}
+      </span>
+      <span className="w-mag__reserve">{reserve}</span>
+      {reloading && <span className="w-mag__bar"><span style={{ transform: `scaleX(${progress})` }} /></span>}
+      {!reloading && mag === 0 && <span className="w-mag__hint">{reserve > 0 ? 'Recarga' : 'Sin balas'}</span>}
+    </div>
+  );
+}
+
+export function LiveAmmo({ game }: { game: Game | null }) {
+  const [inv, setInv] = useState(() => game?.inventory ?? null);
+  const [v, setV] = useState<Vitals | null>(() => game?.currentVitals ?? null);
+  useEffect(() => {
+    if (!game) return;
+    setInv(game.inventory);
+    setV(game.currentVitals);
+    const a = game.events.on('inventory', setInv);
+    const b = game.events.on('vitals', setV);
+    return () => {
+      a();
+      b();
+    };
+  }, [game]);
+  return <AmmoCounter inventory={inv} vitals={v} />;
+}
+
+const WEAPON_SHORT: Record<string, string> = { axe: 'hacha', pistol: 'pistola', smg: 'subfusil', rifle: 'rifle', shotgun: 'escopeta' };
+
+/** Últimas bajas (desaparecen a los 6 s). Datos listos para las estadísticas de la fase 8. */
+export function KillFeed({ entries }: { entries: (KillFeedEntry & { key: number })[] }) {
+  return (
+    <ol className="w-feed" aria-label="Bajas recientes" aria-live="polite">
+      {entries.map((e) => (
+        <li key={e.key} className={`${e.mine ? 'is-mine' : ''}${e.me ? ' is-me' : ''}`}>
+          <b>{e.killer}</b> <span className="w-feed__w">[{WEAPON_SHORT[e.weapon] ?? e.weapon}]</span> <b>{e.victim}</b>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+export function LiveKillFeed({ game }: { game: Game | null }) {
+  const [entries, setEntries] = useState<(KillFeedEntry & { key: number })[]>([]);
+  useEffect(() => {
+    if (!game) return;
+    let key = 0;
+    const timers = new Set<number>();
+    const off = game.events.on('killfeed', (e) => {
+      const k = ++key;
+      setEntries((list) => [...list.slice(-3), { ...e, key: k }]);
+      const t = window.setTimeout(() => {
+        timers.delete(t);
+        setEntries((list) => list.filter((x) => x.key !== k));
+      }, 6000);
+      timers.add(t);
+    });
+    return () => {
+      off();
+      timers.forEach((t) => window.clearTimeout(t));
+    };
+  }, [game]);
+  if (!game) return <KillFeed entries={[{ key: 0, killer: 'Ana', victim: 'Beto', weapon: 'rifle', mine: false, me: false }]} />;
+  return <KillFeed entries={entries} />;
 }
 
 const Heart = ({ full }: { full: boolean }) => (
@@ -225,11 +347,18 @@ export function Minimap({ game }: { game: Game | null }) {
   );
 }
 
+export type InfoWidgetId = 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
+export const INFO_WIDGETS: readonly InfoWidgetId[] = ['health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
+
 /** Indicadores del HUD (todas las pantallas). */
-export function renderInfoWidget(id: 'health' | 'lives' | 'inventory' | 'minimap', game: Game | null) {
+export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = false) {
   switch (id) {
     case 'health':
-      return <HealthBar />;
+      return game ? <LiveHealth game={game} /> : <HealthBar />;
+    case 'ammo':
+      return game && !preview ? <LiveAmmo game={game} /> : <AmmoCounter />;
+    case 'killfeed':
+      return <LiveKillFeed game={preview ? null : game} />;
     case 'lives':
       return <Lives />;
     case 'inventory':

@@ -25,11 +25,13 @@ servidor, `@colyseus/sdk` en el cliente, cargado de forma diferida) · Vitest.
 ## Arquitectura y reglas
 ```
 src/shared/   Lógica PURA y determinista (sin Three, sin DOM): constantes, tipos, movimiento,
-              generación del mapa, colisionadores, protocolo de red. La usará también el servidor.
+              generación del mapa, colisionadores, protocolo de red, partida (`match/`) y combate
+              (`combat/`: armas, balance, disparos, salud, compensación de latencia). La usa el servidor.
 src/physics/  Rapier, sin Three ni DOM (reutilizable en Node/Colyseus).
 src/engine/   Render genérico: renderer, cámara isométrica, luces, calidad, bucle de paso fijo;
               `engine/camera/cameraMath.ts` (matemática pura de las 3 perspectivas).
-src/game/     Juego: mundo visual, entidades (vistas), entrada, orquestador `Game`.
+src/game/     Juego: mundo visual, entidades (vistas), entrada, orquestador `Game`; `game/combat/` = armas
+              en la mano, efectos, sonido, capa de mira/daño y predicción visual del arma propia.
 src/net/      Frontera de red: `GameSession` → `OfflineSession` (por defecto) y `OnlineSession`
               (Colyseus: predicción + reconciliación + interpolación de remotos).
 server/       Servidor Node: `ServerWorld` (simulación autoritativa pura, sin red) y
@@ -72,6 +74,19 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    siga siendo exacta. Nuevas acciones = nuevo bit en `Buttons`, nunca booleanos sueltos en `PlayerInput`.
 4c. **Entrada**: cada dispositivo es una `InputSource` (`game/input/sources.ts`) en ejes de pantalla;
    `InputManager` las combina y convierte a mundo. Nada fuera de `game/input` lee teclado/táctil/mando.
+4e. **Combate (fase 6)**: la autoridad es `CombatState` (`shared/combat/`), que ejecutan `ServerWorld` y, sin
+   conexión, `OfflineSession`, DESPUÉS del paso de movimiento y con la posición autoritativa. El cliente solo
+   manda botones, `aimYaw`/`aimPitch` (desde los ojos, `EYE_HEIGHT`) y `viewTick`; nunca daño, impactos,
+   munición ni cadencia. Reglas: ningún disparo supera `HEALTH.maxShotDamage` (65 < 100); las balas se cortan
+   en el primer obstáculo estático (`PhysicsWorld.castStatic`); la cadencia se mide con el tiempo de las
+   entradas procesadas y sin "ahorrar" disparos; el cargador vive en `ItemStack.mag`; el rebobinado de la
+   compensación de latencia se limita a `LAG_COMPENSATION.maxRewindTicks`. Valores de armas y rarezas SOLO en
+   `shared/combat/weapons.ts`, y cualquier cambio de balance pasa `tests/combatBalance.test.ts` y se documenta.
+   El estado visible de los demás viaja en 10 bits del snapshot (`combat/gear.ts`). La muerte es provisional
+   (vuelta a los 3 s): la fase 8 la sustituye usando el evento `death` y `CombatState.onDeath`.
+   Vista: lo que se lleva en la mano va en el `BatchedMesh` de los edificios (`WeaponBatch`, 0 draw calls);
+   trazadoras/chispas en una InstancedMesh (`CombatFx`); números de daño y mira en DOM (`CombatOverlay`);
+   sonidos sintetizados (`SoundFx`). La predicción del arma propia (`LocalWeapon`) es SOLO visual.
 5. **Rendimiento móvil primero**:
    - Fusionar geometría estática (`game/world/geometry.ts` → 1 draw call por objeto) e
      `InstancedMesh` para elementos repetidos. Objetivo: < 50 draw calls en escena de prueba.
@@ -79,7 +94,7 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    - Solo DOS calidades: Baja y Normal (`engine/quality.ts`). La calidad SOLO puede tocar render (resolución,
      sombras, manchas de sombra): nunca el mundo, la física, los oclusores ni la cámara (ventaja competitiva).
      Se cambia en vivo con `Game.setQuality`.
-   - Presupuesto: < 30 draw calls en Normal y < 20 en Baja (6 jugadores, fase 5: 24 y 15). Edificios con
+   - Presupuesto: < 30 draw calls en Normal y < 20 en Baja (fase 6, 8 jugadores disparando: 28-29 y 18). Edificios con
      interior = un `BatchedMesh` (`InteriorBatch`); cofres y objetos = `InstancedMesh` (vacíos, invisibles). Avatares =
      una `SkinnedMesh` con geometría por paleta y material compartidos; sombras de mancha en un `InstancedMesh`;
      prefabs sin interior en un lote estático (`createStaticPrefabBatch`); la casa es 1 malla desde fuera.
@@ -99,15 +114,18 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    recorte de techos. El avatar propio se oculta en 1ª persona y con la cámara a < `CAMERA_RIG.hideAvatarBelow`.
 6b. **Mirada y apuntado**: la mirada se consume por frame de render (`InputManager.consumeLook`), con
    sensibilidad de cámara, de apuntado e invertir Y. Acciones nuevas = bit de `Buttons` en la fuente que
-   corresponda (teclado, ratón, táctil, mando). Ataque, recarga, interacción y construcción ya envían su bit, pero
-   no tienen efecto hasta su fase.
+   corresponda (teclado, ratón, táctil, mando). Ataque, apuntado, recarga e interacción tienen efecto desde la
+   fase 6; construir sigue reservado. Atacar también orienta al personaje hacia `aimYaw`.
 6c. **HUD y preferencias**: los elementos del HUD se colocan con `HudSlot` en coordenadas normalizadas al área
    segura (`.hud-safe` usa `env(safe-area-inset-*)`). Todo lo que se guarda en `localStorage` (`br.settings.v1`,
    `br.hud.v1`, `br.quality`) se valida al leerlo (`parseSettings`, `parseHudLayout`); nunca confiar en lo guardado.
-   Un elemento nuevo del HUD = entrada en `HUD_ELEMENTS` + posición de fábrica en `defaultHudLayout()`.
+   Un elemento nuevo del HUD = entrada en `HUD_ELEMENTS` + posición de fábrica en `defaultHudLayout()`. El volumen
+   va aparte (`br.volume.v1`) para no cambiar el formato de `br.settings.v1`.
 7. Código y comentarios en español; nombres de identificadores en inglés.
 8. Cada sistema nuevo llega con tests de su parte pura. Actualizar `PROJECT.md` al cerrar cada avance.
 
 ## Fuera de alcance hasta nueva fase
-Daño, disparos, curación, tala de árboles, construcción funcional y tormenta: no implementarlos sin pedirlo.
-Los ganchos ya existen (bits de `Buttons`, `MotorModifiers`, capa `build`, `PredictionController`).
+Tres vidas y reaparición definitiva (fase 8), tala de árboles, construcción funcional y tormenta: no
+implementarlos sin pedirlo. No empezar la fase 7 sin que se pida. Los ganchos ya existen (evento `death` y
+`CombatState.onDeath`, bit `BUILD`, `MotorModifiers`, capa `build`, `PredictionController`).
+`BR_BENCH_LOADOUT` (servidor) es SOLO para pruebas de carga.

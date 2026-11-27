@@ -20,9 +20,11 @@ import type { CharacterSnapshot } from '@shared/reconciliation';
 import type { PlayerInput, PlayerState } from '@shared/types';
 import type { GameSession, PlayerIdentity } from './GameSession';
 import { ReplicatedMatch, type ClientMatchEvent, type MatchView } from './MatchView';
+import { fullVitals, isValidCombatEvent, isValidDamageEvent, isValidVitals, type ClientCombatEvent, type CombatView } from './CombatView';
+import type { Vitals } from '@shared/combat/CombatState';
 import type { ChestPlacement } from '@shared/world/layout';
 import type { NoticeCode } from '@shared/match/MatchState';
-import type { PublicMatchEvent } from '@shared/protocol';
+import type { DamageEvent, PublicCombatEvent, PublicMatchEvent } from '@shared/protocol';
 import { sanitizeRoomCode } from '@shared/session';
 import { SnapshotInterpolator } from './Interpolation';
 import { PredictionController } from './Prediction';
@@ -86,7 +88,11 @@ export class OnlineSession implements GameSession {
   private lastCorrectionTick = -1;
   private ticksSinceSnapshot = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly scratch: PublicPlayer = { netId: 0, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0, grounded: true, locomotion: 'idle', lastSeq: 0 };
+  private readonly scratch: PublicPlayer = { netId: 0, x: 0, y: 0, z: 0, yaw: 0, vx: 0, vy: 0, vz: 0, grounded: true, locomotion: 'idle', lastSeq: 0, gear: 0 };
+  /** Tick (de servidor) en el que se están mostrando los demás: va en cada entrada (compensación de latencia). */
+  private viewTick = 0;
+  private vitalsState: Vitals = fullVitals();
+  onCombatEvent: ((e: ClientCombatEvent) => void) | null = null;
   readonly info: OnlineInfo;
   /** Réplica de cofres, objetos e inventario propio (la autoridad es el servidor). */
   private readonly replica: ReplicatedMatch;
@@ -102,6 +108,7 @@ export class OnlineSession implements GameSession {
   ) {
     this.replica = new ReplicatedMatch(chests);
     this.replica.load(welcome.match, welcome.inventory);
+    if (isValidVitals(welcome.vitals)) this.vitalsState = welcome.vitals;
     if (welcome.roster.length > NET.maxPlayersPerRoom) throw new Error('El servidor supera el máximo de 8 jugadores por sala');
     this.localPlayerId = welcome.playerId;
     this.lastCorrectionTick = welcome.tick;
@@ -149,6 +156,10 @@ export class OnlineSession implements GameSession {
         room.onMessage('match', (m: { tick: number; events: PublicMatchEvent[] }) => session?.onMatch(m));
         room.onMessage('inventory', (m: unknown) => session?.onInventory(m));
         room.onMessage('notice', (m: { code: NoticeCode }) => session?.onNotice(m));
+        room.onMessage('combat', (m: { events?: unknown }) => session?.onCombat(m));
+        room.onMessage('hits', (m: { events?: unknown }) => session?.onHits(m));
+        room.onMessage('vitals', (m: unknown) => session?.onVitals(m));
+        room.onMessage('self', (m: { type?: unknown; amount?: unknown }) => session?.onSelf(m));
         room.onLeave((code: number, reason?: string) => {
           if (!session) reject(new Error(closeReason(code, reason)));
           else session.onClosed(code, reason);
@@ -194,6 +205,7 @@ export class OnlineSession implements GameSession {
     }
     if (isValidPlayerInput(input, this.lastSentSeq)) {
       this.lastSentSeq = input.seq;
+      input.viewTick = this.viewTick;
       if (this.info.status === 'connected') this.room.send('input', input);
       this.prediction.predict(input);
     }
@@ -212,6 +224,10 @@ export class OnlineSession implements GameSession {
 
   get match(): MatchView {
     return this.replica;
+  }
+
+  get combat(): CombatView {
+    return { vitals: this.vitalsState };
   }
 
   selectSlot(slot: number): void {
@@ -260,6 +276,31 @@ export class OnlineSession implements GameSession {
     if (m?.code === 'full' || m?.code === 'opened' || m?.code === 'gone') this.onMatchEvent?.({ type: 'notice', code: m.code });
   }
 
+  private onCombat(m: { events?: unknown }): void {
+    if (!Array.isArray(m?.events)) return;
+    for (const e of m.events.slice(0, 256)) if (isValidCombatEvent(e)) this.onCombatEvent?.(e as PublicCombatEvent);
+  }
+
+  private onHits(m: { events?: unknown }): void {
+    if (!Array.isArray(m?.events)) return;
+    for (const e of m.events.slice(0, 64)) {
+      // Solo daños propios (como atacante o víctima): el resto no es asunto de este cliente.
+      if (isValidDamageEvent(e) && (e.by === this.localPlayerId || e.victim === this.localPlayerId)) this.onCombatEvent?.(e as DamageEvent);
+    }
+  }
+
+  private onVitals(m: unknown): void {
+    if (!isValidVitals(m)) return;
+    this.vitalsState = m;
+    this.onCombatEvent?.({ type: 'vitals', vitals: m });
+  }
+
+  private onSelf(m: { type?: unknown; amount?: unknown }): void {
+    if (m?.type === 'empty') this.onCombatEvent?.({ type: 'empty' });
+    else if (m?.type === 'healed' && typeof m.amount === 'number' && Number.isFinite(m.amount) && m.amount >= 0 && m.amount <= 100)
+      this.onCombatEvent?.({ type: 'healed', amount: m.amount });
+  }
+
   private onWelcome(w: WelcomeMessage): void {
     if (w.roster.length > NET.maxPlayersPerRoom) {
       this.onClosed(CloseCodes.ROOM_CAPACITY);
@@ -269,6 +310,8 @@ export class OnlineSession implements GameSession {
     // Tras reconectar: estado autoritativo fresco y sin entradas pendientes viejas.
     this.replica.load(w.match, w.inventory);
     this.onMatchEvent?.({ type: 'reset' });
+    this.vitalsState = isValidVitals(w.vitals) ? w.vitals : fullVitals();
+    this.onCombatEvent?.({ type: 'vitals', vitals: this.vitalsState });
     this.pendingCorrection = null;
     this.lastCorrectionTick = w.tick;
     this.interp.clear();
@@ -332,6 +375,7 @@ export class OnlineSession implements GameSession {
   /** Muestrea a los remotos en el pasado reciente y actualiza la lista visible. */
   private updateRemotes(_dt: number): void {
     const target = Math.min(this.interp.latestTick, this.interp.latestTick - NET.interpolationDelayTicks + this.ticksSinceSnapshot);
+    this.viewTick = Math.max(0, Math.round(target));
     // Sin asignaciones por tick: se reutilizan los PlayerState de cada remoto.
     const alive = this.aliveScratch;
     alive.clear();

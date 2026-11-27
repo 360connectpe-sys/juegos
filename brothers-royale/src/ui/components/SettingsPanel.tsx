@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { CAMERA_MODE_LABEL, CAMERA_MODES, type CameraMode } from '@/engine/camera/cameraMath';
-import { SETTINGS_LIMITS, type GameSettings } from '@/game/settings';
+import { DEFAULT_VOLUME, SETTINGS_LIMITS, VOLUME_LIMITS, type GameSettings } from '@/game/settings';
 
 interface Props {
   settings: GameSettings;
@@ -11,6 +11,9 @@ interface Props {
   onResetAll(): void;
   onFullscreen(): void;
   onClose(): void;
+  /** Volumen de efectos 0..1 (se guarda aparte). */
+  volume?: number;
+  onVolume?(v: number): void;
 }
 
 const MODE_HELP: Record<CameraMode, string> = {
@@ -23,7 +26,7 @@ const MODE_HELP: Record<CameraMode, string> = {
  * Ajustes del jugador. La perspectiva SOLO se elige aquí. Todo se guarda en
  * este dispositivo y se puede restablecer.
  */
-export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEditHud, onResetAll, onFullscreen, onClose }: Props) {
+export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEditHud, onResetAll, onFullscreen, onClose, volume = DEFAULT_VOLUME, onVolume }: Props) {
   const ids = { look: useId(), aim: useId(), invert: useId() };
   const [confirmReset, setConfirmReset] = useState(false);
   const set = (patch: Partial<GameSettings>) => onChange({ ...settings, ...patch });
@@ -82,6 +85,23 @@ export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEd
             <input id={ids.invert} type="checkbox" checked={settings.invertY} onChange={(e) => set({ invertY: e.target.checked })} />
             <span>Invertir el eje vertical</span>
           </label>
+        </section>
+
+        <section className="settings__sec" aria-label="Sonido">
+          <h3>Sonido</h3>
+          <div className="settings__row">
+            <label htmlFor={`${ids.look}-vol`}>Volumen de efectos</label>
+            <output htmlFor={`${ids.look}-vol`}>{Math.round(volume * 100)} %</output>
+          </div>
+          <input
+            id={`${ids.look}-vol`}
+            type="range"
+            min={VOLUME_LIMITS.min}
+            max={VOLUME_LIMITS.max}
+            step={VOLUME_LIMITS.step}
+            value={volume}
+            onChange={(e) => onVolume?.(Number(e.target.value))}
+          />
         </section>
 
         <section className="settings__sec" aria-label="Pantalla">

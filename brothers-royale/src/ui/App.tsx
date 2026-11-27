@@ -9,8 +9,9 @@ import { InteractPrompt } from './components/InteractPrompt';
 import { HudEditor } from './hud/HudEditor';
 import { HudSlot } from './hud/HudSlot';
 import { loadHudLayout, resetHudLayout, saveHudLayout, type HudLayout } from './hud/layout';
-import { renderInfoWidget } from './hud/widgets';
-import { loadSettings, resetSettings, saveSettings, type GameSettings } from '@/game/settings';
+import { INFO_WIDGETS, renderInfoWidget } from './hud/widgets';
+import { DeathScreen } from './components/DeathScreen';
+import { loadSettings, loadVolume, resetSettings, saveSettings, saveVolume, type GameSettings } from '@/game/settings';
 import { QualityToggle } from './components/QualityToggle';
 import { Hud } from './components/Hud';
 import { OnlinePanel } from './components/OnlinePanel';
@@ -28,6 +29,7 @@ const HINT_MS = 10000;
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const [game, setGame] = useState<Game | null>(null);
   const [progress, setProgress] = useState({ value: 0, label: 'Preparando la isla' });
   const [ready, setReady] = useState(false);
@@ -38,6 +40,7 @@ export function App() {
   const [hint, setHint] = useState(true);
   const [settings, setSettings] = useState<GameSettings>(() => loadSettings());
   const [hudLayout, setHudLayout] = useState<HudLayout>(() => loadHudLayout());
+  const [volume, setVolume] = useState(() => loadVolume());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingHud, setEditingHud] = useState(false);
 
@@ -55,6 +58,7 @@ export function App() {
       return;
     }
     setGame(g);
+    if (overlayRef.current) g.attachOverlay(overlayRef.current);
     if (import.meta.env.DEV || new URLSearchParams(window.location.search).has('debug')) window.__BR_GAME__ = g;
     g.events.on('progress', (p) => setProgress(p));
     g.events.on('ready', () => setReady(true));
@@ -82,6 +86,10 @@ export function App() {
     game.setCameraMode(settings.perspective);
     game.setLookSettings({ camera: settings.lookSensitivity, aim: settings.aimSensitivity, invertY: settings.invertY });
   }, [game, ready, settings]);
+
+  useEffect(() => {
+    game?.setVolume(volume);
+  }, [game, volume]);
 
   // Con Ajustes o el editor abiertos, el personaje no se mueve y el ratón se suelta.
   useEffect(() => {
@@ -114,9 +122,10 @@ export function App() {
   return (
     <main className="app">
       <canvas ref={canvasRef} className="app__canvas" aria-label="Escena del juego" onClick={onCanvasClick} onContextMenu={(e) => e.preventDefault()} />
+      <div ref={overlayRef} className="app__combat" />
       {ready && game && !editingHud && (
         <div className="hud-safe hud-safe--info" aria-label="Estado del jugador">
-          {(['health', 'lives', 'inventory', 'minimap'] as const).map((id) => (
+          {INFO_WIDGETS.map((id) => (
             <HudSlot key={id} id={id} layout={hudLayout[id]}>
               {renderInfoWidget(id, game)}
             </HudSlot>
@@ -147,13 +156,19 @@ export function App() {
           }
         />
       )}
-      {showTouch && !editingHud && !settingsOpen && <TouchControls touch={game.input.touch} layout={hudLayout} mode={settings.perspective} />}
+      {showTouch && !editingHud && !settingsOpen && <TouchControls touch={game.input.touch} layout={hudLayout} mode={settings.perspective} game={game} />}
+      {ready && game && !editingHud && <DeathScreen game={game} />}
       {ready && game && settingsOpen && !editingHud && (
         <SettingsPanel
           settings={settings}
           quality={<QualityToggle events={game.events} initial={game.qualityTier} onChange={(t) => game.setQuality(t)} />}
           canFullscreen={isTouch && canFullscreen()}
           onChange={updateSettings}
+          volume={volume}
+          onVolume={(v) => {
+            setVolume(v);
+            saveVolume(v);
+          }}
           onEditHud={() => setEditingHud(true)}
           onFullscreen={() => void enterFullscreenLandscape()}
           onResetAll={() => {

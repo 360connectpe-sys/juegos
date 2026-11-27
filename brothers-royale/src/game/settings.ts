@@ -76,3 +76,33 @@ export function safeStorage(): Storage | null {
     return null;
   }
 }
+
+/**
+ * Volumen de efectos (0..1). Clave propia para no cambiar el formato de
+ * `br.settings.v1`; se valida igual al leerlo.
+ */
+export const VOLUME_KEY = 'br.volume.v1';
+export const DEFAULT_VOLUME = 0.7;
+export const VOLUME_LIMITS = { min: 0, max: 1, step: 0.05 } as const;
+
+export function parseVolume(raw: unknown): number {
+  const n = typeof raw === 'string' ? Number(raw) : raw;
+  return num(n, DEFAULT_VOLUME, VOLUME_LIMITS);
+}
+
+export function loadVolume(storage: Pick<Storage, 'getItem'> | null = safeStorage()): number {
+  try {
+    const txt = storage?.getItem(VOLUME_KEY);
+    return txt === null || txt === undefined ? DEFAULT_VOLUME : parseVolume(txt);
+  } catch {
+    return DEFAULT_VOLUME;
+  }
+}
+
+export function saveVolume(v: number, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
+  try {
+    storage?.setItem(VOLUME_KEY, String(parseVolume(v)));
+  } catch {
+    /* sin almacenamiento */
+  }
+}

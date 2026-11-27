@@ -6,7 +6,8 @@
  *  - Armas: 1 por hueco. Botiquines: hasta 3 por hueco.
  *  - Munición: en una bolsa aparte por tipo (no ocupa huecos), con tope.
  */
-import { AMMO, isAmmo, isItemKind, ITEMS, RARITIES, type AmmoKind, type ItemStack } from './items';
+import { WEAPON_STATS } from './combat/weapons';
+import { AMMO, isAmmo, isItemKind, isWeapon, ITEMS, RARITIES, type AmmoKind, type ItemStack, type WeaponKind } from './items';
 
 export const INVENTORY_SLOTS = 5;
 export const AXE_SLOT = 0;
@@ -34,7 +35,7 @@ export interface AddResult {
   taken: number;
 }
 
-const clone = (inv: Inventory): Inventory => ({ slots: inv.slots.map((s) => (s ? { ...s } : null)), ammo: { ...inv.ammo }, selected: inv.selected });
+export const clone = (inv: Inventory): Inventory => ({ slots: inv.slots.map((s) => (s ? { ...s } : null)), ammo: { ...inv.ammo }, selected: inv.selected });
 
 /**
  * Añade un objeto. Munición → bolsa (hasta el tope; el resto se queda).
@@ -95,6 +96,52 @@ export function droppableItems(inv: Inventory): ItemStack[] {
   return items;
 }
 
+/** Balas en el cargador de un arma (sin definir = lleno). */
+export function magOf(item: ItemStack): number {
+  if (!isWeapon(item.kind)) return 0;
+  return item.mag ?? WEAPON_STATS[item.kind].magazine;
+}
+
+/** Cambia las balas del cargador del hueco `slot` (inmutable). */
+export function withMag(inv: Inventory, slot: number, mag: number): Inventory {
+  const out = clone(inv);
+  const s = out.slots[slot];
+  if (s && isWeapon(s.kind)) s.mag = Math.max(0, Math.min(WEAPON_STATS[s.kind].magazine, mag));
+  return out;
+}
+
+/**
+ * Recarga el arma del hueco `slot` con la munición de la bolsa (inmutable).
+ * Devuelve null si no hay nada que recargar.
+ */
+export function reloadWeapon(inv: Inventory, slot: number): Inventory | null {
+  const s = inv.slots[slot];
+  if (!s || !isWeapon(s.kind)) return null;
+  const kind = s.kind as WeaponKind;
+  const ammo = ITEMS[kind].ammo!;
+  const need = WEAPON_STATS[kind].magazine - magOf(s);
+  const take = Math.min(need, inv.ammo[ammo]);
+  if (take <= 0) return null;
+  const out = clone(inv);
+  out.slots[slot]!.mag = magOf(s) + take;
+  out.ammo[ammo] -= take;
+  return out;
+}
+
+/** Gasta una unidad del hueco (botiquín). El hueco queda libre al llegar a 0. */
+export function consumeOne(inv: Inventory, slot: number): Inventory {
+  const out = clone(inv);
+  const s = out.slots[slot];
+  if (!s || slot === AXE_SLOT) return inv;
+  if (s.qty > 1) s.qty -= 1;
+  else out.slots[slot] = null;
+  return out;
+}
+
+/** Cargador válido: solo en armas, entero entre 0 y su capacidad. */
+export const isValidMag = (s: { kind: ItemStack['kind']; mag?: unknown }): boolean =>
+  s.mag === undefined || (isWeapon(s.kind) && Number.isInteger(s.mag) && (s.mag as number) >= 0 && (s.mag as number) <= WEAPON_STATS[s.kind as WeaponKind].magazine);
+
 /** Valida un inventario recibido por red (el cliente nunca confía a ciegas). */
 export function isValidInventory(v: unknown): v is Inventory {
   if (typeof v !== 'object' || v === null) return false;
@@ -102,7 +149,7 @@ export function isValidInventory(v: unknown): v is Inventory {
   return (
     Array.isArray(o.slots) &&
     o.slots.length === INVENTORY_SLOTS &&
-    o.slots.every((s) => s === null || (typeof s === 'object' && isItemKind(s.kind) && !isAmmo(s.kind) && Number.isSafeInteger(s.qty) && s.qty > 0 && s.qty <= ITEMS[s.kind].stack && (s.rarity === undefined || RARITIES.includes(s.rarity)))) &&
+    o.slots.every((s) => s === null || (typeof s === 'object' && isItemKind(s.kind) && !isAmmo(s.kind) && Number.isSafeInteger(s.qty) && s.qty > 0 && s.qty <= ITEMS[s.kind].stack && (s.rarity === undefined || RARITIES.includes(s.rarity)) && isValidMag(s))) &&
     o.slots[AXE_SLOT]?.kind === 'axe' && o.slots.every((s, i) => i === AXE_SLOT || s?.kind !== 'axe') &&
     typeof o.ammo === 'object' &&
     o.ammo !== null &&

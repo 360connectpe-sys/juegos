@@ -108,6 +108,18 @@ export class PhysicsWorld {
     return !hit || hit.timeOfImpact >= len - slack;
   }
 
+  /**
+   * Rayo contra lo ESTÁTICO (terreno, estructuras, construcciones; nunca
+   * jugadores ni el cofre que se abre: los cofres sí paran balas). Devuelve la
+   * distancia al primer impacto o null. Lo usan los disparos.
+   */
+  castStatic(origin: Vec3, dir: Vec3, maxDistance: number): number | null {
+    if (!(maxDistance > 0)) return null;
+    const ray = new this.R.Ray(origin, dir);
+    const hit = this.world.castRay(ray, maxDistance, true, undefined, CAMERA_QUERY_GROUPS);
+    return hit ? hit.timeOfImpact : null;
+  }
+
   /** Lanza un rayo hacia abajo y devuelve la altura del primer impacto. */
   groundHeightAt(x: number, z: number, fromY = 50): number | null {
     const ray = new this.R.Ray({ x, y: fromY, z }, { x: 0, y: -1, z: 0 });

@@ -33,6 +33,10 @@ export class CameraController {
   distance: number = CAMERA_RIG.thirdDistance;
   /** Último resultado de colisión (para pruebas y depuración). */
   lastHit: number | null = null;
+  /** Apuntando (1ª/3ª): la cámara se acerca un poco (solo vista). */
+  aiming = false;
+  private zoomK = 1;
+  private readonly forwardVec = new Vector3();
   private readonly focusPoint = new Vector3();
   private readonly tmp = new Vector3();
 
@@ -85,6 +89,11 @@ export class CameraController {
     return hideOwnAvatar(this.mode, this.distance);
   }
 
+  /** Dirección a la que mira la cámara en perspectiva (para apuntar). */
+  forward(): Vector3 {
+    return this.perspective.getWorldDirection(this.forwardVec);
+  }
+
   /** Centro para la sombra del sol. */
   get focus(): Vector3 {
     return this.mode === 'isometric' ? this.iso.focus : this.focusPoint;
@@ -102,6 +111,13 @@ export class CameraController {
       return;
     }
     const cam = this.perspective;
+    const base = this.mode === 'first' ? CAMERA_RIG.firstFov : CAMERA_RIG.fov;
+    this.zoomK = dt > 0 ? this.zoomK + ((this.aiming ? CAMERA_RIG.aimZoom : 1) - this.zoomK) * Math.min(1, dt * 14) : this.aiming ? CAMERA_RIG.aimZoom : 1;
+    const fov = base * this.zoomK;
+    if (Math.abs(cam.fov - fov) > 0.01) {
+      cam.fov = fov;
+      cam.updateProjectionMatrix();
+    }
     const head = pivotPoint(feet, this.mode);
     this.focusPoint.set(feet.x, feet.y, feet.z);
     cam.rotation.set(-this.look.pitch, this.look.yaw + Math.PI, 0);
@@ -114,7 +130,9 @@ export class CameraController {
 
     // 3ª persona: sobre el hombro derecho, detrás y elevada según la inclinación.
     const f = forwardFromYaw(this.look.yaw);
-    const shoulder = { x: head.x - f.y * CAMERA_RIG.shoulderOffset, y: head.y, z: head.z + f.x * CAMERA_RIG.shoulderOffset };
+    // Al apuntar, la cámara se separa más del hombro para no tapar la mira con el personaje.
+    const offset = CAMERA_RIG.shoulderOffset * (1 + ((1 - this.zoomK) / (1 - CAMERA_RIG.aimZoom)) * 0.7);
+    const shoulder = { x: head.x - f.y * offset, y: head.y, z: head.z + f.x * offset };
     const d = thirdPersonDirection(this.look.yaw, this.look.pitch);
     const target = this.tmp.set(shoulder.x + d.x * this.desiredDistance, shoulder.y + d.y * this.desiredDistance, shoulder.z + d.z * this.desiredDistance);
     // Colisión: esfera desde la cabeza hasta la posición deseada.

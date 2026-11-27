@@ -7,7 +7,8 @@ import type { Locomotion, PlayerState } from './types';
  *
  * Por jugador, 10 enteros:
  *   [netId, x, y, z (cm), yaw (mrad), vx, vy, vz (cm/s), flags, lastSeq]
- * flags: bit 0 = grounded; bits 1-3 = índice de locomoción.
+ * flags: bit 0 = grounded; bits 1-3 = índice de locomoción; bits 4-13 =
+ * estado de combate visible (`shared/combat/gear.ts`: arma, rareza, acción, muerte).
  */
 export const PACKED_STRIDE = 10;
 
@@ -29,10 +30,12 @@ export interface PublicPlayer {
   grounded: boolean;
   locomotion: Locomotion;
   lastSeq: number;
+  /** Estado de combate visible empaquetado (0 = nada en la mano). */
+  gear?: number;
 }
 
 /** Añade un jugador al array aplanado `out`. */
-export function packPlayer(out: number[], netId: number, s: PlayerState): void {
+export function packPlayer(out: number[], netId: number, s: PlayerState, gear = 0): void {
   const loco = Math.max(0, LOCOMOTIONS.indexOf(s.locomotion));
   out.push(
     netId,
@@ -43,7 +46,7 @@ export function packPlayer(out: number[], netId: number, s: PlayerState): void {
     Math.round(s.velocity.x * VEL),
     Math.round(s.velocity.y * VEL),
     Math.round(s.velocity.z * VEL),
-    (s.grounded ? 1 : 0) | (loco << 1),
+    (s.grounded ? 1 : 0) | (loco << 1) | ((gear & 0x3ff) << 4),
     s.lastProcessedSeq,
   );
 }
@@ -69,6 +72,7 @@ export function unpackPlayers(p: unknown): PublicPlayer[] {
       grounded: (flags & 1) === 1,
       locomotion: LOCOMOTIONS[(flags >> 1) & 7] ?? 'idle',
       lastSeq: n[9]!,
+      gear: (flags >> 4) & 0x3ff,
     });
   }
   return out;
@@ -85,6 +89,7 @@ export function toPlayerState(p: PublicPlayer, id: string, name: string): Player
     grounded: p.grounded,
     locomotion: p.locomotion,
     lastProcessedSeq: p.lastSeq,
+    gear: p.gear ?? 0,
   };
 }
 
@@ -102,5 +107,6 @@ export function writePlayerState(out: PlayerState, p: PublicPlayer, id: string, 
   out.grounded = p.grounded;
   out.locomotion = p.locomotion;
   out.lastProcessedSeq = p.lastSeq;
+  out.gear = p.gear ?? 0;
   return out;
 }
