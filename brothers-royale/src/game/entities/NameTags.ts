@@ -4,6 +4,7 @@ import type { Vec3 } from '@shared/types';
 export class NameTags {
   readonly root=document.createElement('div');
   private readonly labels=new Map<string,HTMLSpanElement>();
+  private readonly seen=new Set<string>();
   private readonly visible=new Map<string,boolean>();
   private readonly point=new Vector3();
   private readonly from=new Vector3();
@@ -11,7 +12,7 @@ export class NameTags {
   constructor(){this.root.className='name-tags';this.root.setAttribute('aria-label','Nombres de jugadores');}
   frame(players:Iterable<{id:string;name:string;position:Vec3;shown:boolean}>,camera:Camera,width:number,height:number,dt:number,los:(a:Vec3,b:Vec3)=>boolean):void{
     this.timer+=dt;const check=this.timer>=.1;if(check)this.timer=0;
-    const seen=new Set<string>();
+    const seen=this.seen;seen.clear();
     for(const p of players){
       seen.add(p.id);let label=this.labels.get(p.id);
       if(!label){if(this.labels.size>=8)continue;label=document.createElement('span');this.labels.set(p.id,label);this.root.append(label);}

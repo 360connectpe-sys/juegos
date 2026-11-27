@@ -1,4 +1,4 @@
-import { BatchedMesh, type BufferGeometry, Matrix4, MeshLambertMaterial } from 'three';
+import { BatchedMesh, type BufferGeometry, Group, InstancedMesh, Matrix4, MeshLambertMaterial } from 'three';
 import type { ItemKind, Rarity } from '@shared/items';
 import { box, merge } from '../world/geometry';
 
@@ -87,7 +87,7 @@ function allHeldGeometries(): [string, BufferGeometry][] {
  * (mismo material de color por vértice): 0 draw calls extra. Sin anfitrión
  * (pruebas) crea su propio lote: 1 draw call.
  */
-export class WeaponBatch {
+export class WeaponBatch implements HeldItemsRenderer {
   static readonly MAX = 24;
   readonly mesh: BatchedMesh;
   private readonly own: boolean;
@@ -173,6 +173,86 @@ export class WeaponBatch {
     this.mesh.removeFromParent();
     this.mesh.dispose();
     (this.mesh.material as MeshLambertMaterial).dispose();
+  }
+}
+
+/** Lo mínimo que el juego usa para dibujar lo que se lleva en la mano. */
+export interface HeldItemsRenderer {
+  begin(): void;
+  place(owner: string, key: string, matrix: Matrix4): void;
+  end(): void;
+  release(owner: string): void;
+  readonly count: number;
+  dispose(): void;
+}
+
+/**
+ * Alternativa a WeaponBatch sin WEBGL_multi_draw (Safari en iOS): una
+ * InstancedMesh por modelo (14 como mucho), creada al primer uso y oculta si
+ * nadie lo lleva. Draw calls = modelos distintos a la vista (normalmente 1-4)
+ * en vez de 1 por jugador. Sin sombras.
+ */
+export class InstancedHeldItems implements HeldItemsRenderer {
+  static readonly MAX = 24;
+  readonly root = new Group();
+  private readonly material = new MeshLambertMaterial({ vertexColors: true });
+  private readonly meshes = new Map<string, InstancedMesh>();
+  private readonly counts = new Map<string, number>();
+  private used = 0;
+
+  constructor() {
+    this.root.name = 'held-items';
+  }
+
+  begin(): void {
+    for (const k of this.counts.keys()) this.counts.set(k, 0);
+    this.used = 0;
+  }
+
+  place(_owner: string, key: string, matrix: Matrix4): void {
+    let mesh = this.meshes.get(key);
+    if (!mesh) {
+      const [kind, rarity] = key.split(':') as [HeldKind, Rarity];
+      if (!HELD_KINDS.includes(kind)) return;
+      mesh = new InstancedMesh(heldGeometry(kind, rarity ?? 'common'), this.material, InstancedHeldItems.MAX);
+      mesh.name = `held:${key}`;
+      mesh.frustumCulled = false; // se reubican cada frame por todo el mapa
+      mesh.count = 0;
+      this.meshes.set(key, mesh);
+      this.root.add(mesh);
+    }
+    const n = this.counts.get(key) ?? 0;
+    if (n >= InstancedHeldItems.MAX) return;
+    mesh.setMatrixAt(n, matrix);
+    this.counts.set(key, n + 1);
+    this.used++;
+  }
+
+  end(): void {
+    for (const [key, mesh] of this.meshes) {
+      const n = this.counts.get(key) ?? 0;
+      mesh.count = n;
+      mesh.visible = n > 0;
+      if (n > 0) mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  release(): void {
+    /* sin estado por jugador: cada frame se recoloca todo */
+  }
+
+  get count(): number {
+    return this.used;
+  }
+
+  dispose(): void {
+    this.root.removeFromParent();
+    for (const m of this.meshes.values()) {
+      m.geometry.dispose();
+      m.dispose();
+    }
+    this.meshes.clear();
+    this.material.dispose();
   }
 }
 

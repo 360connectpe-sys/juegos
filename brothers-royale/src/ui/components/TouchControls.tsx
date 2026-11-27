@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import type { CameraMode } from '@/engine/camera/cameraMath';
 import type { TouchSource } from '@/game/input/sources';
+import { TouchDrag, type DragResult } from '@/game/input/touchDrag';
+import { Buttons } from '@shared/types';
 import type { Game } from '@/game/Game';
 import type { Inventory } from '@shared/inventory';
 import { HudSlot } from '../hud/HudSlot';
@@ -24,10 +26,9 @@ export function attackLabel(inv: Inventory | null | undefined): string {
 }
 
 /** Acciones con efecto en la fase 6 (las demás siguen reservadas). */
-const ACTIVE_ACTIONS = new Set<HudElementId>(['attack', 'aim', 'reload', 'interact']);
+const ACTIVE_ACTIONS = new Set<HudElementId>(['attack', 'aim', 'reload', 'interact', 'build']);
 
 const RADIUS = 56; // px de recorrido del stick (a escala 1)
-const AIM_RADIUS = 60; // px del "stick" de apuntado isométrico
 
 /** Botones de acción (envían su bit; construir aún no tiene efecto). */
 const ACTION_BUTTONS = HUD_ELEMENTS.filter((e) => e.action !== undefined) as readonly { id: HudElementId; label: string; action: number }[];
@@ -54,8 +55,12 @@ export function TouchControls({ touch, layout = defaultHudLayout(), mode = 'isom
   const stickPointer = useRef<number | null>(null);
   const origin = useRef({ x: 0, y: 0 });
   const lookPointer = useRef<number | null>(null);
-  const lookLast = useRef({ x: 0, y: 0 });
-  const lookStart = useRef({ x: 0, y: 0 });
+  const lookDrag = useRef(new TouchDrag());
+  // Disparo: el mismo dedo que mantiene el botón puede deslizarse para mirar/apuntar.
+  const firePointer = useRef<number | null>(null);
+  const fireDrag = useRef(new TouchDrag());
+  const [firing, setFiring] = useState(false);
+  const [aimOn, setAimOn] = useState(touch.aiming);
   const jumpPointer = useRef<number | null>(null);
   const [sprinting, setSprinting] = useState(touch.sprinting);
   const [jumping, setJumping] = useState(false);
@@ -121,35 +126,59 @@ export function TouchControls({ touch, layout = defaultHudLayout(), mode = 'isom
     restBase();
   };
 
+  /** Aplica un arrastre (zona derecha o botón de disparo) a la cámara o al apuntado. */
+  const applyDrag = (r: DragResult) => {
+    if (r.kind === 'look') touch.addLook(r.dx, r.dy);
+    else if (r.kind === 'aim') touch.setAim(r.x, r.y);
+  };
+
   // Zona de mirada / apuntado (mitad derecha).
   const onLookDown = (e: PointerEvent<HTMLDivElement>) => {
     if (lookPointer.current !== null) return;
     lookPointer.current = e.pointerId;
     e.currentTarget.setPointerCapture?.(e.pointerId);
-    lookLast.current = { x: e.clientX, y: e.clientY };
-    lookStart.current = { x: e.clientX, y: e.clientY };
+    lookDrag.current.start(e.clientX, e.clientY);
   };
   const onLookMove = (e: PointerEvent) => {
     if (e.pointerId !== lookPointer.current) return;
-    if (modeRef.current === 'isometric') {
-      // Isométrica: el arrastre es un stick de apuntado (dirección desde donde se tocó).
-      let ax = (e.clientX - lookStart.current.x) / AIM_RADIUS;
-      let ay = (lookStart.current.y - e.clientY) / AIM_RADIUS;
-      const l = Math.hypot(ax, ay);
-      if (l > 1) {
-        ax /= l;
-        ay /= l;
-      }
-      touch.setAim(ax, ay);
-    } else {
-      touch.addLook(e.clientX - lookLast.current.x, e.clientY - lookLast.current.y);
-    }
-    lookLast.current = { x: e.clientX, y: e.clientY };
+    applyDrag(lookDrag.current.move(e.clientX, e.clientY, modeRef.current === 'isometric'));
   };
   const onLookUp = (e: PointerEvent) => {
     if (e.pointerId !== lookPointer.current) return;
     lookPointer.current = null;
-    touch.setAim(0, 0);
+    lookDrag.current.end();
+    if (firePointer.current === null || !fireDrag.current.moving) touch.setAim(0, 0);
+  };
+
+  // Disparo / golpe con hacha: mantener = atacar; deslizar el mismo dedo = mirar/apuntar.
+  const onFireDown = (e: PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    if (firePointer.current !== null) return;
+    firePointer.current = e.pointerId;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    fireDrag.current.start(e.clientX, e.clientY);
+    touch.setAction(Buttons.FIRE, true);
+    setFiring(true);
+  };
+  const onFireMove = (e: PointerEvent) => {
+    if (e.pointerId !== firePointer.current) return;
+    applyDrag(fireDrag.current.move(e.clientX, e.clientY, modeRef.current === 'isometric'));
+  };
+  /** Soltar, cancelar o perder la captura del dedo detiene el disparo SIEMPRE. */
+  const onFireEnd = (e: PointerEvent) => {
+    if (e.pointerId !== firePointer.current) return;
+    firePointer.current = null;
+    const aimed = fireDrag.current.moving;
+    fireDrag.current.end();
+    touch.setAction(Buttons.FIRE, false);
+    if (aimed && lookPointer.current === null) touch.setAim(0, 0);
+    setFiring(false);
+  };
+
+  // Mira conmutable: una pulsación la activa, otra la desactiva.
+  const onAimToggle = (e: PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setAimOn(touch.toggleAim());
   };
 
   const onJumpDown = (e: PointerEvent<HTMLButtonElement>) => {
@@ -221,14 +250,39 @@ export function TouchControls({ touch, layout = defaultHudLayout(), mode = 'isom
         </HudSlot>
         {ACTION_BUTTONS.map((b) => (
           <HudSlot key={b.id} id={b.id} layout={layout[b.id]} interactive>
-            <button
-              type="button"
-              className={`touch__btn touch__action touch__action--${b.id}${held & b.action ? ' is-on' : ''}`}
-              title={ACTIVE_ACTIONS.has(b.id) ? undefined : 'Acción reservada: llega en una próxima fase'}
-              {...actionProps(b.action)}
-            >
-              {b.id === 'attack' ? attack : b.label}
-            </button>
+            {b.id === 'attack' ? (
+              <button
+                type="button"
+                className={`touch__btn touch__action touch__action--attack${firing ? ' is-on' : ''}`}
+                onPointerDown={onFireDown}
+                onPointerMove={onFireMove}
+                onPointerUp={onFireEnd}
+                onPointerCancel={onFireEnd}
+                onLostPointerCapture={onFireEnd}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                {attack}
+              </button>
+            ) : b.id === 'aim' ? (
+              <button
+                type="button"
+                className={`touch__btn touch__action touch__action--aim${aimOn ? ' is-on is-toggled' : ''}`}
+                aria-pressed={aimOn}
+                onPointerDown={onAimToggle}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                {b.label}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`touch__btn touch__action touch__action--${b.id}${held & b.action ? ' is-on' : ''}`}
+                title={ACTIVE_ACTIONS.has(b.id) ? undefined : 'Acción reservada: llega en una próxima fase'}
+                {...actionProps(b.action)}
+              >
+                {b.label}
+              </button>
+            )}
           </HudSlot>
         ))}
       </div>

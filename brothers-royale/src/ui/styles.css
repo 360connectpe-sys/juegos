@@ -402,17 +402,19 @@ kbd {
   box-shadow: 0 2px 0 var(--ink);
 }
 .touch__jump {
-  width: 86px;
-  height: 86px;
+  width: 72px;
+  height: 72px;
   background: var(--sun);
 }
 .touch__sprint {
-  width: 64px;
-  height: 64px;
+  width: 54px;
+  height: 54px;
   margin-bottom: 40px;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   background: var(--foam);
 }
+/* En el HUD posicionable, el margen antiguo desplazaría el centro del botón. */
+.hud-slot .touch__sprint { margin-bottom: 0; }
 .touch__sprint.is-on {
   background: var(--mint);
 }
@@ -549,12 +551,12 @@ kbd {
     gap: 12px;
   }
   .touch__jump {
-    width: min(84px, 22vh);
-    height: min(84px, 22vh);
+    width: min(72px, 20vh);
+    height: min(72px, 20vh);
   }
   .touch__sprint {
-    width: min(62px, 16vh);
-    height: min(62px, 16vh);
+    width: min(54px, 15vh);
+    height: min(54px, 15vh);
     margin-bottom: min(46px, 12vh);
   }
   .fullscreen-btn {
@@ -643,22 +645,29 @@ kbd {
   margin: 0;
 }
 .touch__action {
-  width: 66px;
-  height: 66px;
+  width: 54px;
+  height: 54px;
   padding: 0;
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   letter-spacing: -0.01em;
   background: var(--foam);
 }
 .touch__action--attack {
-  width: 78px;
-  height: 78px;
-  font-size: 0.95rem;
+  width: 66px;
+  height: 66px;
+  font-size: 0.82rem;
   background: var(--coral);
   color: var(--foam);
 }
 .touch__action--aim {
   background: var(--mint);
+}
+/* Mira conmutable activada: claramente visible (anillo y color invertido). */
+.touch__action--aim.is-toggled {
+  background: var(--ink);
+  color: var(--mint);
+  box-shadow: 0 0 0 3px var(--mint), 0 2px 0 var(--ink);
+  transform: none;
 }
 .touch__action.is-on {
   transform: translateY(3px);
@@ -1374,11 +1383,18 @@ kbd {
   border: 1px solid #bb925c;
   border-radius: 8px;
 }
-.w-construction { pointer-events: auto; max-width: 290px; font-size: 12px; }
-.w-construction button { color: #fff; background: #37435a; border: 1px solid #8790a2; border-radius: 4px; padding: 6px; margin: 2px; min-height: 32px; touch-action: manipulation; }
-.w-construction button[aria-pressed=true] { background: #846139; }
-.w-construction button:disabled { opacity: .45; }
-.w-construction p { margin: 4px; }
+/* Construcción móvil: tres botones circulares (pared, rampa, suelo), sin ventana central. */
+.w-build { pointer-events: auto; display: flex; flex-direction: column; gap: 8px; }
+.w-build__btn {
+  width: 46px; height: 46px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center;
+  color: #f5e6cf; background: rgb(34 43 61 / 0.82); border: 2px solid #bb925c;
+  box-shadow: 0 2px 0 rgb(23 19 63 / 0.7);
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: pointer;
+}
+.w-build__btn.is-valid { background: #5a3414; border-color: #e8c08a; transform: scale(1.08); }
+.w-build__btn.is-invalid { background: #8f1d1d; border-color: #ff8a8a; transform: scale(1.08); }
+.w-build__icon { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
 
 /* Fase 8: avisos ligeros sin interceptar joystick ni botones de acción. */
 .battle-status { position: fixed; top: max(52px,calc(env(safe-area-inset-top) + 52px)); left: 50%; transform: translateX(-50%); z-index: 9; display: flex; flex-direction: column; align-items: center; gap: 3px; max-width: 50vw; pointer-events: none; text-align: center; font-size: 12px; text-shadow: 0 1px 3px #000; }

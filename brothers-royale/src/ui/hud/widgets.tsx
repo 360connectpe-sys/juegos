@@ -1,5 +1,5 @@
-import { BUILD_KINDS, type BuildKind } from '@shared/building/BuildingState';
-import { useEffect, useRef, useState } from 'react';
+import { type BuildKind } from '@shared/building/BuildingState';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import type { Game, KillFeedEntry } from '@/game/Game';
 import { magOf, type Inventory as InventoryState } from '@shared/inventory';
 import { isWeapon, ITEMS, itemName, type ItemKind, type ItemStack } from '@shared/items';
@@ -383,8 +383,31 @@ export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = 
 
 
 const BUILD_LABELS: Record<BuildKind, string> = { wall: 'Pared', floor: 'Suelo', ramp: 'Rampa', roof: 'Techo' };
+/** Botones directos en pantalla (el techo sigue disponible con V o el mando). */
+export const BUILD_BUTTONS: readonly BuildKind[] = ['wall', 'ramp', 'floor'];
+
+/** Iconos sencillos (SVG en línea) de cada pieza, vistos de lado/en perspectiva. */
+export function BuildIcon({ kind }: { kind: BuildKind }) {
+  const path = kind === 'wall' ? 'M4 5h16v14H4Zm0 5h16M4 14h16M10 5v5M15 10v4M9 14v5'
+    : kind === 'ramp' ? 'M3 19 19 5h2v14Zm4-1 3-3m1 3 3-3m1 3 3-3'
+      : kind === 'floor' ? 'M2 15 9 9h13l-7 6Zm0 0v2h13l7-6v-2M15 15v2'
+        : 'M2 14 12 5l10 9M5 12v6h14v-6';
+  return (
+    <svg viewBox="0 0 24 24" className="w-build__icon" aria-hidden="true">
+      <path d={path} />
+    </svg>
+  );
+}
+
+/**
+ * Construcción sin ventana central: tres botones circulares (pared, rampa,
+ * suelo). Mantener pulsado muestra la vista previa (marrón si es válida, roja
+ * si no); soltar construye una sola vez. Orientación y altura son automáticas.
+ * Con `counter` muestra solo la madera.
+ */
 export function ConstructionWidget({ game, counter = false }: { game: Game | null; counter?: boolean }) {
   const [ui, setUi] = useState(() => game?.buildingUi);
+  const pointer = useRef<number | null>(null);
   useEffect(() => {
     if (!game) return;
     const timer = window.setInterval(() => setUi(previous => {
@@ -394,18 +417,40 @@ export function ConstructionWidget({ game, counter = false }: { game: Game | nul
     return () => window.clearInterval(timer);
   }, [game]);
   if (counter) return <div className="w-wood" aria-label="Madera">Madera {ui?.wood ?? 0}</div>;
-  return <div className="w-construction">
-    <button type="button" onClick={() => game?.toggleBuild()}>{ui?.open ? 'Cerrar construcción' : 'Construir (B)'}</button>
-    {ui?.open && <>
-      <div>{BUILD_KINDS.map(kind => <button type="button" key={kind} aria-pressed={ui.kind === kind} onClick={() => game?.configureBuild(kind)}>{BUILD_LABELS[kind]}</button>)}</div>
-      <button type="button" onClick={() => game?.configureBuild(undefined, true)}>Rotar 90°</button>
-      <button type="button" onClick={() => game?.configureBuild(undefined, false, -1)}>Nivel −</button>
-      <span>Nivel {ui.level}</span>
-      <button type="button" onClick={() => game?.configureBuild(undefined, false, 1)}>Nivel +</button>
-      <button type="button" disabled={!ui.valid} onClick={() => game?.placeBuild()}>Colocar · 10 madera</button>
-      <p>{ui.valid ? 'Colocación válida' : 'Sin material, soporte o espacio libre'}</p>
-    </>}
-  </div>;
+  const end = (confirm: boolean) => (e: PointerEvent<HTMLButtonElement>) => {
+    if (pointer.current !== e.pointerId) return;
+    pointer.current = null;
+    game?.releaseBuild(confirm);
+  };
+  return (
+    <div className="w-build" role="group" aria-label="Construir">
+      {BUILD_BUTTONS.map((kind) => {
+        const active = ui?.holding === kind;
+        return (
+          <button
+            type="button"
+            key={kind}
+            className={`w-build__btn${active ? (ui?.valid ? ' is-valid' : ' is-invalid') : ''}`}
+            aria-label={`${BUILD_LABELS[kind]} (mantén para ver, suelta para construir · 10 madera)`}
+            aria-pressed={active}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              if (pointer.current !== null) return;
+              pointer.current = e.pointerId;
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              game?.pressBuild(kind);
+            }}
+            onPointerUp={end(true)}
+            onPointerCancel={end(false)}
+            onLostPointerCapture={end(false)}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <BuildIcon kind={kind} />
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function LiveLives({ game }: { game: Game }) {

@@ -1,4 +1,4 @@
-import { BatchedMesh, BoxGeometry, type BufferGeometry, ExtrudeGeometry, Group, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Shape, Vector3 } from 'three';
+import { BatchedMesh, type BufferAttribute, BoxGeometry, BufferGeometry, ExtrudeGeometry, Group, Matrix4, Mesh, MeshLambertMaterial, Quaternion, Shape, Vector3 } from 'three';
 import { damp } from '@shared/math';
 import { facesCamera, insideState, type InsideState, type PartLayer, type PlacedPrefab } from '@shared/world/prefab';
 import { merge, paint, transform } from './geometry';
@@ -87,6 +87,56 @@ export function createStaticPrefabBatch(placed: readonly PlacedPrefab[], castSha
 }
 
 /**
+ * Alternativa a InteriorBatch para GPUs sin WEBGL_multi_draw (Safari en iOS):
+ * three.js dibuja un BatchedMesh con UNA llamada por instancia si falta esa
+ * extensión. Aquí todos los edificios con interior van en UNA malla fusionada
+ * (1 draw call, +1 de sombra). Ocultar un edificio (el jugador entra) colapsa
+ * sus vértices a un punto: solo ocurre al entrar o salir, nunca por frame.
+ */
+export class MergedInteriors {
+  readonly mesh: Mesh;
+  private readonly ranges: { start: number; count: number; original: Float32Array }[] = [];
+  private readonly hidden: boolean[] = [];
+
+  constructor(placed: readonly PlacedPrefab[], castShadow: boolean) {
+    const geos: BufferGeometry[] = [];
+    let start = 0;
+    for (const p of placed) {
+      const m = prefabMatrix(p);
+      const all: BufferGeometry[] = [];
+      for (const list of buildPrefabBuckets(p).values()) for (const g of list) all.push(g.applyMatrix4(m));
+      const merged = merge(all);
+      const count = merged.getAttribute('position').count;
+      this.ranges.push({ start, count, original: new Float32Array(0) });
+      this.hidden.push(false);
+      start += count;
+      geos.push(merged);
+    }
+    const geometry = geos.length ? merge(geos) : new BufferGeometry();
+    const pos = geometry.getAttribute('position');
+    for (const r of this.ranges) r.original = (pos?.array as Float32Array | undefined)?.slice(r.start * 3, (r.start + r.count) * 3) ?? new Float32Array(0);
+    this.mesh = staticMesh(geometry, 'buildings', castShadow);
+  }
+
+  setVisible(index: number, visible: boolean): void {
+    const r = this.ranges[index];
+    if (!r || this.hidden[index] === !visible) return;
+    this.hidden[index] = !visible;
+    const attr = this.mesh.geometry.getAttribute('position') as BufferAttribute;
+    const arr = attr.array as Float32Array;
+    if (visible) arr.set(r.original, r.start * 3);
+    else arr.fill(0, r.start * 3, (r.start + r.count) * 3);
+    attr.clearUpdateRanges();
+    attr.addUpdateRange(r.start * 3, r.count * 3);
+    attr.needsUpdate = true;
+  }
+
+  isHidden(index: number): boolean {
+    return this.hidden[index] ?? false;
+  }
+}
+
+/**
  * Todos los edificios con interior (casa grande y casas pequeñas) en UN
  * BatchedMesh: 1 draw call (+1 de sombra) los veas todos o ninguno, con
  * recorte por edificio fuera de cámara. Cuando el jugador entra en uno, solo
@@ -108,7 +158,9 @@ export class InteriorBatch {
       return merge(all);
     });
     const vertices = geos.reduce((n, g) => n + g.getAttribute('position').count, 0);
-    this.mesh = new BatchedMesh(Math.max(placed.length + reserve.instances, 1), Math.max(vertices + reserve.vertices, 3), 0, sharedStaticMaterial());
+    // Material PROPIO: si un BatchedMesh comparte material con mallas normales, three.js
+    // alterna el programa (batching sí/no) y recalcula sus parámetros en cada frame.
+    this.mesh = new BatchedMesh(Math.max(placed.length + reserve.instances, 1), Math.max(vertices + reserve.vertices, 3), 0, new MeshLambertMaterial({ vertexColors: true }));
     this.mesh.name = 'buildings';
     placed.forEach((p, i) => {
       const id = this.mesh.addInstance(this.mesh.addGeometry(geos[i]!));
@@ -204,7 +256,8 @@ export class PrefabView {
     this.state = cutaway ? insideState(this.placed, px, py, pz) : 'outside';
     const targets = visibilityTargets(this.state);
     let allOpaque = true;
-    for (const [key, mesh] of this.meshes) {
+    // Sin `for…of` sobre el Map: evita crear una tupla por grupo y frame (basura en iOS).
+    this.meshes.forEach((mesh, key) => {
       const current = this.opacity.get(key) ?? 1;
       const target = targets[key];
       let next = current;
@@ -224,7 +277,7 @@ export class PrefabView {
       mat.opacity = next;
       mat.depthWrite = next > 0.98;
       mesh.visible = this.split && next > 0.01;
-    }
+    });
     // Fuera y con todo opaco: una sola malla.
     const split = !(this.state === 'outside' && allOpaque);
     if (split !== this.split) {

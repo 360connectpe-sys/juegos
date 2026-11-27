@@ -12,13 +12,26 @@ Estado a 27 de noviembre de 2026, tras cerrar la **fase 9 (lobby, personalizaci�
 |---|---|
 | Repositorio | `360connectpe-sys/juegos`, carpeta `brothers-royale/` (el resto de carpetas son otros juegos: no tocarlos) |
 | Rama de trabajo | `brothers-royale-phase-3.1` (todas las fases desde la 3.1 se acumulan en ella) |
-| Último trabajo | Fase 9 sobre `8d15ae3a60e331769486a149bf2e10c602b8d06c` |
+| Último trabajo | Corrección integral móvil sobre `181d2a6` (MOBILE-FIXES.md); fase 9 sobre `8d15ae3` |
 | `main` | En `85dee86` (fase 2.2). **No fusionar con `main` salvo que se pida explícitamente.** |
-| Pruebas | **362 pruebas en 43 archivos, todas en verde** (`npm run check`): 346 anteriores + 16 de fase 9 |
+| Pruebas | **392 pruebas en 46 archivos, todas en verde** (`npm run check`): 362 de fase 9 + 30 de la corrección móvil |
 | Bundle publicado | `jugar/` regenerado e idéntico a `dist/` (`diff -qr dist jugar` sin diferencias) |
 | Protocolo de red | v8 (`PROTOCOL_VERSION`) |
 | Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6, 7, 8, 9 |
 | Siguiente | Fase 10, pendiente de autorización; incluye validación real de 30 min reservada. |
+| Beta publicada | https://360connectpe-sys.github.io/juegos/brothers-royale/beta/ — GitHub Pages sirve la rama `brothers-royale-beta-pages` (= `main` + `brothers-royale/beta/`, copia de `jugar/`). |
+| Despliegue del servidor | Preparado en la rama independiente `brothers-royale-server-deploy` (DEPLOY.md); aún sin desplegar. |
+| Pendiente móvil | Medir FPS en iPhone 13 Pro físico (Safari) tras la corrección; ver MOBILE-FIXES.md §7 y §9. |
+
+### Corrección móvil (resumen; detalle en MOBILE-FIXES.md)
+- Controles táctiles: `game/input/touchDrag.ts` (disparo/golpe + arrastre del mismo dedo; zona muerta y tope),
+  `TouchSource.toggleAim` (mira conmutable).
+- Construcción: `ConstructionWidget` = 3 botones (pared, rampa, suelo) con `Game.pressBuild`/`releaseBuild`;
+  `planBuild`, `rotationForYaw`, soporte de rampa/suelo y apoyo en laderas en `shared/building/BuildingState.ts`;
+  teclas Z/X/C/V, RB del mando cambia de pieza en modo construcción.
+- Render sin `WEBGL_multi_draw` (`Engine.multiDraw` falso): `MergedInteriors` + `InstancedHeldItems`;
+  `BuildingView` dibuja todas las piezas en una malla dinámica. El lote de edificios tiene material propio.
+- HUD: nueva disposición de fábrica (`defaultHudLayout`) y migración de la anterior (`PREVIOUS_DEFAULTS`).
 
 ### Historial de commits de la rama (antiguo → reciente)
 

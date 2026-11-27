@@ -169,7 +169,8 @@ export function App() {
               <span>Ajustes</span>
             </button>
           }
-          online={
+          // En partida no se muestra «Jugar en línea» (para salir está «Menú principal»).
+          online={playing ? undefined :
             <OnlinePanel
               events={game.events}
               initial={onlineParams}

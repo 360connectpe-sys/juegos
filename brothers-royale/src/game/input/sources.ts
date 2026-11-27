@@ -97,6 +97,9 @@ export const KEY_ACTIONS: Readonly<Record<string, number>> = {
   KeyB: Buttons.BUILD,
 };
 
+/** Teclas de construcción directa (como los tres botones táctiles, más el techo). */
+export const BUILD_KEYS: Readonly<Record<string, 'wall' | 'floor' | 'ramp' | 'roof'>> = { KeyZ: 'wall', KeyX: 'floor', KeyC: 'ramp', KeyV: 'roof' };
+
 export class KeyboardSource implements InputSource {
   readonly device = 'keyboard' as const;
   private readonly keys = new Set<string>();
@@ -106,6 +109,8 @@ export class KeyboardSource implements InputSource {
   zoomDelta = 0;
   /** Hueco pedido con las teclas 1-5 (o null). */
   slotRequest: number | null = null;
+  /** Pieza pedida con Z (pared), X (suelo), C (rampa) o V (techo): abre el modo construcción. */
+  buildRequest: 'wall' | 'floor' | 'ramp' | 'roof' | null = null;
 
   constructor(private readonly target: Window) {
     target.addEventListener('keydown', this.onDown);
@@ -146,6 +151,8 @@ export class KeyboardSource implements InputSource {
     if (e.code === 'Space' && !e.repeat) this.jumpLatch = true;
     const digit = /^(?:Digit|Numpad)([1-5])$/.exec(e.code);
     if (digit && !e.repeat) this.slotRequest = Number(digit[1]) - 1;
+    const piece = BUILD_KEYS[e.code];
+    if (piece && !e.repeat) this.buildRequest = piece;
     const action = KEY_ACTIONS[e.code];
     if (action && !e.repeat) this.actionLatch |= action;
     if (e.code === 'Equal' || e.code === 'NumpadAdd') this.zoomDelta -= 0.1;
@@ -263,6 +270,8 @@ export class TouchSource implements InputSource {
   private move: Vec2 = { x: 0, y: 0 };
   private aim: Vec2 = { x: 0, y: 0 };
   private sprintToggle = false;
+  /** Mira conmutable: una pulsación la activa y otra la desactiva (no hay que mantener). */
+  private aimToggle = false;
   private jumpHeld = false;
   private jumpLatch = false;
   private held = 0;
@@ -290,6 +299,17 @@ export class TouchSource implements InputSource {
 
   get sprinting(): boolean {
     return this.sprintToggle;
+  }
+
+  /** Activa/desactiva la mira (botón Apuntar). Devuelve el nuevo estado. */
+  toggleAim(): boolean {
+    this.aimToggle = !this.aimToggle;
+    this.activity = true;
+    return this.aimToggle;
+  }
+
+  get aiming(): boolean {
+    return this.aimToggle;
   }
 
   /** Botones de acción (ataque, apuntar, recarga, interacción, construcción). */
@@ -329,7 +349,7 @@ export class TouchSource implements InputSource {
       sprint: this.sprintToggle || mag > 0.95,
       jump: this.jumpLatch || this.jumpHeld,
       active: this.activity,
-      actions: this.held | this.latch,
+      actions: this.held | this.latch | (this.aimToggle ? Buttons.AIM : 0),
     };
     if (this.aim.x !== 0 || this.aim.y !== 0) frame.aim = this.aim;
     this.jumpLatch = false;
@@ -342,6 +362,7 @@ export class TouchSource implements InputSource {
     this.move = { x: 0, y: 0 };
     this.aim = { x: 0, y: 0 };
     this.jumpHeld = false;
+    this.aimToggle = false;
     this.held = 0;
     this.lookX = 0;
     this.lookY = 0;

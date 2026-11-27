@@ -40,6 +40,8 @@ export interface FrameInfo {
  */
 export class Engine {
   readonly renderer: WebGLRenderer;
+  /** ¿La GPU admite WEBGL_multi_draw? (BatchedMesh en 1 draw call). Falso en Safari iOS. */
+  readonly multiDraw: boolean;
   readonly scene = new Scene();
   readonly iso: IsometricCamera;
   private readonly timer = new Timer();
@@ -77,6 +79,9 @@ export class Engine {
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    // Safari en iOS no expone WEBGL_multi_draw: sin ella three.js dibuja cada instancia de un
+    // BatchedMesh con su propia llamada. El juego elige mallas fusionadas/instanciadas en ese caso.
+    this.multiDraw = this.renderer.extensions?.has?.('WEBGL_multi_draw') ?? true;
     this.renderer.shadowMap.type = PCFShadowMap;
     // Las sombras se re-dibujan a mano (cada N frames en móvil).
     this.renderer.shadowMap.autoUpdate = false;

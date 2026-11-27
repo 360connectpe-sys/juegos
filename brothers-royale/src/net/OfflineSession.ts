@@ -112,44 +112,65 @@ export class OfflineSession implements GameSession {
     };
   }
 
+  // Vistas creadas UNA vez: el juego las consulta varias veces por frame y antes
+  // se creaba un objeto nuevo en cada acceso (basura constante para el recolector).
+  private matchView: MatchView | null = null;
+  private combatView: CombatView | null = null;
+  private vitalsCache: Vitals | null = null;
+  private battleCache: ReturnType<BattleRound["snapshot"]> | null = null;
+
   get match(): MatchView {
-    const s = this.state;
-    const id = this.localPlayerId;
-    return {
-      chests: s.chests,
-      opened: s.opened,
-      pickups: s.pickups,
-      get inventory() {
-        return s.inventory(id) ?? null;
-      },
-    };
+    if (!this.matchView) {
+      const s = this.state;
+      const id = this.localPlayerId;
+      this.matchView = {
+        chests: s.chests,
+        opened: s.opened,
+        pickups: s.pickups,
+        get inventory() {
+          return s.inventory(id) ?? null;
+        },
+      };
+    }
+    return this.matchView;
   }
 
   get combat(): CombatView {
-    const f = this.fight;
-    const id = this.localPlayerId;
-    return {
-      get vitals(): Vitals {
-        return f.vitals(id)!;
-      },
-    };
+    if (!this.combatView) {
+      const self = this;
+      this.combatView = {
+        get vitals(): Vitals {
+          return (self.vitalsCache ??= self.fight.vitals(self.localPlayerId)!);
+        },
+      };
+    }
+    return this.combatView;
+  }
+
+  /** Invalida lo cacheado: cualquier cambio de ronda, combate o vida pasa por aquí. */
+  private invalidate(): void {
+    this.vitalsCache = null;
+    this.battleCache = null;
   }
 
   requestBuild(request: BuildRequest): boolean {
     return this.round.canAct(this.localPlayerId) && (this.building?.state.place(this.localPlayerId, request, this.local.state.position) ?? false);
   }
 
-  resetPractice():void{this.round.returnToLobby(true);}
-  returnToLobby():boolean{return this.round.returnToLobby();}
-  rematch():boolean{if(this.round.phase==='finished')this.round.returnToLobby();return this.round.start();}
+  resetPractice():void{this.invalidate();this.round.returnToLobby(true);this.invalidate();}
+  returnToLobby():boolean{this.invalidate();const r=this.round.returnToLobby();this.invalidate();return r;}
+  rematch():boolean{this.invalidate();if(this.round.phase==='finished')this.round.returnToLobby();const r=this.round.start();this.invalidate();return r;}
   setProfile(profile:{name:string;skin:number}):boolean{this.local.state.name=profile.name;this.localColor=profile.skin;return true;}
   private localColor=0;
-  get battle() { return this.round.snapshot(); }
-  startRound(): boolean { return this.round.start(); }
+  /** Instantánea de la ronda, calculada una vez por tick (recorre a todos los jugadores). */
+  get battle() { return (this.battleCache ??= this.round.snapshot()); }
+  startRound(): boolean { this.invalidate(); const r = this.round.start(); this.invalidate(); return r; }
 
   selectSlot(slot: number): void {
+    this.invalidate();
     this.state.selectSlot(this.localPlayerId, slot);
     this.flush();
+    this.invalidate();
   }
 
   private *targets(): Generator<TargetPose> {
@@ -158,6 +179,15 @@ export class OfflineSession implements GameSession {
   }
 
   tick(input: PlayerInput, dt: number): void {
+    this.invalidate();
+    try {
+      this.tickInner(input, dt);
+    } finally {
+      this.invalidate();
+    }
+  }
+
+  private tickInner(input: PlayerInput, dt: number): void {
     this.round.before(dt);
     const v = this.fight.vitals(this.localPlayerId);
     this.local.modifiers = { ...DEFAULT_MODIFIERS, frozen: !this.round.canAct(this.localPlayerId),

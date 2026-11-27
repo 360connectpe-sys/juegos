@@ -59,7 +59,7 @@ export const HUD_ELEMENTS: readonly HudElementInfo[] = [
   { id: 'interact', label: 'Usar', kind: 'control', action: Buttons.INTERACT },
   { id: 'build', label: 'Construir', kind: 'control', action: Buttons.BUILD },
   { id: 'wood', label: 'Madera', kind: 'info' },
-  { id: 'construction', label: 'Menú de construcción', kind: 'info' },
+  { id: 'construction', label: 'Construir (pared, rampa, suelo)', kind: 'info' },
   { id: 'health', label: 'Salud', kind: 'info' },
   { id: 'ammo', label: 'Munición', kind: 'info' },
   { id: 'killfeed', label: 'Bajas', kind: 'info' },
@@ -85,26 +85,57 @@ const el = (x: number, y: number, scale = 1, opacity = 1): HudElementLayout => (
  * indicadores en el centro inferior y minimapa arriba a la derecha.
  */
 export function defaultHudLayout(): HudLayout {
+  // Corrección móvil: zona central despejada; construcción y madera en una columna a
+  // la izquierda (pulgar izquierdo, sobre el joystick); combate compacto en el arco del
+  // pulgar derecho; menú bajo el logo (el botón «Jugar en línea» se oculta en partida).
   return {
-    menu:el(.25,.05,.85),
-    wood: el(0.36, 0.77, 0.9),
-    construction: el(0.48, 0.68, 0.85),
-    joystick: el(0.14, 0.72),
-    jump: el(0.915, 0.8, 1),
-    sprint: el(0.8, 0.88, 0.85),
-    attack: el(0.79, 0.6, 1.05),
-    aim: el(0.915, 0.47, 0.85),
-    reload: el(0.675, 0.75, 0.8),
-    interact: el(0.66, 0.92, 0.8, 0.9),
-    build: el(0.565, 0.92, 0.8, 0.9),
-    health: el(0.36, 0.95),
-    ammo: el(0.5, 0.17, 0.9),
-    killfeed: el(0.16, 0.36, 0.85),
-    lives: el(0.36, 0.86, 0.9),
-    inventory: el(0.5, 0.06, 0.9),
-    minimap: el(0.92, 0.27),
+    menu: el(0.12, 0.2, 0.8),
+    wood: el(0.055, 0.31, 0.75),
+    construction: el(0.055, 0.56, 0.85),
+    joystick: el(0.17, 0.74),
+    jump: el(0.93, 0.79, 0.9),
+    sprint: el(0.82, 0.9, 0.8),
+    attack: el(0.8, 0.64, 0.95),
+    aim: el(0.93, 0.56, 0.85),
+    reload: el(0.69, 0.8, 0.85),
+    interact: el(0.6, 0.9, 0.8, 0.9),
+    build: el(0.52, 0.92, 0.75, 0.85),
+    health: el(0.3, 0.95),
+    ammo: el(0.5, 0.17, 0.85),
+    killfeed: el(0.25, 0.33, 0.8),
+    lives: el(0.3, 0.87, 0.85),
+    inventory: el(0.5, 0.06, 0.82),
+    minimap: el(0.92, 0.27, 0.9),
   };
 }
+
+/**
+ * Disposición de fábrica ANTERIOR (fases 7–9). Un elemento guardado que sigue
+ * exactamente en su posición de fábrica antigua no fue personalizado: pasa a
+ * la nueva. Lo que el jugador movió o cambió se respeta.
+ */
+const PREVIOUS_DEFAULTS: Partial<HudLayout> = {
+  menu: el(0.25, 0.05, 0.85),
+  wood: el(0.36, 0.77, 0.9),
+  construction: el(0.48, 0.68, 0.85),
+  joystick: el(0.14, 0.72),
+  jump: el(0.915, 0.8, 1),
+  sprint: el(0.8, 0.88, 0.85),
+  attack: el(0.79, 0.6, 1.05),
+  aim: el(0.915, 0.47, 0.85),
+  reload: el(0.675, 0.75, 0.8),
+  interact: el(0.66, 0.92, 0.8, 0.9),
+  build: el(0.565, 0.92, 0.8, 0.9),
+  health: el(0.36, 0.95),
+  ammo: el(0.5, 0.17, 0.9),
+  killfeed: el(0.16, 0.36, 0.85),
+  lives: el(0.36, 0.86, 0.9),
+  inventory: el(0.5, 0.06, 0.9),
+  minimap: el(0.92, 0.27),
+};
+
+const sameLayout = (a: HudElementLayout, b: HudElementLayout) =>
+  Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6 && Math.abs(a.scale - b.scale) < 1e-6 && Math.abs(a.opacity - b.opacity) < 1e-6 && a.visible === b.visible;
 
 const num = (v: unknown, def: number, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) ? clamp(v, min, max) : def);
 
@@ -125,7 +156,11 @@ export function parseHudLayout(raw: unknown): HudLayout {
   const def = defaultHudLayout();
   const o = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   const out = {} as HudLayout;
-  for (const id of HUD_IDS) out[id] = sanitizeElement(o[id], def[id]);
+  for (const id of HUD_IDS) {
+    const el = sanitizeElement(o[id], def[id]);
+    const old = PREVIOUS_DEFAULTS[id];
+    out[id] = old && sameLayout(el, old) ? { ...def[id] } : el;
+  }
   return out;
 }
 

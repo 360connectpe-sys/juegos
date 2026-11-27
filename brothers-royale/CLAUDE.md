@@ -130,7 +130,14 @@ Fases 7, 8 y 9 implementadas; leer PHASE-7.md, PHASE-8.md y PHASE-9.md. No inici
 cuentas ni persistencia externa sin petición. La prueba real de 30 minutos está reservada para fase 10.
 
 Construcción: BuildingState, BuildingWorld y BuildingView; materiales y colocaciones solo cambian
-en la autoridad. Respetar límites y soporte.
+en la autoridad. Respetar límites y soporte. Desde la corrección móvil (MOBILE-FIXES.md): sin ventana
+central; botones pared/rampa/suelo (mantener = vista previa marrón/roja, soltar = colocar una vez);
+casilla, rotación y altura con `planBuild` (no hay nivel manual); el extremo alto de la rampa y el borde
+del suelo dan soporte; apoyo en laderas sobre el punto más alto. El techo sigue en el sistema (V, mando).
+Render en Safari iOS (sin WEBGL_multi_draw): NUNCA un BatchedMesh con muchas instancias sin alternativa
+(cuesta 1 draw call por instancia); comprobar `Engine.multiDraw`. Un BatchedMesh no comparte material con
+mallas normales (cambio de programa por frame). Nada de objetos nuevos por acceso en getters de sesión.
+Controles táctiles: arrastre con `TouchDrag` (zona muerta + tope); la mira táctil es conmutable.
 Ciclo: BattleRound y zone, compartidos servidor/offline. Vidas, protección y espera avanzan una
 vez por tick real de simulación, no por entrada. Máximo 1800 s también con reloj monotónico.
 Desempate: vidas, eliminations (definitivas), HP. El inventario se conserva al reaparecer hasta

@@ -37,18 +37,25 @@ describe('vista y HUD de construcción', () => {
     expect(buildDef('roof').parts).toHaveLength(2);
     view.dispose();
   });
-  it('migra HUD guardados y permite elegir, rotar y colocar antes de construir', () => {
+  // Adaptada en la corrección móvil: la ventana central (elegir/rotar/nivel/colocar) se
+  // sustituye por tres botones directos; rotación y altura son automáticas.
+  it('migra HUD guardados y construye con botones directos: mantener = vista previa, soltar = colocar', () => {
     const layout=parseHudLayout({jump:defaultHudLayout().jump});
     expect(layout.wood.visible && layout.construction.visible).toBe(true);
     const calls: unknown[][]=[];
-    const game={buildingUi:{open:true,kind:'wall',rotation:0,level:0,wood:30,valid:true},configureBuild:(...args:unknown[])=>calls.push(args),placeBuild:()=>calls.push(['place']),toggleBuild:()=>undefined} as unknown as Game;
+    const game={buildingUi:{open:false,kind:'wall',rotation:0,level:0,wood:30,valid:true,holding:null},pressBuild:(k:unknown)=>calls.push(['press',k]),releaseBuild:(c:unknown)=>calls.push(['release',c])} as unknown as Game;
     render(<ConstructionWidget game={game}/>);
-    for(const label of ['Pared','Suelo','Rampa','Techo'])fireEvent.click(screen.getByRole('button',{name:label}));
-    fireEvent.click(screen.getByRole('button',{name:'Rotar 90°'}));
-    fireEvent.click(screen.getByRole('button',{name:'Colocar · 10 madera'}));
-    expect(calls).toContainEqual(['roof']);
-    expect(calls).toContainEqual([undefined,true]);
-    expect(calls).toContainEqual(['place']);
+    for(const [i,label] of ['Pared','Rampa','Suelo'].entries()){
+      const b=screen.getByRole('button',{name:new RegExp(`^${label}`)});
+      fireEvent.pointerDown(b,{pointerId:10+i});
+      fireEvent.pointerUp(b,{pointerId:10+i});
+    }
+    expect(calls).toEqual([['press','wall'],['release',true],['press','ramp'],['release',true],['press','floor'],['release',true]]);
+    // Cancelar el toque no construye.
+    const wallBtn=screen.getByRole('button',{name:/^Pared/});
+    fireEvent.pointerDown(wallBtn,{pointerId:20});fireEvent.pointerCancel(wallBtn,{pointerId:20});
+    expect(calls.at(-1)).toEqual(['release',false]);
     expect(screen.queryByText(/Editar estructura/)).toBeNull();
+    expect(screen.queryByRole('button',{name:/Rotar|Nivel|Colocar/})).toBeNull();
   });
 });

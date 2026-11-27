@@ -5,7 +5,7 @@ import { StormView } from './world/StormView';
 import { contains } from '@shared/battle/zone';
 import { BuildingWorld } from '@/physics/BuildingWorld';
 import { BuildingView } from './world/BuildingView';
-import { buildTop, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
+import { BUILD_KINDS, planBuild, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
 import { EventBus } from '@/core/EventBus';
 import { Engine } from '@/engine/Engine';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
@@ -31,7 +31,7 @@ import type { LookSettings, SampleContext } from './input/InputManager';
 import { Buttons, type Vec2 } from '@shared/types';
 import { InputManager } from './input/InputManager';
 import type { InputDevice } from './input/sources';
-import { createStaticPrefabBatch, InteriorBatch, PrefabView } from './world/PrefabView';
+import { createStaticPrefabBatch, InteriorBatch, MergedInteriors, PrefabView } from './world/PrefabView';
 import { ChestView, PickupView } from './world/Loot';
 import type { ClientMatchEvent } from '@/net/MatchView';
 import { addItem, type Inventory } from '@shared/inventory';
@@ -42,7 +42,7 @@ import { CombatFx } from './combat/CombatFx';
 import { CombatOverlay } from './combat/CombatOverlay';
 import { LocalWeapon } from './combat/LocalWeapon';
 import { SoundFx, type SoundName } from './combat/SoundFx';
-import { GRIP_IN_ARM, heldKey, MUZZLE, WeaponBatch, type HeldKind } from './combat/WeaponModels';
+import { GRIP_IN_ARM, heldKey, InstancedHeldItems, MUZZLE, WeaponBatch, type HeldItemsRenderer, type HeldKind } from './combat/WeaponModels';
 import type { ClientCombatEvent } from '@/net/CombatView';
 import { fullVitals } from '@/net/CombatView';
 import type { Vitals } from '@shared/combat/CombatState';
@@ -140,6 +140,8 @@ export class Game {
   private buildRotation = 0;
   private buildLevel = 0;
   private buildHeld = false;
+  /** Pieza mantenida con un botón directo (vista previa hasta soltar) o null. */
+  private buildHold: BuildKind | null = null;
   private buildFireHeld = false;
   private buildCandidate: BuildRequest | null = null;
   private buildValid = false;
@@ -176,7 +178,7 @@ export class Game {
   private interactKey = '';
   // --- Combate (fase 6): solo vista, sonido y predicción visual ---------------
   /** Lo que llevan en la mano: se aloja en el lote de edificios al crear el mundo. */
-  private weapons = new WeaponBatch();
+  private weapons: HeldItemsRenderer = new WeaponBatch();
   private readonly fx = new CombatFx();
   readonly sound = new SoundFx();
   private readonly nameTags=typeof document==='undefined'?null:new NameTags();
@@ -291,11 +293,23 @@ export class Game {
     // Edificios con interior: todos en un BatchedMesh (1 draw call); cada uno con su
     // vista recortable para cuando el jugador entra. El resto (sin interior), en un lote estático.
     const interiors = layout.structures.filter((p) => p.def.interior);
-    const buildings = new InteriorBatch(interiors, this.quality.shadows, WeaponBatch.reserve());
-    scene.add(buildings.mesh);
-    // Armas, hacha y botiquines en la mano: en el MISMO lote (0 draw calls extra).
+    // Con WEBGL_multi_draw: BatchedMesh (recorte por edificio) y armas en el mismo lote.
+    // Sin ella (Safari iOS), un BatchedMesh cuesta 1 draw call POR instancia: malla
+    // fusionada para los edificios e InstancedMesh por modelo para las armas.
+    let buildings: { mesh: Object3D; setVisible(i: number, v: boolean): void };
     this.weapons.dispose();
-    this.weapons = new WeaponBatch(buildings.mesh);
+    if (this.engine.multiDraw) {
+      const batch = new InteriorBatch(interiors, this.quality.shadows, WeaponBatch.reserve());
+      buildings = batch;
+      // Armas, hacha y botiquines en la mano: en el MISMO lote (0 draw calls extra).
+      this.weapons = new WeaponBatch(batch.mesh);
+    } else {
+      buildings = new MergedInteriors(interiors, this.quality.shadows);
+      const held = new InstancedHeldItems();
+      scene.add(held.root);
+      this.weapons = held;
+    }
+    scene.add(buildings.mesh);
     this.shadowCasters.push(buildings.mesh);
     interiors.forEach((placed, i) => {
       const view = new PrefabView(placed, this.quality.shadows, { setVisible: (v) => buildings.setVisible(i, v) });
@@ -343,8 +357,21 @@ export class Game {
       input.moveZ = 0;
       input.buttons = 0;
     }
+    // Teclas Z/X/C/V: pieza directa (abre el modo construcción). En ese modo, RB del mando
+    // cambia de pieza (incluido el techo) en vez de cambiar de arma.
+    const piece = this.input.keyboard.buildRequest;
+    this.input.keyboard.buildRequest = null;
+    if (piece && !this.inputSuspended) this.configureBuild(piece);
+    if (this.buildOpen && this.buildHold === null && this.input.gamepad.nextSlotPressed) {
+      this.input.gamepad.nextSlotPressed = false;
+      this.buildKind = BUILD_KINDS[(BUILD_KINDS.indexOf(this.buildKind) + 1) % BUILD_KINDS.length]!;
+    }
     const slot = this.input.consumeSlotRequest(session.match.inventory?.selected ?? 0);
-    if (slot !== null && !this.inputSuspended) session.selectSlot(slot);
+    if (slot !== null && !this.inputSuspended) {
+      session.selectSlot(slot);
+      // Elegir un arma sale del modo construcción (teclado).
+      if (this.buildHold === null) this.buildOpen = false;
+    }
     this.computeAim(session, input);
     this.buildStep(input);
     const attack = this.localWeapon.tick(input, session.match.inventory, this.vitals, dt);
@@ -364,34 +391,60 @@ export class Game {
 
   /** Vista y controles del constructor; la autoridad vuelve a validar cada petición. */
   get buildingUi() {
-    return { open: this.buildOpen, kind: this.buildKind, rotation: this.buildRotation, level: this.buildLevel,
-      wood: this.buildingWorld?.state.wood.get(this.session?.localPlayerId ?? '') ?? 0, valid: this.buildValid };
+    return { open: this.buildOpen, kind: this.buildKind, rotation: this.buildCandidate?.rotation ?? this.buildRotation, level: this.buildLevel,
+      wood: this.buildingWorld?.state.wood.get(this.session?.localPlayerId ?? '') ?? 0, valid: this.buildValid, holding: this.buildHold };
   }
+  /** Elegir pieza (abre el modo construcción). Rotación y nivel son automáticos desde la corrección móvil. */
   configureBuild(kind?: BuildKind, rotate = false, levelDelta = 0): void {
     if (kind) { this.buildKind = kind; this.buildOpen = true; }
     if (rotate) this.buildRotation = (this.buildRotation + 1) % 4;
     this.buildLevel = Math.max(0, Math.min(4, this.buildLevel + levelDelta));
   }
-  toggleBuild(): void { this.buildOpen = !this.buildOpen; }
+  toggleBuild(): void { this.buildOpen = !this.buildOpen; if (!this.buildOpen) this.buildHold = null; }
   placeBuild(): boolean {
-    return !!this.buildCandidate && !!this.session?.requestBuild?.(this.buildCandidate);
+    return !!this.buildCandidate && this.buildValid && !!this.session?.requestBuild?.(this.buildCandidate);
+  }
+  /**
+   * Botones directos (pared, rampa, suelo): al PULSAR se ve la vista previa,
+   * que sigue al jugador y a la cámara; al SOLTAR se construye una sola vez si
+   * es válida. Cancelar el toque (o soltar sin colocación válida) no construye.
+   */
+  pressBuild(kind: BuildKind): void {
+    if (this.inputSuspended) return;
+    this.buildKind = kind;
+    this.buildOpen = true;
+    this.buildHold = kind;
+  }
+  releaseBuild(confirm = true): boolean {
+    if (this.buildHold === null) return false;
+    this.buildHold = null;
+    // La vista previa se recalcula en cada tick: se coloca exactamente lo que se veía.
+    const placed = confirm && this.placeBuild();
+    this.buildOpen = false;
+    this.buildCandidate = null;
+    return placed;
   }
   private buildStep(input: PlayerInput): void {
     const toggle = (input.buttons & Buttons.BUILD) !== 0;
     if (toggle && !this.buildHeld) this.toggleBuild();
     this.buildHeld = toggle;
     const fire = (input.buttons & Buttons.FIRE) !== 0;
-    const feet = this.session?.localPlayer()?.position;
+    const local = this.session?.localPlayer();
+    const feet = local?.position;
     const world = this.buildingWorld;
     if (feet && world && this.buildOpen) {
-      const x = Math.round((feet.x + Math.sin(input.aimYaw) * 4) / 3) * 3;
-      const z = Math.round((feet.z + Math.cos(input.aimYaw) * 4) / 3) * 3;
-      const ground = terrainHeight(x, z, world.layout.terrain);
-      let base = ground;
-      for (const p of world.state.pieces.values()) if (Math.abs(p.x - x) < 1.6 && Math.abs(p.z - z) < 1.6 && buildTop(p) <= feet.y + 3.1) base = Math.max(base, buildTop(p));
-      this.buildCandidate = { kind: this.buildKind, x, y: base + this.buildLevel * 3, z, rotation: this.buildRotation };
-      this.buildValid = !this.vitals.dead && this.session?.battle?.phase !== 'finished' && world.state.canPlace(this.session!.localPlayerId, this.buildCandidate, feet);
-      if (fire && !this.buildFireHeld && this.buildValid) this.placeBuild();
+      const id = this.session!.localPlayerId;
+      const blocked = this.vitals.dead || this.session?.battle?.phase === 'finished';
+      // Casilla, orientación y altura automáticas (cuadrícula de 3 m, dirección de la mirada).
+      const plan = planBuild(this.buildKind, feet, input.aimYaw, {
+        pieces: world.state.pieces.values(),
+        ground: (x, z) => terrainHeight(x, z, world.layout.terrain),
+        canPlace: (r) => !blocked && world.state.canPlace(id, r, feet),
+      });
+      this.buildCandidate = plan.request;
+      this.buildValid = plan.valid;
+      // Modo construcción con teclado/mando: el ataque coloca en el flanco (no dispara).
+      if (this.buildHold === null && fire && !this.buildFireHeld && this.buildValid) this.placeBuild();
       input.buttons &= ~Buttons.FIRE;
     }
     this.buildFireHeld = fire;

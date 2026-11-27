@@ -38,6 +38,95 @@ export function buildPrefab(request: BuildRequest): PlacedPrefab {
 }
 export const buildTop = (p: BuildRequest): number => p.y + (p.kind === 'wall' || p.kind === 'ramp' ? 3 : p.kind === 'floor' ? 0.18 : 0.96);
 
+/** Grosor del suelo: su superficie está a y + FLOOR_TOP (buildTop). */
+export const FLOOR_TOP = 0.18;
+/** Desnivel máximo del terreno bajo una pieza apoyada en el suelo (laderas). */
+export const MAX_GROUND_SLOPE = 1.5;
+/** Puntos de apoyo de una pieza en el terreno (centro y esquinas). */
+const FOOTPRINT: readonly (readonly [number, number])[] = [[0, 0], [-1.3, -1.3], [1.3, 1.3], [-1.3, 1.3], [1.3, -1.3]];
+
+/** Casilla vecina por cuadrante de orientación q: 0 = +Z, 1 = +X, 2 = −Z, 3 = −X (yaw de Three). */
+export const QUADRANT_DIR: readonly (readonly [number, number])[] = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+
+/** Cuadrante (0..3) más cercano a un yaw. */
+export const quadrantFromYaw = (yaw: number): number => (((Math.round(yaw / (Math.PI / 2)) % 4) + 4) % 4);
+
+/**
+ * Rotación automática de una pieza según hacia dónde mira el jugador: la pared
+ * de frente, la rampa subiendo hacia delante (su extremo alto está en −Z local).
+ */
+export const rotationForYaw = (kind: BuildKind, yaw: number): number => {
+  const q = quadrantFromYaw(yaw);
+  return kind === 'ramp' ? (q + 2) % 4 : q;
+};
+
+/** Dirección (x, z) en la que sube una rampa con esta rotación. */
+export const rampRise = (rotation: number): readonly [number, number] => QUADRANT_DIR[(rotation + 2) % 4]!;
+
+/** Altura del terreno bajo la huella de una pieza: [mínima, máxima]. */
+export function groundRange(ground: (x: number, z: number) => number, x: number, z: number): [number, number] {
+  let min = Infinity, max = -Infinity;
+  for (const [dx, dz] of FOOTPRINT) {
+    const h = ground(x + dx, z + dz);
+    if (h < min) min = h;
+    if (h > max) max = h;
+  }
+  return [min, max];
+}
+
+/** Lo que el planificador necesita: el estado y una prueba de validez completa. */
+export interface BuildPlanContext {
+  pieces: Iterable<BuildPiece>;
+  ground(x: number, z: number): number;
+  canPlace(request: BuildRequest): boolean;
+}
+
+export interface BuildPlan {
+  request: BuildRequest;
+  valid: boolean;
+}
+
+/**
+ * Elige casilla, orientación y ALTURA de una pieza sin que el jugador
+ * seleccione el nivel: la casilla vecina en la dirección en la que mira, la
+ * rotación según esa dirección y, entre las alturas posibles (terreno, techo
+ * de lo que hay en la casilla, final de una rampa vecina, suelos vecinos), la
+ * primera válida empezando por las que están a la altura de los pies. Puro:
+ * lo usa el cliente para la vista previa; la autoridad revalida al colocar.
+ */
+export function planBuild(kind: BuildKind, feet: Vec3, yaw: number, ctx: BuildPlanContext): BuildPlan {
+  const q = quadrantFromYaw(yaw);
+  const [dx, dz] = QUADRANT_DIR[q]!;
+  // `+ 0` normaliza −0 (la solicitud viaja por red y se compara en pruebas).
+  const x = Math.round(feet.x / BUILD.size) * BUILD.size + dx * BUILD.size + 0;
+  const z = Math.round(feet.z / BUILD.size) * BUILD.size + dz * BUILD.size + 0;
+  const rotation = rotationForYaw(kind, yaw);
+  const heights: number[] = [groundRange(ctx.ground, x, z)[1]];
+  for (const p of ctx.pieces) {
+    if (Math.abs(p.x - x) < 0.01 && Math.abs(p.z - z) < 0.01) heights.push(buildTop(p));
+    if (p.kind === 'ramp') {
+      const [rx, rz] = rampRise(p.rotation);
+      if (Math.abs(p.x + rx * BUILD.size - x) < 0.01 && Math.abs(p.z + rz * BUILD.size - z) < 0.01) heights.push(kind === 'floor' ? p.y + 3 - FLOOR_TOP : p.y + 3);
+    }
+    if (p.kind === 'floor' && Math.abs(p.x - x) + Math.abs(p.z - z) < BUILD.size + 0.01 && (p.x !== x || p.z !== z)) heights.push(kind === 'floor' ? p.y : buildTop(p));
+  }
+  // Preferencia: a la altura de los pies o por debajo (lo más alto primero), luego por encima.
+  const unique: number[] = [];
+  for (const h of heights) if (!unique.some((u) => Math.abs(u - h) < 0.005)) unique.push(h);
+  unique.sort((a, b) => {
+    const below = (h: number) => h <= feet.y + 1.2;
+    if (below(a) !== below(b)) return below(a) ? -1 : 1;
+    return below(a) ? b - a : a - b;
+  });
+  let first: BuildRequest | null = null;
+  for (const y of unique) {
+    const request: BuildRequest = { kind, x, y, z, rotation };
+    first ??= request;
+    if (ctx.canPlace(request)) return { request, valid: true };
+  }
+  return { request: first ?? { kind, x, y: feet.y, z, rotation }, valid: false };
+}
+
 /** Autoridad compartida. Las consultas de colisión son inyectadas por el mundo físico. */
 export class BuildingState {
   onHarvest: ((id:string,amount:number)=>void)|null=null;
@@ -66,14 +155,34 @@ export class BuildingState {
     this.nextId = Math.max(0, ...this.pieces.keys()) + 1;
     this.env.changed();
   }
+  /**
+   * Apoyada en el terreno: la base coincide con el punto MÁS ALTO de la huella
+   * (también en laderas, hasta MAX_GROUND_SLOPE de desnivel). Antes se exigía
+   * terreno plano con 6 cm de tolerancia y casi cualquier ladera rechazaba el suelo.
+   */
   private grounded(p: BuildRequest): boolean {
-    return [[0, 0], [-1.3, -1.3], [1.3, 1.3], [-1.3, 1.3], [1.3, -1.3]]
-      .every(([dx, dz]) => Math.abs(p.y - this.env.ground(p.x + dx!, p.z + dz!)) < 0.06);
+    const [min, max] = groundRange((x, z) => this.env.ground(x, z), p.x, p.z);
+    return Math.abs(p.y - max) < 0.06 && max - min <= MAX_GROUND_SLOPE;
   }
   private supports(a: BuildRequest, b: BuildRequest): boolean {
     const dx = Math.abs(a.x - b.x), dz = Math.abs(a.z - b.z);
     if (Math.abs(buildTop(a) - b.y) < 0.12 && dx <= 1.51 && dz <= 1.51) return true;
-    return a.kind === 'floor' && b.kind === 'floor' && Math.abs(a.y - b.y) < 0.02 && dx + dz <= 3.01;
+    if (a.kind === 'floor' && b.kind === 'floor' && Math.abs(a.y - b.y) < 0.02 && dx + dz <= 3.01) return true;
+    // El extremo alto de una rampa sostiene la casilla siguiente: otra rampa o una pared
+    // empiezan a su altura y un suelo queda con la superficie a ras (sin escalón).
+    if (a.kind === 'ramp') {
+      const [rx, rz] = rampRise(a.rotation);
+      if (Math.abs(a.x + rx * BUILD.size - b.x) < 0.01 && Math.abs(a.z + rz * BUILD.size - b.z) < 0.01) {
+        const top = a.y + 3;
+        return b.kind === 'floor' ? Math.abs(top - buildTop(b)) < 0.12 : Math.abs(top - b.y) < 0.12;
+      }
+    }
+    // Un suelo sostiene la rampa que arranca en su borde y sube alejándose de él.
+    if (a.kind === 'floor' && b.kind === 'ramp') {
+      const [rx, rz] = rampRise(b.rotation);
+      if (Math.abs(a.x + rx * BUILD.size - b.x) < 0.01 && Math.abs(a.z + rz * BUILD.size - b.z) < 0.01) return Math.abs(buildTop(a) - b.y) < 0.12;
+    }
+    return false;
   }
   canPlace(id: string, r: unknown, feet: Vec3): boolean {
     if (!validBuildRequest(r) || !this.wood.has(id) || (this.wood.get(id) ?? 0) < BUILD.cost) return false;

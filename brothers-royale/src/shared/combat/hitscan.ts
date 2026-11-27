@@ -11,6 +11,7 @@ import { HITBOX } from './weapons';
  * cápsula vertical de un jugador con los pies en `feet`, o null si no la toca.
  */
 export function rayHitbox(o: Vec3, d: Vec3, feet: Vec3, maxDist: number): number | null {
+  // Sin cierres ni arrays temporales: se llama por jugador y por bala/tick.
   const r = HITBOX.radius;
   const ay = feet.y + HITBOX.bottom;
   const by = feet.y + HITBOX.top;
@@ -18,41 +19,40 @@ export function rayHitbox(o: Vec3, d: Vec3, feet: Vec3, maxDist: number): number
   const ox = o.x - feet.x;
   const oz = o.z - feet.z;
   const a = d.x * d.x + d.z * d.z;
-  let best: number | null = null;
-  const consider = (t: number) => {
-    if (t >= 0 && t <= maxDist && (best === null || t < best)) best = t;
-  };
+  let best = Infinity;
   if (a > 1e-12) {
     const b = ox * d.x + oz * d.z;
     const c = ox * ox + oz * oz - r * r;
     const disc = b * b - a * c;
     if (disc >= 0) {
       const sq = Math.sqrt(disc);
-      for (const t of [(-b - sq) / a, (-b + sq) / a]) {
-        const y = o.y + d.y * t;
-        if (y >= ay && y <= by) consider(t);
-      }
+      const t1 = (-b - sq) / a;
+      const t2 = (-b + sq) / a;
+      const y1 = o.y + d.y * t1;
+      const y2 = o.y + d.y * t2;
+      if (y1 >= ay && y1 <= by && t1 >= 0 && t1 <= maxDist && t1 < best) best = t1;
+      if (y2 >= ay && y2 <= by && t2 >= 0 && t2 <= maxDist && t2 < best) best = t2;
     }
   }
   // Semiesferas de los extremos.
-  for (const cy of [ay, by]) {
-    const px = ox;
+  for (let e = 0; e < 2; e++) {
+    const cy = e === 0 ? ay : by;
     const py = o.y - cy;
-    const pz = oz;
-    const b = px * d.x + py * d.y + pz * d.z;
-    const c = px * px + py * py + pz * pz - r * r;
+    const b = ox * d.x + py * d.y + oz * d.z;
+    const c = ox * ox + py * py + oz * oz - r * r;
     const disc = b * b - c;
     if (disc < 0) continue;
     const sq = Math.sqrt(disc);
-    for (const t of [-b - sq, -b + sq]) {
+    for (let k = 0; k < 2; k++) {
+      const t = k === 0 ? -b - sq : -b + sq;
       const y = o.y + d.y * t;
-      if ((cy === ay && y <= ay) || (cy === by && y >= by)) consider(t);
+      if (((e === 0 && y <= ay) || (e === 1 && y >= by)) && t >= 0 && t <= maxDist && t < best) best = t;
     }
   }
   // Origen dentro de la cápsula: impacto inmediato.
   const cy = Math.min(by, Math.max(ay, o.y));
-  if (ox * ox + (o.y - cy) ** 2 + oz * oz <= r * r) consider(0);
-  return best;
+  if (ox * ox + (o.y - cy) ** 2 + oz * oz <= r * r && maxDist >= 0) best = 0;
+  return best === Infinity ? null : best;
 }
 
 /**

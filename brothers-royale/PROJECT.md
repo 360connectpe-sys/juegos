@@ -1,8 +1,22 @@
 # BROTHERS ROYALE — Estado del proyecto
 
-## Estado actual (fase 9 cerrada)
+## Estado actual (fase 9 cerrada + corrección móvil)
 Fases 1–9 hechas. Lobby con anfitrión y Listo, doce polos cosméticos, salas privadas/públicas y
-estadísticas finales autoritativas. **362 pruebas** en 43 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
+estadísticas finales autoritativas. **392 pruebas** en 46 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
+
+## Corrección integral de jugabilidad móvil y optimización (2026-11-27)
+Informe completo con métricas: **MOBILE-FIXES.md**. Sin nuevas mecánicas.
+- Disparo/golpe: el mismo dedo que mantiene el botón gira la cámara o apunta (`TouchDrag`, sin saltos);
+  dos dedos caminan, apuntan y disparan a la vez; soltar/cancelar detiene siempre. Mira conmutable visible.
+- Construcción: sin ventana central; botones pared/rampa/suelo a la izquierda (mantener = vista previa
+  marrón/roja, soltar = construir una vez); orientación y altura automáticas (`planBuild`). Encaje: el extremo
+  de la rampa y el borde del suelo dan soporte, apoyo en laderas; techo con V/mando/modo Construir.
+- HUD móvil: botones más pequeños, centro despejado, «Jugar en línea» oculto en partida, migración de
+  disposiciones de fábrica antiguas y sin solapes en 4 resoluciones horizontales.
+- Rendimiento: sin `WEBGL_multi_draw` (Safari iOS) un `BatchedMesh` costaba 1 draw call por instancia; ahora
+  estructuras en 1 malla, edificios fusionados y armas instanciadas: con 8 jugadores y 128 estructuras,
+  Baja 155 → 20 y Normal 307 → 32. Sin cambio de programa por frame y con menos basura (19,1 → 14,6 MB/5 s).
+  Pendiente: medición física en iPhone.
 
 ## Auditoría integral de fases 3.2, 4 y 5
 

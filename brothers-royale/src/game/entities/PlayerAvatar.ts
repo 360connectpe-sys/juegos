@@ -254,7 +254,9 @@ export class PlayerAvatar {
     const legSwing = s * p.legSwing * amp;
     const armSwing = s * p.armSwing * amp;
     const idleBreath = this.locomotion === 'idle' ? Math.sin(this.time * 2.2) : 0;
-    const [root, body, armL, armR, legL, legR] = this.bones as [Bone, Bone, Bone, Bone, Bone, Bone];
+    // Acceso por índice: desestructurar un array usa el iterador (basura por frame).
+    const b = this.bones;
+    const root = b[0]!, body = b[1]!, armL = b[2]!, armR = b[3]!, legL = b[4]!, legR = b[5]!;
 
     legL.rotation.x = legSwing - p.legsTuck;
     legR.rotation.x = -legSwing - p.legsTuck * 0.4;
@@ -285,7 +287,8 @@ export class PlayerAvatar {
    */
   private combatPose(dt: number): void {
     const g = this.gear;
-    const [root, body, armL, armR] = this.bones as [Bone, Bone, Bone, Bone];
+    const b = this.bones;
+    const root = b[0]!, body = b[1]!, armL = b[2]!, armR = b[3]!;
     this.deadT = damp(this.deadT, g.dead ? 1 : 0, 10, dt);
     root.rotation.x = -this.deadT * 1.45;
     root.position.y += this.deadT * 0.25;
