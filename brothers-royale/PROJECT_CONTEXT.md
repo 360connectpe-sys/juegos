@@ -15,8 +15,8 @@ Continuar desde aquí sin repetir trabajo. Rama: `brothers-royale-phase-3.1`; pu
 | Paso | Estado |
 |---|---|
 | 1. Integrar `brothers-royale-server-deploy` (29b1e23) en desarrollo (aba1015) | HECHO: merge, 402 pruebas |
-| 2. Salas públicas/privadas, 8 máx., ping/conexión/reconexión, anfitrión, revanchas, aislamiento | EN CURSO |
-| 3. Prueba de 30 min, 8 clientes, combate y 128 estructuras (métricas y fugas) | PENDIENTE |
+| 2. Salas públicas/privadas, 8 máx., ping/conexión/reconexión, anfitrión, revanchas, aislamiento | HECHO: `NetBadge` en partida; lo demás ya cubierto por lobby/battle.integration |
+| 3. Prueba de 30 min, 8 clientes, combate y 128 estructuras (métricas y fugas) | EN CURSO: `BR_SOAK10_SECONDS=1800 BR_SOAK10_OUT=soak30.json npx vitest run tests/soak10.integration.test.ts` |
 | 4. Despliegue real (necesita cuenta del usuario) + `config.js` de la beta | PENDIENTE (bloqueado por el usuario) |
 | 5. Docs (DEPLOY.md, PHASE-10.md), `npm run check`, commit/push, beta, verificación pública | PENDIENTE |
 

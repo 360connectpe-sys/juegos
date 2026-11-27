@@ -1467,3 +1467,12 @@ kbd {
 .front__right { max-height:calc(100dvh - 28px); overflow-y:auto; scrollbar-width:thin; }
 .front .front__custom-toggle { padding:7px; min-height:32px; font-size:10px; }
 @media (max-height:520px) { .front__brand .logo { font-size:30px; } .front__footer { display:none; } .front h2 { font-size:25px; } .front .front__settings { min-height:24px; padding:4px 0; margin-top:4px; } }
+
+/* Fase 10: indicador de red en partida (ping, conexión, reconexión). */
+.netbadge { margin: 0; display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 9px;
+  font: 800 0.75rem/1 var(--body); color: var(--foam); background: rgb(23 19 63 / 0.62); pointer-events: none; }
+.netbadge i { width: 8px; height: 8px; border-radius: 50%; background: #aaa; }
+.netbadge--good i { background: var(--mint); }
+.netbadge--ok i { background: var(--sun); }
+.netbadge--bad i { background: var(--coral); }
+.netbadge.is-warn { background: rgb(143 29 29 / 0.82); }

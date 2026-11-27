@@ -3,6 +3,7 @@ import type { GameEvents } from '@/game/Game';
 import type { InputDevice } from '@/game/input/sources';
 import type { CameraMode } from '@/engine/camera/cameraMath';
 import { FpsCounter } from './FpsCounter';
+import { NetBadge } from './NetBadge';
 import type { ReactNode } from 'react';
 import { Logo } from './Logo';
 
@@ -56,6 +57,7 @@ export function Hud({ events, device, showHint, online, quality, mode = 'isometr
         {online}
       </div>
       <div className="hud__right">
+        <NetBadge events={events} />
         <FpsCounter events={events} />
         {quality}
       </div>
