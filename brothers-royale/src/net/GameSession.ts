@@ -1,3 +1,5 @@
+import type { BuildingWorld } from '@/physics/BuildingWorld';
+import type { BuildRequest } from '@shared/building/BuildingState';
 import type { PlayerId, PlayerInput, PlayerState } from '@shared/types';
 import type { ClientCombatEvent, CombatView } from './CombatView';
 import type { ClientMatchEvent, MatchView } from './MatchView';
@@ -18,6 +20,8 @@ export interface PlayerIdentity {
  *    los demás jugadores se interpolan con `PlayerAvatar`.
  */
 export interface GameSession {
+  readonly building?: BuildingWorld;
+  requestBuild?(request: BuildRequest): boolean;
   readonly kind: 'offline' | 'online';
   readonly localPlayerId: PlayerId;
   /** Avanza un tick fijo con la entrada local. */

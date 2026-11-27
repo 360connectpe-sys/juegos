@@ -126,7 +126,7 @@ export function App() {
       {ready && game && !editingHud && (
         <div className="hud-safe hud-safe--info" aria-label="Estado del jugador">
           {INFO_WIDGETS.map((id) => (
-            <HudSlot key={id} id={id} layout={hudLayout[id]}>
+            <HudSlot key={id} id={id} layout={hudLayout[id]} interactive={id === 'construction' || id === 'inventory'}>
               {renderInfoWidget(id, game)}
             </HudSlot>
           ))}

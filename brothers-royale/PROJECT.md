@@ -1,8 +1,8 @@
 # BROTHERS ROYALE — Estado del proyecto
 
-## Estado actual (fase 6 cerrada)
-Fases 1–6 hechas. Combate con armas, curación y muertes provisionales, autoritativo y con compensación de
-latencia. **281 pruebas** en 32 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
+## Estado actual (fase 7 cerrada)
+Fases 1–7 hechas. Combate con armas, curación y muertes provisionales, autoritativo y con compensación de
+latencia. **313 pruebas** en 36 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
 
 ## Auditoría integral de fases 3.2, 4 y 5
 
@@ -29,9 +29,17 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | 4 | Cámaras (isométrica, 3ª y 1ª persona), controles con apuntado y HUD personalizable | ✅ Hecha |
 | 5 | Mapa ampliado (casas pequeñas), cofres, botín e inventario sincronizado | ✅ Hecha |
 | 6 | Armas, combate y curación (autoridad del servidor, compensación de latencia) | ✅ Hecha |
-| 7 | Siguiente fase (contenido a confirmar; no iniciada) | Pendiente |
+| 7 | Madera, tala y construcción autoritativa | ✅ Hecha |
 | 8 | Tres vidas y reaparición definitiva (sobre los eventos de muerte de la fase 6) | Pendiente |
-| — | Tala, construcción, tormenta, partida completa, lobby | Pendiente |
+| — | Tormenta, partida completa, lobby | Pendiente |
+
+## Fase 7 — Tala y construcción de madera
+
+PHASE-7.md documenta reglas, arquitectura, controles, pruebas y rendimiento antes/después.
+Cuatro piezas de 150 de resistencia, coste 10, madera máxima 999, límite de 128 por sala y 32 por
+propietario. Autoridad compartida servidor/offline, protocolo v6, soporte y colapso, colisiones y
+vista previa. HUD editable con contador y menú. Sin edición posterior ni mecánicas de fase 8.
+La auditoría previa está en AUDIT-6.md, commit independiente 55b38f6.
 
 ## Fase 6 — Armas, combate y curación (2026-11-27)
 **Hecho**

@@ -56,10 +56,10 @@ export function boundaryColliders(size: number, inset = 2): StaticColliderSpec[]
   return [wall(0, -half - e, half, e), wall(0, half + e, half, e), wall(-half - e, 0, e, half), wall(half + e, 0, e, half)];
 }
 
-export function worldColliders(layout: WorldLayout): StaticColliderSpec[] {
+export function worldColliders(layout: WorldLayout, omitTrees = false): StaticColliderSpec[] {
   return [
     ...layout.structures.flatMap((s) => prefabColliders(s)),
-    ...layout.trees.map(treeCollider),
+    ...(omitTrees ? [] : layout.trees.map(treeCollider)),
     ...boundaryColliders(layout.terrain.size),
   ];
 }

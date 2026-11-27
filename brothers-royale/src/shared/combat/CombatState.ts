@@ -76,6 +76,7 @@ export interface TargetPose {
 
 /** Lo que el combate necesita del mundo para resolver un ataque. */
 export interface AttackContext {
+  damageObstacle?: (by: string, origin: Vec3, direction: Vec3, range: number, damage: number, axe: boolean) => boolean;
   /** Pies del atacante (posición autoritativa tras su paso de movimiento). */
   feet: Vec3;
   grounded: boolean;
@@ -409,6 +410,7 @@ export class CombatState {
         const hit = rayHitbox(origin, d, t.feet, wall);
         if (hit !== null && (!best || hit < best.t)) best = { id: t.id, t: hit };
       }
+      if (!best && wall < s.range) ctx.damageObstacle?.(f.id, origin, d, wall, pelletDamage(kind, rarity, wall), false);
       const end = along(origin, d, best ? best.t : wall);
       ends.push(round2(end));
       hits.push(best !== null);
@@ -461,8 +463,11 @@ export class CombatState {
     f.actionTimer = 0.3;
     const stats = this.log.of(f.id);
     stats.shots++;
-    const end = best ? best.at : along(origin, dir, MELEE.reach);
-    this.events.push({ type: 'melee', by: f.id, origin: round2(origin), end: round2(end), hit: best !== null });
+    const obstacleDir = directionFromAim(input.aimYaw, input.aimPitch ?? 0);
+    const obstacleDistance = ctx.castStatic(origin, obstacleDir, MELEE.reach) ?? MELEE.reach;
+    const obstacleHit = !best && (ctx.damageObstacle?.(f.id, origin, obstacleDir, obstacleDistance, MELEE.damage, true) ?? false);
+    const end = best ? best.at : along(origin, obstacleDir, obstacleDistance);
+    this.events.push({ type: 'melee', by: f.id, origin: round2(origin), end: round2(end), hit: best !== null || obstacleHit });
     if (best) {
       stats.hits++;
       this.applyDamage(best.id, f.id, 'axe', MELEE.damage, best.at, best.dist, ctx.tick);

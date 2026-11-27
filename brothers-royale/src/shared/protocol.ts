@@ -1,3 +1,4 @@
+import type { BuildingSnapshot, BuildRequest } from './building/BuildingState';
 /**
  * Contrato de red cliente ↔ servidor (Colyseus).
  * Mensajes pequeños y planos: el servidor emite a 30 Hz y el cliente envía
@@ -12,8 +13,9 @@ import type { PlayerInput } from './types';
 /**
  * v5 (fase 6): entrada con aimPitch y viewTick, estado de combate en los flags
  * del snapshot y mensajes `combat`, `hits` y `vitals`.
+ * v6 (fase 7): materiales, árboles destructibles y construcciones autoritativas.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** Nombre de la sala registrada en el servidor. */
 export const ROOM_NAME = 'brothers';
@@ -98,6 +100,7 @@ export interface RosterEntry {
 
 // --- Cliente → servidor ----------------------------------------------------
 export interface ClientMessages {
+  build: BuildRequest;
   input: PlayerInput;
   /** Elegir hueco del inventario (0..4). */
   select: { slot: number };
@@ -126,6 +129,7 @@ export interface WelcomeMessage {
   inventory?: Inventory;
   /** Salud y acciones propias (siempre enviado; validado en el cliente). */
   vitals?: Vitals;
+  building?: BuildingSnapshot;
 }
 
 /** Combate visible para toda la sala: disparos, golpes, eliminaciones y vueltas. */
@@ -157,6 +161,7 @@ export interface CorrectionMessage {
 }
 
 export interface ServerMessages {
+  building: BuildingSnapshot;
   welcome: WelcomeMessage;
   snapshot: SnapshotMessage;
   correction: CorrectionMessage;

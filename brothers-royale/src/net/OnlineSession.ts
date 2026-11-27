@@ -1,3 +1,5 @@
+import type { BuildingWorld } from '@/physics/BuildingWorld';
+import type { BuildingSnapshot, BuildRequest } from '@shared/building/BuildingState';
 import { Client, type Room } from '@colyseus/sdk';
 import { CharacterBody } from '@/physics/CharacterBody';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
@@ -44,6 +46,7 @@ export interface OnlineInfo {
 }
 
 export interface OnlineOptions {
+  building?: BuildingWorld;
   url: string;
   name: string;
   code?: string;
@@ -105,9 +108,11 @@ export class OnlineSession implements GameSession {
     welcome: WelcomeMessage,
     private readonly onInfo: ((info: OnlineInfo) => void) | undefined,
     chests: readonly ChestPlacement[] = [],
+    readonly building?: BuildingWorld,
   ) {
     this.replica = new ReplicatedMatch(chests);
     this.replica.load(welcome.match, welcome.inventory);
+    if (welcome.building) building?.load(welcome.building);
     if (isValidVitals(welcome.vitals)) this.vitalsState = welcome.vitals;
     if (welcome.roster.length > NET.maxPlayersPerRoom) throw new Error('El servidor supera el máximo de 8 jugadores por sala');
     this.localPlayerId = welcome.playerId;
@@ -153,6 +158,7 @@ export class OnlineSession implements GameSession {
         room.onMessage('join', (m: RosterEntry) => (session ? session.onJoin(m) : early.join.push(m)));
         room.onMessage('leave', (m: { id: string; netId: number }) => session?.onLeave(m.netId));
         room.onMessage('pong', (m: { t: number }) => session?.onPong(m));
+        room.onMessage('building', (s: BuildingSnapshot) => { if (s && session?.building && s.revision >= session.building.state.revision) session.building.load(s); });
         room.onMessage('match', (m: { tick: number; events: PublicMatchEvent[] }) => session?.onMatch(m));
         room.onMessage('inventory', (m: unknown) => session?.onInventory(m));
         room.onMessage('notice', (m: { code: NoticeCode }) => session?.onNotice(m));
@@ -175,7 +181,7 @@ export class OnlineSession implements GameSession {
 
     try {
       opts.signal?.throwIfAborted();
-      session = new OnlineSession(room, opts.physics, welcome, opts.onInfo, opts.chests ?? []);
+      session = new OnlineSession(room, opts.physics, welcome, opts.onInfo, opts.chests ?? [], opts.building);
     } catch (error) {
       await room.leave(true).catch(() => undefined);
       throw error;
@@ -228,6 +234,11 @@ export class OnlineSession implements GameSession {
 
   get combat(): CombatView {
     return { vitals: this.vitalsState };
+  }
+
+  requestBuild(request: BuildRequest): boolean {
+    if (this.info.status !== 'connected') return false;
+    this.room.send('build', request); return true;
   }
 
   selectSlot(slot: number): void {
@@ -309,6 +320,7 @@ export class OnlineSession implements GameSession {
     }
     // Tras reconectar: estado autoritativo fresco y sin entradas pendientes viejas.
     this.replica.load(w.match, w.inventory);
+    if (w.building) this.building?.load(w.building);
     this.onMatchEvent?.({ type: 'reset' });
     this.vitalsState = isValidVitals(w.vitals) ? w.vitals : fullVitals();
     this.onCombatEvent?.({ type: 'vitals', vitals: this.vitalsState });

@@ -1,3 +1,6 @@
+import { BuildingWorld } from '@/physics/BuildingWorld';
+import { BuildingView } from './world/BuildingView';
+import { buildTop, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
 import { EventBus } from '@/core/EventBus';
 import { Engine } from '@/engine/Engine';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
@@ -120,6 +123,16 @@ export class Game {
   private lighting!: Lighting;
   private physics: PhysicsWorld | null = null;
   private session: GameSession | null = null;
+  private buildingWorld: BuildingWorld | null = null;
+  private buildingView: BuildingView | null = null;
+  private buildOpen = false;
+  private buildKind: BuildKind = 'wall';
+  private buildRotation = 0;
+  private buildLevel = 0;
+  private buildHeld = false;
+  private buildFireHeld = false;
+  private buildCandidate: BuildRequest | null = null;
+  private buildValid = false;
   private avatar: PlayerAvatar | null = null;
   private readonly remotes = new Map<string, PlayerAvatar>();
   private fallbackReason: string | null = null;
@@ -209,12 +222,13 @@ export class Game {
       if (this.disposed) return;
       const physics = new PhysicsWorld(R);
       physics.addTerrain(layout.terrain);
-      worldColliders(layout).forEach((c) => physics.addStatic(c));
+      worldColliders(layout, true).forEach((c) => physics.addStatic(c));
       this.physics = physics;
+      this.buildingWorld = new BuildingWorld(physics, layout, () => this.session?.players().map(p => p.position) ?? []);
 
       report(0.8, 'Llamando a tu personaje');
       const spawn = { x: layout.spawn.x, y: terrainHeight(layout.spawn.x, layout.spawn.z, layout.terrain) + 0.1, z: layout.spawn.z };
-      this.session = new OfflineSession(physics, spawn, 'Jugador', layout.chests, undefined, this.dummySpots(layout));
+      this.session = new OfflineSession(physics, spawn, 'Jugador', layout.chests, undefined, this.dummySpots(layout), this.buildingWorld);
       this.attachSession(this.session);
       this.avatar = new PlayerAvatar(0, this.quality.shadows);
       this.engine.scene.add(this.avatar.root);
@@ -278,6 +292,9 @@ export class Game {
     }
     const trees: Group = createTrees(layout.trees, layout.seed, this.quality.shadows);
     scene.add(trees);
+    this.buildingView = new BuildingView(layout.trees, trees);
+    scene.add(this.buildingView.root);
+    this.buildingView.setShadows(this.quality.shadows);
     // Cofres y objetos: instanciados (2 + 3 draw calls para todos).
     this.chestView = new ChestView(layout.chests, this.quality.shadows);
     scene.add(this.chestView.body, this.chestView.lid);
@@ -310,6 +327,7 @@ export class Game {
     const slot = this.input.consumeSlotRequest(session.match.inventory?.selected ?? 0);
     if (slot !== null && !this.inputSuspended) session.selectSlot(slot);
     this.computeAim(session, input);
+    this.buildStep(input);
     const attack = this.localWeapon.tick(input, session.match.inventory, this.vitals, dt);
     if (attack) this.playLocalAttack(session, input, attack.type === 'shot' ? attack.weapon : 'axe');
     this.lastAiming = (input.buttons & Buttons.AIM) !== 0;
@@ -321,6 +339,41 @@ export class Game {
       this.avatar.pushState(local);
     }
     this.syncRemotes(session);
+  }
+
+  /** Vista y controles del constructor; la autoridad vuelve a validar cada petición. */
+  get buildingUi() {
+    return { open: this.buildOpen, kind: this.buildKind, rotation: this.buildRotation, level: this.buildLevel,
+      wood: this.buildingWorld?.state.wood.get(this.session?.localPlayerId ?? '') ?? 0, valid: this.buildValid };
+  }
+  configureBuild(kind?: BuildKind, rotate = false, levelDelta = 0): void {
+    if (kind) { this.buildKind = kind; this.buildOpen = true; }
+    if (rotate) this.buildRotation = (this.buildRotation + 1) % 4;
+    this.buildLevel = Math.max(0, Math.min(4, this.buildLevel + levelDelta));
+  }
+  toggleBuild(): void { this.buildOpen = !this.buildOpen; }
+  placeBuild(): boolean {
+    return !!this.buildCandidate && !!this.session?.requestBuild?.(this.buildCandidate);
+  }
+  private buildStep(input: PlayerInput): void {
+    const toggle = (input.buttons & Buttons.BUILD) !== 0;
+    if (toggle && !this.buildHeld) this.toggleBuild();
+    this.buildHeld = toggle;
+    const fire = (input.buttons & Buttons.FIRE) !== 0;
+    const feet = this.session?.localPlayer()?.position;
+    const world = this.buildingWorld;
+    if (feet && world && this.buildOpen) {
+      const x = Math.round((feet.x + Math.sin(input.aimYaw) * 4) / 3) * 3;
+      const z = Math.round((feet.z + Math.cos(input.aimYaw) * 4) / 3) * 3;
+      const ground = terrainHeight(x, z, world.layout.terrain);
+      let base = ground;
+      for (const p of world.state.pieces.values()) if (Math.abs(p.x - x) < 1.6 && Math.abs(p.z - z) < 1.6 && buildTop(p) <= feet.y + 3.1) base = Math.max(base, buildTop(p));
+      this.buildCandidate = { kind: this.buildKind, x, y: base + this.buildLevel * 3, z, rotation: this.buildRotation };
+      this.buildValid = !this.vitals.dead && world.state.canPlace(this.session!.localPlayerId, this.buildCandidate, feet);
+      if (fire && !this.buildFireHeld && this.buildValid) this.placeBuild();
+      input.buttons &= ~Buttons.FIRE;
+    }
+    this.buildFireHeld = fire;
   }
 
   /** Estado de combate visible del jugador local (lo mismo que verán los demás). */
@@ -562,6 +615,8 @@ export class Game {
     const avatar = this.avatar;
     if (!avatar) return;
     avatar.render(alpha, dt);
+    if (this.buildingWorld) this.buildingView?.update(this.buildingWorld.state.snapshot(), dt);
+    this.buildingView?.preview(this.buildOpen ? this.buildCandidate : null, this.buildValid);
     const cameras = this.cameras;
     // Mirada (ratón, táctil, mando, Q/E) a la frecuencia de render: respuesta inmediata.
     if (cameras) {
@@ -802,6 +857,7 @@ export class Game {
     const q = buildQuality(tier, window.devicePixelRatio || 1, this.isTouch);
     this.quality = q;
     this.engine.setQuality(q);
+    this.buildingView?.setShadows(q.shadows);
     this.lighting?.setShadows(q);
     for (const o of this.shadowCasters) o.castShadow = q.shadows;
     for (const a of this.allAvatars()) a.castShadow = q.shadows;
@@ -878,6 +934,7 @@ export class Game {
     try {
       const { OnlineSession } = await import('@/net/OnlineSession');
       const online = await OnlineSession.connect({
+        building: this.buildingWorld ?? undefined,
         signal: abort.signal,
         url: req.url,
         name: req.name,
@@ -928,7 +985,7 @@ export class Game {
     // Sin conexión la partida empieza de nuevo: cofres cerrados y el hacha de siempre.
     this.weapons.release(online.localPlayerId);
     this.heldMatrix.delete(online.localPlayerId);
-    this.session = new OfflineSession(this.physics, pos, 'Jugador', this.layout?.chests ?? [], undefined, this.layout ? this.dummySpots(this.layout) : []);
+    this.session = new OfflineSession(this.physics, pos, 'Jugador', this.layout?.chests ?? [], undefined, this.layout ? this.dummySpots(this.layout) : [], this.buildingWorld ?? undefined);
     this.attachSession(this.session);
     this.replaceLocalAvatar(0);
     this.events.emit('net', reason ? { status: 'offline', reason } : { status: 'offline' });
@@ -986,9 +1043,11 @@ export class Game {
     this.fx.dispose();
     this.overlay?.dispose();
     this.sound.dispose();
+    this.buildingView?.dispose();
     this.engine.dispose();
     this.input.dispose();
     this.session?.dispose();
+    this.buildingWorld?.dispose();
     this.physics?.dispose();
     disposeAvatarResources();
     this.events.clear();

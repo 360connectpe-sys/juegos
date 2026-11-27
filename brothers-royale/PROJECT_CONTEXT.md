@@ -2,7 +2,7 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 27 de noviembre de 2026, tras cerrar la **fase 6 (armas, combate y curación)**.
+Estado a 27 de noviembre de 2026, tras cerrar la **fase 7 (madera, tala y construcción)**.
 
 ---
 
@@ -12,13 +12,13 @@ Estado a 27 de noviembre de 2026, tras cerrar la **fase 6 (armas, combate y cura
 |---|---|
 | Repositorio | `360connectpe-sys/juegos`, carpeta `brothers-royale/` (el resto de carpetas son otros juegos: no tocarlos) |
 | Rama de trabajo | `brothers-royale-phase-3.1` (todas las fases desde la 3.1 se acumulan en ella) |
-| Último trabajo | Fase 6 en `4ca37e2` (sobre `c20346d`) |
+| Último trabajo | Fase 7 sobre la auditoría independiente `55b38f6` de `51269ce` |
 | `main` | En `85dee86` (fase 2.2). **No fusionar con `main` salvo que se pida explícitamente.** |
-| Pruebas | **281 pruebas en 32 archivos, todas en verde** (`npm run check`): 237 previas + 44 de combate |
+| Pruebas | **313 pruebas en 36 archivos, todas en verde** (`npm run check`): 281 anteriores + 7 de auditoría + 25 de fase 7 |
 | Bundle publicado | `jugar/` regenerado e idéntico a `dist/` (`diff -qr dist jugar` sin diferencias) |
-| Protocolo de red | v5 (`PROTOCOL_VERSION`) |
-| Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6 |
-| Siguiente | Fase 7 (no iniciada; requiere petición explícita). La fase 8 = tres vidas y reaparición definitiva. Véase §9 |
+| Protocolo de red | v6 (`PROTOCOL_VERSION`) |
+| Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6, 7 |
+| Siguiente | Fase 8, pendiente de autorización. Véase §9 |
 
 ### Historial de commits de la rama (antiguo → reciente)
 
@@ -58,7 +58,7 @@ Stack: Vite 8 · TypeScript 5.9 strict · React 19 (solo UI) · Three.js · Rapi
 |---|---|
 | `npm ci` | Instalar dependencias |
 | `npm run dev` | Desarrollo. `?q=low\|normal` fuerza calidad; `?debug` expone `window.__BR_GAME__` |
-| `npm run check` | Tipos + 281 tests + build cliente + build servidor. **Obligatorio antes de cada commit** |
+| `npm run check` | Tipos + 313 tests + build cliente + build servidor. **Obligatorio antes de cada commit** |
 | `npm run server` | Compila y arranca Colyseus en `ws://localhost:2567` (`PORT`, `HOST`) |
 | `npm run build:pages` | Regenera `jugar/` (lo que sirve GitHub Pages). Commitear `jugar/` al cerrar cada avance |
 | Online local | `npm run server` + `npm run dev`, botón "Jugar en línea" o `?online&server=ws://localhost:2567&name=Ana&code=SALA1` |
@@ -74,7 +74,7 @@ brothers-royale/
                      validación, snapshots, reconexión), ServerWorld.ts (simulación autoritativa PURA, sin red)
   src/shared/        Lógica pura y determinista, compartida cliente/servidor:
                      constants, types, math, random (createRng), movement (motor), inputValidation,
-                     reconciliation, protocol (v5, mensajes y límites), netcodec (snapshots cuantizados),
+                     reconciliation, protocol (v6, mensajes y límites), netcodec (snapshots cuantizados),
                      session, items (catálogo), inventory (+ validación, cargador, recarga, consumo),
                      match/{MatchState.ts, loot.ts}, world/{terrain, layout, prefab, structures, colliders},
                      combat/{weapons.ts (armas, rarezas, balance, salud, constantes), hitscan.ts (rayo-cápsula,
@@ -97,7 +97,7 @@ brothers-royale/
   src/ui/            App, styles.css, components/ (Hud, FpsCounter, QualityToggle, GraphicsNotice,
                      OrientationHint, SettingsPanel, InteractPrompt, OnlinePanel, TouchControls, DeathScreen,
                      LoadingScreen, Logo), hud/{layout.ts, HudSlot.tsx, HudEditor.tsx, widgets.tsx}
-  tests/             32 archivos Vitest (§7)
+  tests/             36 archivos Vitest (§7)
   jugar/             Bundle publicado en GitHub Pages
   CLAUDE.md          Reglas permanentes  ·  PROJECT.md  Bitácora por fase  ·  PROJECT_CONTEXT.md  Este archivo
   AUDIT-3.1.md, SOAK-8-PLAYERS.md, AUDIT-3.2-5.md   Informes de Codex
@@ -166,7 +166,7 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
   cámara a < 1,1 m (`CAMERA_RIG.hideAvatarBelow`).
 - Mirada por frame (`consumeLook`) con sensibilidad de cámara, de apuntado e invertir Y.
 - Táctil: joystick de movimiento + zona/stick de apuntado; teclado/ratón y mando completos.
-- Bits `Buttons` reservados y enviados: FIRE, AIM, RELOAD, INTERACT, BUILD (sin efecto salvo INTERACT).
+- Bits `Buttons` enviados: FIRE, AIM, RELOAD, INTERACT y BUILD; todos tienen efecto en la fase 7.
 - HUD personalizable: `HudSlot` en coordenadas normalizadas al área segura (`.hud-safe`, `env(safe-area-inset-*)`),
   editor visual (arrastrar, tamaño, opacidad, guardar, restablecer). Elementos preparados: vida, vidas,
   inventario, minimapa, ataque, recarga, salto, interactuar, construir.
@@ -265,7 +265,7 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 
 ---
 
-## 7. Pruebas: 281 en 32 archivos
+## 7. Pruebas: 313 en 36 archivos
 
 | Archivo | Nº | Cubre |
 |---|---|---|
@@ -301,8 +301,12 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 | `combatBalance.test.ts` | 6 | Fase 6: valores pedidos, ajuste del rifle, sin one-shot, roles por distancia, ninguna arma domina, rarezas moderadas |
 | `combatClient.test.tsx` | 12 | Fase 6: validación v5, predicción visual, armas en el lote de edificios, FX en 1 malla, números de daño, HUD, volumen |
 | `combatOffline.test.ts` | 1 | Fase 6: muñecos de práctica con física real |
+| phase6Audit.test.ts | 7 | Seguridad del banco, temporizadores, poses y estadísticas |
+| building.test.ts | 22 | Madera, colocación, soporte, colisiones, daño y límites |
+| buildingClient.test.tsx | 2 | Lotes, vista previa, restauración y HUD |
+| building.integration.test.ts | 1 | Ocho clientes recolectando, construyendo, disparando y reconectando |
 
-Regla: no bajar de 281; cada sistema nuevo llega con tests de su parte pura.
+Regla: no bajar de 313; cada sistema nuevo llega con tests de su parte pura.
 
 ---
 
@@ -343,7 +347,7 @@ Regla: no bajar de 281; cada sistema nuevo llega con tests de su parte pura.
 
 ## 9. Cómo continuar
 
-1. `cd brothers-royale && npm ci && npm run check` → deben salir 281 tests en verde.
+1. `cd brothers-royale && npm ci && npm run check` → deben salir 313 tests en verde.
 2. Leer `CLAUDE.md` (reglas, presupuestos de rendimiento, fuera de alcance) y la sección de la fase
    correspondiente en `PROJECT.md`.
 3. Trabajar en la rama indicada por el usuario (hasta ahora `brothers-royale-phase-3.1`), sin fusionar con
@@ -351,16 +355,14 @@ Regla: no bajar de 281; cada sistema nuevo llega con tests de su parte pura.
 4. Al cerrar un avance: tests nuevos, actualizar `PROJECT.md` (y este archivo si cambia la arquitectura,
    el estado o los errores conocidos), `npm run build:pages`, `npm run check`, commit y push a la rama.
 
-**Fuera de alcance hasta que se pida**: fase 7 (no iniciarla sin petición), tres vidas y reaparición definitiva
-(fase 8), tala de árboles, construcción funcional y tormenta. Ganchos listos: evento `death` y
+**Fuera de alcance hasta que se pida**: tres vidas y reaparición definitiva (fase 8) y tormenta. Ganchos listos: evento `death` y
 `CombatState.onDeath`, `CombatLog`, bit `BUILD`, `MotorModifiers`, capa `build`, `PredictionController`.
 
 **Probar el combate**: sin conexión hay 3 muñecos de práctica delante del punto de aparición; en `?debug`,
 `__BR_GAME__.debugGive({ kind: 'rifle', qty: 1, rarity: 'epic' })` y `debugGive({ kind: 'ammo_medium', qty: 90 })`
 dan objetos. En línea: `npm run server` + «Jugar en línea» en dos pestañas (las armas salen de los cofres).
 
-**Roadmap pendiente** (PROJECT.md): fase 7 (contenido a confirmar), fase 8 (tres vidas y reaparición
-definitiva), tala, construcción, tormenta, partida completa y lobby. Candidatos técnicos: suavizar correcciones,
+**Roadmap pendiente** (PROJECT.md): fase 8 (tres vidas y reaparición definitiva), tormenta, partida completa y lobby. Candidatos técnicos: suavizar correcciones,
 cuantizar los mensajes de combate, colisión de cámara con copas, fin de partida/reinicio de sala, despliegue de
 un servidor `wss://`, medición en móviles reales.
 
@@ -370,3 +372,27 @@ un servidor `wss://`, medición en móviles reales.
 288 pruebas aprobadas. AUDIT-6.md describe cancelación de temporizadores al cambiar de hueco,
 limpieza de poses tras reaparecer, estadísticas acotadas y cierre seguro del loadout de pruebas.
 BR_BENCH_LOADOUT solo se permite con NODE_ENV=test y --br-bench-loadout.
+
+## Fase 7 y auditoría de fase 6
+
+La fase 7 está implementada. La descripción vigente está en PHASE-7.md y la auditoría independiente
+en AUDIT-6.md (55b38f6). El protocolo vigente es v6. Las secciones anteriores sobre el estado de
+fases 1–6 constituyen el historial y no autorizan iniciar la fase 8.
+
+- BuildingState (shared/building) gestiona 90 de resistencia de árboles, madera, piezas, costes y soporte.
+- BuildingWorld (physics) sincroniza colliders y daño ambiental. BuildingView usa un BatchedMesh.
+- ServerWorld y OfflineSession ejecutan la misma autoridad. OnlineSession carga snapshots completos
+  y añade colisiones para la predicción. No se predicen materiales ni colocaciones.
+- Madera es el único material. Se empieza en 0, máximo 999, hasta 30 por árbol mediante hacha.
+  Piezas wall/floor/ramp/roof cuestan 10, tienen resistencia 150 y rotan de 90 en 90 grados.
+- Límite de 128 piezas por sala, 32 por propietario y base de construcción hasta y=15. Bases en
+  terreno suficientemente plano y piezas elevadas sobre otras construcciones. Colapso si pierden soporte.
+- Sin editar piezas ya colocadas. Destruir no reembolsa. Reconectar conserva madera y construcciones;
+  abandonar definitivamente retira la madera de esa sesión y conserva las piezas pagadas.
+- Controles B, mando Y, botón Construir y menú HUD editable. Atacar en modo construcción coloca,
+  fuera de él conserva el combate. Hay rotación, nivel y botón táctil de colocación con vista previa.
+- BR_BENCH_LOADOUT queda prohibido salvo NODE_ENV=test y --br-bench-loadout, comprobados al arrancar.
+- Auditoría de fase 6 corrigió temporizadores al cambiar de hueco, poses antiguas tras reaparecer y
+  acumulación de estadísticas. No se modificó el balance ni las reglas provisionales de muerte.
+- Suite final de 313 pruebas. Ocho clientes reales recolectan, construyen y destruyen con disparos,
+  incluyendo reconexión. El informe contiene mediciones y límites de SwiftShader.

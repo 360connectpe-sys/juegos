@@ -4,6 +4,7 @@
  * Reutiliza EXACTAMENTE la misma simulación que el cliente (mapa por semilla,
  * colisionadores, CharacterBody y validación de entradas).
  */
+import { BuildingWorld } from '@/physics/BuildingWorld';
 import { CharacterBody } from '@/physics/CharacterBody';
 import { loadRapier, PhysicsWorld } from '@/physics/PhysicsWorld';
 import { SIMULATION, WORLD } from '@shared/constants';
@@ -59,6 +60,7 @@ export class ServerWorld {
   readonly los: LineOfSight;
   /** Disparos, salud, curación y muertes: SOLO el servidor los decide. */
   readonly combat: CombatState;
+  readonly building: BuildingWorld;
   /** Poses recientes de todos para la compensación de latencia. */
   readonly history = new PoseHistory();
   tick = 0;
@@ -69,6 +71,7 @@ export class ServerWorld {
     this.physics = physics;
     this.layout = layout;
     this.match = new MatchState(layout.chests, matchSeed);
+    this.building = new BuildingWorld(physics, layout, () => [...this.players.values()].map(p => p.body.state.position));
     this.combat = new CombatState(this.match, matchSeed);
     this.los = (from, to) => physics.lineOfSight(from, to);
     this.ctx = {
@@ -78,6 +81,7 @@ export class ServerWorld {
       dt: SIMULATION.fixedDt,
       tick: 0,
       targets: (viewTick) => this.targetsAt(viewTick),
+      damageObstacle: (by, o, d, max, damage, axe) => this.building.damageRay(by, o, d, max, damage, axe),
       castStatic: (o, d, max) => physics.castStatic(o, d, max),
     };
     // Vuelta provisional de los eliminados (fase 6): a un punto de aparición.
@@ -110,7 +114,7 @@ export class ServerWorld {
     const layout = generateWorldLayout({ seed });
     const physics = new PhysicsWorld(R);
     physics.addTerrain(layout.terrain);
-    worldColliders(layout).forEach((c) => physics.addStatic(c));
+    worldColliders(layout, true).forEach((c) => physics.addStatic(c));
     physics.step();
     return new ServerWorld(physics, layout, matchSeed);
   }
@@ -175,6 +179,7 @@ export class ServerWorld {
     };
     this.players.set(id, player);
     this.match.addPlayer(id);
+    this.building.state.addPlayer(id);
     this.combat.addFighter(id);
     this.history.record(this.tick, id, body.state.position);
     return player;
@@ -185,6 +190,7 @@ export class ServerWorld {
     if (!p) return undefined;
     this.match.removePlayer(id, p.body.state.position);
     this.combat.removeFighter(id);
+    this.building.state.removePlayer(id);
     this.history.forget(id);
     p.body.dispose();
     this.players.delete(id);
@@ -297,6 +303,7 @@ export class ServerWorld {
   dispose(): void {
     for (const p of this.players.values()) p.body.dispose();
     this.players.clear();
+    this.building.dispose();
     this.physics.dispose();
   }
 }

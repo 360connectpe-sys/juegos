@@ -170,9 +170,12 @@ export function applyCollisionResult(
   if (grounded && s.vy < 0) s.vy = 0;
   // Techo: la subida se ha cortado.
   if (desired.y > 0 && actual.y < desired.y * 0.5) s.vy = Math.min(s.vy, 0);
+  // Una pendiente transfiere avance horizontal a altura. No confundir esa reducción
+  // con una pared: reiniciar vx/vz aquí impide superar rampas de 45 grados.
+  const climbing = grounded && actual.y > 1e-6;
   // Pared: conserva solo la componente horizontal que realmente se movió.
-  if (Math.abs(desired.x) > 1e-6 && Math.abs(actual.x) < Math.abs(desired.x) * 0.5) s.vx = actual.x / dt;
-  if (Math.abs(desired.z) > 1e-6 && Math.abs(actual.z) < Math.abs(desired.z) * 0.5) s.vz = actual.z / dt;
+  if (!climbing && Math.abs(desired.x) > 1e-6 && Math.abs(actual.x) < Math.abs(desired.x) * 0.5) s.vx = actual.x / dt;
+  if (!climbing && Math.abs(desired.z) > 1e-6 && Math.abs(actual.z) < Math.abs(desired.z) * 0.5) s.vz = actual.z / dt;
   if (!wasGrounded && grounded) s.coyote = PLAYER.coyoteTime;
 }
 

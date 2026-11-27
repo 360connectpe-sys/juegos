@@ -1,3 +1,4 @@
+import { BUILD_KINDS, type BuildKind } from '@shared/building/BuildingState';
 import { useEffect, useRef, useState } from 'react';
 import type { Game, KillFeedEntry } from '@/game/Game';
 import { magOf, type Inventory as InventoryState } from '@shared/inventory';
@@ -347,12 +348,16 @@ export function Minimap({ game }: { game: Game | null }) {
   );
 }
 
-export type InfoWidgetId = 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
-export const INFO_WIDGETS: readonly InfoWidgetId[] = ['health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
+export type InfoWidgetId = 'wood' | 'construction' | 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
+export const INFO_WIDGETS: readonly InfoWidgetId[] = ['wood', 'construction', 'health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
 
 /** Indicadores del HUD (todas las pantallas). */
 export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = false) {
   switch (id) {
+    case 'wood':
+      return <ConstructionWidget game={game} counter />;
+    case 'construction':
+      return <ConstructionWidget game={preview ? null : game} />;
     case 'health':
       return game ? <LiveHealth game={game} /> : <HealthBar />;
     case 'ammo':
@@ -366,4 +371,31 @@ export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = 
     case 'minimap':
       return <Minimap game={game} />;
   }
+}
+
+
+const BUILD_LABELS: Record<BuildKind, string> = { wall: 'Pared', floor: 'Suelo', ramp: 'Rampa', roof: 'Techo' };
+export function ConstructionWidget({ game, counter = false }: { game: Game | null; counter?: boolean }) {
+  const [ui, setUi] = useState(() => game?.buildingUi);
+  useEffect(() => {
+    if (!game) return;
+    const timer = window.setInterval(() => setUi(previous => {
+      const next = game.buildingUi;
+      return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+    }), 100);
+    return () => window.clearInterval(timer);
+  }, [game]);
+  if (counter) return <div className="w-wood" aria-label="Madera">Madera {ui?.wood ?? 0}</div>;
+  return <div className="w-construction">
+    <button type="button" onClick={() => game?.toggleBuild()}>{ui?.open ? 'Cerrar construcción' : 'Construir (B)'}</button>
+    {ui?.open && <>
+      <div>{BUILD_KINDS.map(kind => <button type="button" key={kind} aria-pressed={ui.kind === kind} onClick={() => game?.configureBuild(kind)}>{BUILD_LABELS[kind]}</button>)}</div>
+      <button type="button" onClick={() => game?.configureBuild(undefined, true)}>Rotar 90°</button>
+      <button type="button" onClick={() => game?.configureBuild(undefined, false, -1)}>Nivel −</button>
+      <span>Nivel {ui.level}</span>
+      <button type="button" onClick={() => game?.configureBuild(undefined, false, 1)}>Nivel +</button>
+      <button type="button" disabled={!ui.valid} onClick={() => game?.placeBuild()}>Colocar · 10 madera</button>
+      <p>{ui.valid ? 'Colocación válida' : 'Sin material, soporte o espacio libre'}</p>
+    </>}
+  </div>;
 }

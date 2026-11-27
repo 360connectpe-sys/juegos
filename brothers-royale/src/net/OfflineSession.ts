@@ -1,3 +1,5 @@
+import type { BuildingWorld } from '@/physics/BuildingWorld';
+import type { BuildRequest } from '@shared/building/BuildingState';
 import { CharacterBody } from '@/physics/CharacterBody';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { CombatState, type AttackContext, type TargetPose, type Vitals } from '@shared/combat/CombatState';
@@ -43,12 +45,16 @@ export class OfflineSession implements GameSession {
     chests: readonly ChestPlacement[] = [],
     matchSeed: number = randomSeed(),
     dummies: readonly Vec3[] = [],
+    readonly building?: BuildingWorld,
   ) {
     this.spawn = { ...spawn };
     this.local = new CharacterBody(physics, this.localPlayerId, name, spawn);
     this.list = [this.local.state];
     this.state = new MatchState(chests, matchSeed);
     this.state.addPlayer(this.localPlayerId);
+    // Una sesión offline nueva no hereda geometría ni materiales de una sala anterior.
+    building?.reset();
+    building?.state.addPlayer(this.localPlayerId);
     this.state.drain();
     this.fight = new CombatState(this.state, matchSeed);
     this.fight.addFighter(this.localPlayerId);
@@ -73,6 +79,7 @@ export class OfflineSession implements GameSession {
       dt: 1 / 30,
       tick: 0,
       targets: () => this.targets(),
+      damageObstacle: (by, o, d, range, damage, axe) => building?.damageRay(by, o, d, range, damage, axe) ?? false,
       castStatic: (o, d, max) => physics.castStatic(o, d, max),
     };
   }
@@ -98,6 +105,10 @@ export class OfflineSession implements GameSession {
         return f.vitals(id)!;
       },
     };
+  }
+
+  requestBuild(request: BuildRequest): boolean {
+    return !this.fight.isDead(this.localPlayerId) && (this.building?.state.place(this.localPlayerId, request, this.local.state.position) ?? false);
   }
 
   selectSlot(slot: number): void {

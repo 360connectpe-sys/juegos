@@ -63,6 +63,11 @@ export class BrothersRoom extends Room {
     });
     this.onMessage('ready', (client) => this.handleReady(client));
     this.onMessage('input', (client, message) => this.handleInput(client, message));
+    this.onMessage('build', (client, message: unknown) => {
+      if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready || this.world.combat.isDead(client.sessionId)) return;
+      const p = this.world.players.get(client.sessionId);
+      if (p) this.world.building.state.place(p.id, message, p.body.state.position);
+    });
     this.onMessage('select', (client, message: { slot?: unknown }) => {
       if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready) return;
       this.world.selectSlot(client.sessionId, message?.slot);
@@ -120,6 +125,7 @@ export class BrothersRoom extends Room {
       match: this.world.match.snapshot(),
       inventory: this.world.match.inventory(player.id)!,
       vitals: this.world.combat.vitals(player.id)!,
+      building: this.world.building.state.snapshot(),
     };
     client.send('welcome', welcome);
     player.correctionDirty = false;
@@ -150,12 +156,17 @@ export class BrothersRoom extends Room {
     return false;
   }
 
+  private buildingRevision = -1;
   private tick(): void {
     this.world.step();
     if (this.clients.length === 0) {
       this.world.drainMatchEvents();
       this.world.drainCombatEvents();
       return;
+    }
+    if (this.buildingRevision !== this.world.building.state.revision) {
+      this.buildingRevision = this.world.building.state.revision;
+      this.broadcast('building', this.world.building.state.snapshot(), { except: this.clients.filter(c => !this.meta.get(c.sessionId)?.ready) });
     }
     this.sendMatchEvents();
     this.sendCombatEvents();

@@ -115,7 +115,7 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 6b. **Mirada y apuntado**: la mirada se consume por frame de render (`InputManager.consumeLook`), con
    sensibilidad de cámara, de apuntado e invertir Y. Acciones nuevas = bit de `Buttons` en la fuente que
    corresponda (teclado, ratón, táctil, mando). Ataque, apuntado, recarga e interacción tienen efecto desde la
-   fase 6; construir sigue reservado. Atacar también orienta al personaje hacia `aimYaw`.
+   fase 6; construir usa el mismo bit BUILD desde la fase 7. Atacar también orienta al personaje hacia `aimYaw`.
 6c. **HUD y preferencias**: los elementos del HUD se colocan con `HudSlot` en coordenadas normalizadas al área
    segura (`.hud-safe` usa `env(safe-area-inset-*)`). Todo lo que se guarda en `localStorage` (`br.settings.v1`,
    `br.hud.v1`, `br.quality`) se valida al leerlo (`parseSettings`, `parseHudLayout`); nunca confiar en lo guardado.
@@ -125,7 +125,11 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 8. Cada sistema nuevo llega con tests de su parte pura. Actualizar `PROJECT.md` al cerrar cada avance.
 
 ## Fuera de alcance hasta nueva fase
-Tres vidas y reaparición definitiva (fase 8), tala de árboles, construcción funcional y tormenta: no
-implementarlos sin pedirlo. No empezar la fase 7 sin que se pida. Los ganchos ya existen (evento `death` y
+Tres vidas y reaparición definitiva (fase 8) y tormenta: no
+implementarlos sin pedirlo. La fase 7 está implementada y documentada en PHASE-7.md. Los ganchos ya existen (evento `death` y
 `CombatState.onDeath`, bit `BUILD`, `MotorModifiers`, capa `build`, `PredictionController`).
 `BR_BENCH_LOADOUT` (servidor) es SOLO para pruebas de carga.
+
+Fase 7: usar BuildingState, BuildingWorld y BuildingView. Las colocaciones y materiales solo cambian
+en la autoridad, con protocolo v6. Respetar límites y soporte. BR_BENCH_LOADOUT requiere
+NODE_ENV=test y --br-bench-loadout; jamás habilitarlo en producción.

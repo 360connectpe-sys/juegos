@@ -583,7 +583,7 @@ kbd {
   pointer-events: none;
 }
 .hud-safe--info {
-  z-index: 4;
+  z-index: 7;
 }
 .hud-safe--controls {
   z-index: 2;
@@ -1366,3 +1366,16 @@ kbd {
 .death__title { font: 400 2rem/1.1 var(--display); color: var(--coral); }
 .death__by { font: 700 0.95rem/1.4 var(--body); }
 .death__wait { font: 700 0.8rem/1.4 var(--body); opacity: 0.8; }
+
+.w-wood, .w-construction {
+  padding: 6px 9px;
+  color: #fff;
+  background: #222b3de8;
+  border: 1px solid #bb925c;
+  border-radius: 8px;
+}
+.w-construction { pointer-events: auto; max-width: 290px; font-size: 12px; }
+.w-construction button { color: #fff; background: #37435a; border: 1px solid #8790a2; border-radius: 4px; padding: 6px; margin: 2px; min-height: 32px; touch-action: manipulation; }
+.w-construction button[aria-pressed=true] { background: #846139; }
+.w-construction button:disabled { opacity: .45; }
+.w-construction p { margin: 4px; }
