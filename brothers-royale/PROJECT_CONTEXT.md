@@ -363,3 +363,10 @@ dan objetos. En línea: `npm run server` + «Jugar en línea» en dos pestañas 
 definitiva), tala, construcción, tormenta, partida completa y lobby. Candidatos técnicos: suavizar correcciones,
 cuantizar los mensajes de combate, colisión de cámara con copas, fin de partida/reinicio de sala, despliegue de
 un servidor `wss://`, medición en móviles reales.
+
+
+## Auditoría de fase 6 posterior a 51269ce
+
+288 pruebas aprobadas. AUDIT-6.md describe cancelación de temporizadores al cambiar de hueco,
+limpieza de poses tras reaparecer, estadísticas acotadas y cierre seguro del loadout de pruebas.
+BR_BENCH_LOADOUT solo se permite con NODE_ENV=test y --br-bench-loadout.

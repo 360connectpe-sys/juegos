@@ -14,6 +14,7 @@ import {
   type WelcomeMessage,
 } from '@shared/protocol';
 import { sanitizeRoomCode, uniqueName, validateJoinOptions } from '@shared/session';
+import { benchPrefix } from './bench';
 import { ServerWorld } from './ServerWorld';
 
 interface ClientMeta {
@@ -93,7 +94,7 @@ export class BrothersRoom extends Room {
     // SOLO pruebas de carga (variable de entorno del SERVIDOR, nunca del cliente):
     // los jugadores cuyo nombre empiece por ese prefijo (p. ej. "Bot") entran
     // armados para medir el combate.
-    const bench = process.env.BR_BENCH_LOADOUT;
+    const bench = benchPrefix();
     if (bench && name.startsWith(bench)) this.world.giveBenchLoadout(player.id, player.netId);
     this.meta.set(client.sessionId, { ready: false, msgWindowStart: Date.now(), msgCount: 0, floodStrikes: 0 });
     this.broadcast('join', this.world.rosterEntry(player), { except: client });

@@ -83,7 +83,11 @@ export class ServerWorld {
     // Vuelta provisional de los eliminados (fase 6): a un punto de aparición.
     this.combat.onRespawn = (id) => {
       const p = this.players.get(id);
-      if (p) this.respawnAt(p, this.spawnCounter++);
+      if (p) {
+        this.respawnAt(p, this.spawnCounter++);
+        this.history.forget(id);
+        this.history.record(this.tick, id, p.body.state.position);
+      }
     };
   }
 

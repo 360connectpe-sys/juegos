@@ -7,9 +7,11 @@ import { pathToFileURL } from 'node:url';
 import { defineRoom, defineServer } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { NET, ROOM_NAME } from '@shared/protocol';
+import { benchPrefix } from './bench';
 import { BrothersRoom } from './BrothersRoom';
 
 export function createServer() {
+  benchPrefix();
   return defineServer({
     transport: new WebSocketTransport({ pingInterval: 3000, pingMaxRetries: 2 }),
     rooms: {

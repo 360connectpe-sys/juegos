@@ -197,6 +197,7 @@ export class CombatState {
 
   removeFighter(id: string): void {
     this.fighters.delete(id);
+    this.log.stats.delete(id);
   }
 
   has(id: string): boolean {
@@ -324,6 +325,12 @@ export class CombatState {
       f.respawnIn -= dt;
       if (f.respawnIn <= 0) this.respawn(f);
       return false;
+    }
+    const current = this.match.inventory(f.id);
+    if (current && current.selected !== f.slot && (f.reload || f.heal)) {
+      f.reload = null;
+      f.heal = null;
+      this.pushVitals(f);
     }
     if (f.reload) f.reload.left -= dt;
     if (f.heal) f.heal.left -= dt;

@@ -539,3 +539,10 @@ npm run server     # servidor multijugador en ws://localhost:2567 (otra terminal
 # Jugar en línea: botón "Jugar en línea", o http://localhost:5173/?online&name=Ana&code=SALA1
 # Para un celular en la misma red: npm run dev y abrir http://<IP-del-PC>:5173/?online&server=ws://<IP-del-PC>:2567
 ```
+
+
+## Auditoría de fase 6 posterior a 51269ce
+
+288 pruebas aprobadas. AUDIT-6.md describe cancelación de temporizadores al cambiar de hueco,
+limpieza de poses tras reaparecer, estadísticas acotadas y cierre seguro del loadout de pruebas.
+BR_BENCH_LOADOUT solo se permite con NODE_ENV=test y --br-bench-loadout.
