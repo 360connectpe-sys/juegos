@@ -1,3 +1,5 @@
+import type { Profile } from '@shared/lobby/profile';
+import type { LobbySnapshot } from '@shared/lobby/LobbyState';
 import type { RoundSnapshot } from '@shared/battle/BattleRound';
 import type { BuildingWorld } from '@/physics/BuildingWorld';
 import type { BuildRequest } from '@shared/building/BuildingState';
@@ -21,6 +23,11 @@ export interface PlayerIdentity {
  *    los demás jugadores se interpolan con `PlayerAvatar`.
  */
 export interface GameSession {
+  readonly lobby?:LobbySnapshot;
+  lobbyReady?(ready:boolean):void;
+  setProfile?(profile:Profile):boolean;
+  returnToLobby?():boolean;
+  rematch?():boolean;
   readonly battle?: RoundSnapshot;
   startRound?(): boolean;
   readonly building?: BuildingWorld;

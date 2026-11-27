@@ -77,6 +77,7 @@ describe('partida con 6 jugadores: cofres, botín e inventarios sincronizados', 
     const sdk = (clients[0]!.session as unknown as { room: Room }).room;
     const room = matchMaker.getLocalRoomById(sdk.roomId) as BrothersRoom;
     expect(room.world.players.size).toBe(6);
+    room.world.round.start();await wait(80);
     // Todos empiezan con el hacha (inventario recibido en la bienvenida).
     for (const c of clients) expect(c.session.match.inventory?.slots[0]?.kind).toBe('axe');
 

@@ -39,6 +39,7 @@ describe('auditoría de carga y límites', () => {
       for (let i = 0; i < NET.maxPlayersPerRoom; i++) clients.push(await connect('AUDIT8'));
       expect(new Set(clients.map((c) => c.room.roomId)).size).toBe(1);
       const room = matchMaker.getLocalRoomById(clients[0]!.room.roomId) as BrothersRoom;
+      room.world.round.start();
       const durations: number[] = [];
       const intervals: number[] = [];
       let previous = performance.now();
@@ -133,7 +134,7 @@ describe('auditoría de carga y límites', () => {
       await clients[6]!.room.leave(true);
       for (let i = 0; i < 100 && room.world.players.size !== 7; i++) await wait(10);
       expect(room.world.players.size).toBe(7);
-      replacement = await ninth.joinById(id, { protocol: PROTOCOL_VERSION, name: 'Reemplazo' });
+      replacement = await ninth.joinById(id, { protocol: PROTOCOL_VERSION, name: 'Reemplazo', code: room.code });
       replacement.onMessage('*', () => undefined);
       replacement.send('ready');
       expect(room.world.players.size).toBe(8);

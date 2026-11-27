@@ -1,8 +1,8 @@
 # BROTHERS ROYALE — Estado del proyecto
 
-## Estado actual (fase 8 cerrada)
-Fases 1–8 hechas. Tres vidas, reaparición desde el cielo, tormenta, espectador, ganador y reinicio
-autoritativos; modo offline compatible. **346 pruebas** en 40 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
+## Estado actual (fase 9 cerrada)
+Fases 1–9 hechas. Lobby con anfitrión y Listo, doce polos cosméticos, salas privadas/públicas y
+estadísticas finales autoritativas. **362 pruebas** en 43 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
 
 ## Auditoría integral de fases 3.2, 4 y 5
 
@@ -31,9 +31,19 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | 6 | Armas, combate y curación (autoridad del servidor, compensación de latencia) | ✅ Hecha |
 | 7 | Madera, tala y construcción autoritativa | ✅ Hecha |
 | 8 | Tres vidas, tormenta y ciclo completo de partida | ✅ Hecha |
-| 9 | Próxima fase, no iniciada | Pendiente |
+| 9 | Pantalla principal, lobby, personalización y resultados | ✅ Hecha |
 | 10 | Validación de 30 minutos reales reservada por el usuario | Pendiente |
 | — | Lobby y servicios persistentes | Pendiente |
+
+## Fase 9 — Lobby, polos y resultados
+
+PHASE-9.md detalla arquitectura, validación y pruebas. Pantalla principal con el personaje animado
+sin otro renderer; doce colores de polo, nombre y preferencias locales. Crear/entrar a privadas por
+código y públicas. Ocho jugadores, anfitrión migrable, Listo, inicio autorizado y cuenta atrás.
+Nombres sobre personajes con ocultación por paredes. Resultado con clasificación, combate, precisión,
+madera, construcciones y supervivencia; vuelta al lobby y revancha con consentimiento de participantes.
+Protocolo v8. 362 pruebas, incluyendo las 346 anteriores, y flujo con ocho clientes reales.
+Se mantiene práctica offline, dos calidades, tres perspectivas y HUD editable. No iniciar fase 10.
 
 ## Fase 8 — Ciclo completo Battle Royale
 

@@ -53,7 +53,7 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    un mensaje = subir `PROTOCOL_VERSION`. Códigos de cierre propios ≥ 4100 (Colyseus usa 4000-4010).
    El servidor y el cliente deben usar el mismo mapa (semilla), colisionadores y paso fijo: la
    bienvenida verifica la semilla. `ServerWorld` se prueba sin red; la sala solo conecta.
-3c. **Modo offline primero**: el juego arranca sin conexión y el SDK de red solo se descarga al
+3c. **Modo offline primero**: la pantalla principal carga sin conexión y el SDK de red solo se descarga al
    pulsar "Jugar en línea". Si la conexión se pierde, `Game` vuelve a offline conservando la posición.
 4. **Lo que se ve es lo que choca**: los edificios se definen como prefabs de datos
    (`shared/world/prefab.ts`, `structures.ts`); de la misma lista de piezas salen la malla (`PrefabView`)
@@ -126,7 +126,7 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 
 ## Estado vigente y fuera de alcance
 
-Fases 7 y 8 implementadas, documentadas en PHASE-7.md y PHASE-8.md. No iniciar fase 9, lobby,
+Fases 7, 8 y 9 implementadas; leer PHASE-7.md, PHASE-8.md y PHASE-9.md. No iniciar fase 10,
 cuentas ni persistencia externa sin petición. La prueba real de 30 minutos está reservada para fase 10.
 
 Construcción: BuildingState, BuildingWorld y BuildingView; materiales y colocaciones solo cambian
@@ -135,6 +135,10 @@ Ciclo: BattleRound y zone, compartidos servidor/offline. Vidas, protección y es
 vez por tick real de simulación, no por entrada. Máximo 1800 s también con reloj monotónico.
 Desempate: vidas, eliminations (definitivas), HP. El inventario se conserva al reaparecer hasta
 que se defina otra regla. No reiniciar secuencias ni retroceder revisiones de construcción.
-Red v7: nuevas sesiones durante una ronda son espectadoras; reconectar conserva las vidas.
+Red v8: nuevas sesiones durante una ronda son espectadoras; reconectar conserva las vidas.
+Lobby: LobbyState valida anfitrión, Listo y perfiles. Sala online = BattleRound.managed; sin
+inicio automático, acciones bloqueadas fuera de partida y resultados hasta elección del jugador.
+Doce skins de polo en shared/lobby/profile; nunca cambian física o estadísticas. Nombre/skin en
+br.profile.v1. Mantener los nombres DOM limitados a ocho, con visión y sin HTML interpretado.
 Registro: hasta diez resultados por sala y 2000 eventos de combate por ronda. No persistencia externa.
 BR_BENCH_LOADOUT requiere NODE_ENV=test y --br-bench-loadout; jamás habilitarlo en producción.

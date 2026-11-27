@@ -1,3 +1,7 @@
+import { Frontend, Results } from './components/Frontend';
+import { loadProfile, saveProfile } from '@/game/profile';
+import type { Profile } from '@shared/lobby/profile';
+import type { RoundResult } from '@shared/battle/BattleRound';
 import { useEffect, useRef, useState } from 'react';
 import { Game } from '@/game/Game';
 import type { InputDevice } from '@/game/input/sources';
@@ -43,6 +47,24 @@ export function App() {
   const [volume, setVolume] = useState(() => loadVolume());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingHud, setEditingHud] = useState(false);
+  const [profile,setProfile]=useState(loadProfile);
+  const [practice,setPractice]=useState(false);
+  const [frontState,setFrontState]=useState<ReturnType<Game['getFrontendState']>|null>(null);
+  const [result,setResult]=useState<RoundResult|null>(null);
+  const dismissedResult=useRef('');
+  const [netError,setNetError]=useState('');
+  const phase=frontState?.battle?.phase;
+  const online=frontState?.net==='connected'||frontState?.net==='reconnecting';
+  const front=ready&&game&&(online?phase!=='running':!practice);
+  useEffect(()=>{
+    if(!game||!ready)return;
+    const update=()=>{const state=game.getFrontendState();setFrontState(state);if(state.battle?.result&&(state.sessionKey+':'+state.battle.result.round)!==dismissedResult.current)setResult(state.battle.result);else if(state.battle?.phase==='running')setResult(null);};
+    update();const timer=window.setInterval(update,200);
+    const off=game.events.on('net',e=>setNetError(e.reason??''));
+    return()=>{window.clearInterval(timer);off();};
+  },[game,ready]);
+  useEffect(()=>{game?.setPresentation(!!front||!!result);},[game,front,result]);
+  const changeProfile=(p:Profile)=>{setProfile(p);saveProfile(p);if(p.name.trim())game?.updateProfile(p);};
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -70,7 +92,7 @@ export function App() {
     g.init()
       .then(() => {
         // ?online&server=…&name=…&code=… conecta al cargar (útil para pruebas y enlaces de sala).
-        if (onlineParams.auto) void g.goOnline({ url: onlineParams.server, name: onlineParams.name || 'Jugador', code: onlineParams.code });
+        if (onlineParams.auto) void g.goOnline({ url: onlineParams.server, name: onlineParams.name || 'Jugador', skin:loadProfile().skin, code: onlineParams.code });
       })
       .catch(() => undefined);
     return () => {
@@ -93,10 +115,10 @@ export function App() {
 
   // Con Ajustes o el editor abiertos, el personaje no se mueve y el ratón se suelta.
   useEffect(() => {
-    const paused = settingsOpen || editingHud;
+    const paused = settingsOpen || editingHud || !!front || !!result;
     game?.setInputSuspended(paused);
     if (paused && document.pointerLockElement) document.exitPointerLock?.();
-  }, [game, settingsOpen, editingHud]);
+  }, [game, settingsOpen, editingHud, front, result]);
 
   const updateSettings = (s: GameSettings) => {
     setSettings(s);
@@ -117,22 +139,23 @@ export function App() {
     return () => window.clearTimeout(t);
   }, [ready, hint, device]);
 
-  const showTouch = ready && game && (isTouch || device === 'touch') && device !== 'gamepad';
+  const playing=!front&&!result;
+  const showTouch = playing && ready && game && (isTouch || device === 'touch') && device !== 'gamepad';
 
   return (
     <main className="app">
       <canvas ref={canvasRef} className="app__canvas" aria-label="Escena del juego" onClick={onCanvasClick} onContextMenu={(e) => e.preventDefault()} />
       <div ref={overlayRef} className="app__combat" />
-      {ready && game && !editingHud && (
+      {ready && game && !editingHud && playing && (
         <div className="hud-safe hud-safe--info" aria-label="Estado del jugador">
           {INFO_WIDGETS.map((id) => (
-            <HudSlot key={id} id={id} layout={hudLayout[id]} interactive={id === 'construction' || id === 'inventory'}>
-              {renderInfoWidget(id, game)}
+            <HudSlot key={id} id={id} layout={hudLayout[id]} interactive={id === 'menu' || id === 'construction' || id === 'inventory'}>
+              {renderInfoWidget(id, game, false, ()=>{game.returnToMenu();setPractice(false);})}
             </HudSlot>
           ))}
         </div>
       )}
-      {ready && game && (
+      {ready && game && playing && (
         <Hud
           events={game.events}
           device={device}
@@ -157,7 +180,9 @@ export function App() {
         />
       )}
       {showTouch && !editingHud && !settingsOpen && <TouchControls touch={game.input.touch} layout={hudLayout} mode={settings.perspective} game={game} />}
-      {ready && game && !editingHud && <DeathScreen game={game} />}
+      {ready && game && !editingHud && playing && <DeathScreen game={game} />}
+      {front&&game&&!result&&!editingHud&&<Frontend game={game} profile={profile} lobby={frontState?.lobby} localId={frontState?.localId??''} countdown={frontState?.battle?.countdown} server={onlineParams.server} error={frontState?.error||netError} busy={frontState?.net==='connecting'||frontState?.net==='reconnecting'} onProfile={changeProfile} onSettings={()=>setSettingsOpen(true)} onConnect={req=>{setNetError('');void game.goOnline(req);}} onPractice={()=>{setPractice(true);game.updateProfile(profile);}} onLeave={()=>{game.goOffline();setPractice(false);}}/>}
+      {ready&&game&&result&&<Results result={result} localId={frontState?.localId??''} busy={frontState?.net==='reconnecting'} onLobby={()=>{if(!game.returnToLobby())return;dismissedResult.current=(frontState?.sessionKey??'')+':'+result.round;setResult(null);setPractice(false);}} onRematch={()=>{if(!game.rematch())return;dismissedResult.current=(frontState?.sessionKey??'')+':'+result.round;setResult(null);if(!online)setPractice(true);}}/>}
       {ready && game && settingsOpen && !editingHud && (
         <SettingsPanel
           settings={settings}
@@ -192,7 +217,7 @@ export function App() {
           }}
         />
       )}
-      {ready && game && !settingsOpen && !editingHud && <InteractPrompt game={game} device={device} />}
+      {ready && game && playing && !settingsOpen && !editingHud && <InteractPrompt game={game} device={device} />}
       {ready && game && <GraphicsNotice events={game.events} />}
       {ready && isTouch && <OrientationHint />}
       <LoadingScreen progress={progress.value} label={progress.label} error={error} hidden={ready} />

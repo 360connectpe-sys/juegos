@@ -1,3 +1,4 @@
+import { SHIRTS } from '@shared/lobby/profile';
 import {
   Bone,
   type BufferGeometry,
@@ -30,16 +31,7 @@ export interface AvatarColors {
 export const DEFAULT_COLORS: AvatarColors = { shirt: '#ff8c1a', pants: '#2b3a67', skin: '#f1c27d', hair: '#3b2416' };
 
 /** Paleta para distinguir jugadores en línea (índice = color del roster). */
-export const AVATAR_PALETTE: readonly AvatarColors[] = [
-  DEFAULT_COLORS,
-  { shirt: '#3ddc97', pants: '#23395b', skin: '#c68642', hair: '#1b1b1b' },
-  { shirt: '#5bc0eb', pants: '#3b2f2f', skin: '#f1c27d', hair: '#a0522d' },
-  { shirt: '#ff5a5f', pants: '#2b2d42', skin: '#8d5524', hair: '#111111' },
-  { shirt: '#9b5de5', pants: '#1d3557', skin: '#e0ac69', hair: '#f4d35e' },
-  { shirt: '#f5f7ff', pants: '#c1121f', skin: '#ffdbac', hair: '#5a3825' },
-  { shirt: '#ffd166', pants: '#073b4c', skin: '#c68642', hair: '#2d1e12' },
-  { shirt: '#06d6a0', pants: '#5f0f40', skin: '#8d5524', hair: '#e85d04' },
-];
+export const AVATAR_PALETTE: readonly AvatarColors[] = SHIRTS.map(([,shirt]) => ({...DEFAULT_COLORS,shirt}));
 
 export const paletteColors = (index: number): AvatarColors => AVATAR_PALETTE[((index % AVATAR_PALETTE.length) + AVATAR_PALETTE.length) % AVATAR_PALETTE.length]!;
 

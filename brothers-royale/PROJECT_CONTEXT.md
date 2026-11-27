@@ -2,7 +2,7 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 27 de noviembre de 2026, tras cerrar la **fase 8 (ciclo Battle Royale)**.
+Estado a 27 de noviembre de 2026, tras cerrar la **fase 9 (lobby, personalización y resultados)**.
 
 ---
 
@@ -12,13 +12,13 @@ Estado a 27 de noviembre de 2026, tras cerrar la **fase 8 (ciclo Battle Royale)*
 |---|---|
 | Repositorio | `360connectpe-sys/juegos`, carpeta `brothers-royale/` (el resto de carpetas son otros juegos: no tocarlos) |
 | Rama de trabajo | `brothers-royale-phase-3.1` (todas las fases desde la 3.1 se acumulan en ella) |
-| Último trabajo | Fase 8 sobre `5135bdb1032f0b0452a28d32f2d4ff8f7faa2e45` |
+| Último trabajo | Fase 9 sobre `8d15ae3a60e331769486a149bf2e10c602b8d06c` |
 | `main` | En `85dee86` (fase 2.2). **No fusionar con `main` salvo que se pida explícitamente.** |
-| Pruebas | **346 pruebas en 40 archivos, todas en verde** (`npm run check`): 313 anteriores + 33 de fase 8 |
+| Pruebas | **362 pruebas en 43 archivos, todas en verde** (`npm run check`): 346 anteriores + 16 de fase 9 |
 | Bundle publicado | `jugar/` regenerado e idéntico a `dist/` (`diff -qr dist jugar` sin diferencias) |
-| Protocolo de red | v7 (`PROTOCOL_VERSION`) |
-| Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6, 7, 8 |
-| Siguiente | Fase 9, pendiente de autorización. Validación real de 30 min reservada para fase 10. |
+| Protocolo de red | v8 (`PROTOCOL_VERSION`) |
+| Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6, 7, 8, 9 |
+| Siguiente | Fase 10, pendiente de autorización; incluye validación real de 30 min reservada. |
 
 ### Historial de commits de la rama (antiguo → reciente)
 
@@ -58,7 +58,7 @@ Stack: Vite 8 · TypeScript 5.9 strict · React 19 (solo UI) · Three.js · Rapi
 |---|---|
 | `npm ci` | Instalar dependencias |
 | `npm run dev` | Desarrollo. `?q=low\|normal` fuerza calidad; `?debug` expone `window.__BR_GAME__` |
-| `npm run check` | Tipos + 346 tests + build cliente + build servidor. **Obligatorio antes de cada commit** |
+| `npm run check` | Tipos + 362 tests + build cliente + build servidor. **Obligatorio antes de cada commit** |
 | `npm run server` | Compila y arranca Colyseus en `ws://localhost:2567` (`PORT`, `HOST`) |
 | `npm run build:pages` | Regenera `jugar/` (lo que sirve GitHub Pages). Commitear `jugar/` al cerrar cada avance |
 | Online local | `npm run server` + `npm run dev`, botón "Jugar en línea" o `?online&server=ws://localhost:2567&name=Ana&code=SALA1` |
@@ -74,7 +74,7 @@ brothers-royale/
                      validación, snapshots, reconexión), ServerWorld.ts (simulación autoritativa PURA, sin red)
   src/shared/        Lógica pura y determinista, compartida cliente/servidor:
                      constants, types, math, random (createRng), movement (motor), inputValidation,
-                     reconciliation, protocol (v7, mensajes y límites), netcodec (snapshots cuantizados),
+                     reconciliation, protocol (v8, mensajes y límites), netcodec (snapshots cuantizados),
                      session, items (catálogo), inventory (+ validación, cargador, recarga, consumo),
                      match/{MatchState.ts, loot.ts}, world/{terrain, layout, prefab, structures, colliders},
                      combat/{weapons.ts (armas, rarezas, balance, salud, constantes), hitscan.ts (rayo-cápsula,
@@ -97,7 +97,7 @@ brothers-royale/
   src/ui/            App, styles.css, components/ (Hud, FpsCounter, QualityToggle, GraphicsNotice,
                      OrientationHint, SettingsPanel, InteractPrompt, OnlinePanel, TouchControls, DeathScreen,
                      LoadingScreen, Logo), hud/{layout.ts, HudSlot.tsx, HudEditor.tsx, widgets.tsx}
-  tests/             40 archivos Vitest (§7)
+  tests/             43 archivos Vitest (§7)
   jugar/             Bundle publicado en GitHub Pages
   CLAUDE.md          Reglas permanentes  ·  PROJECT.md  Bitácora por fase  ·  PROJECT_CONTEXT.md  Este archivo
   AUDIT-3.1.md, SOAK-8-PLAYERS.md, AUDIT-3.2-5.md   Informes de Codex
@@ -213,7 +213,7 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 3. **Motor de personaje puro y serializable** (`MotorState`/`CharacterSnapshot`): la reconciliación
    re-simula exactamente. Acciones nuevas = bit nuevo en `Buttons`, nunca booleanos sueltos.
 4. **Servidor autoritativo sin confiar en el cliente**; `ServerWorld` se prueba sin red, la sala solo conecta.
-   Cambiar formato de mensaje = subir `PROTOCOL_VERSION` (hoy v7).
+   Cambiar formato de mensaje = subir `PROTOCOL_VERSION` (hoy v8).
 5. **Lo que se ve es lo que choca**: prefabs de datos → malla + colisionadores. Futuras construcciones usarán
    el mismo formato y la capa `build`.
 6. **Objetos nunca predichos en el cliente**: más simple y seguro; la latencia de abrir/recoger es aceptable.
@@ -265,7 +265,7 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 
 ---
 
-## 7. Pruebas: 346 en 40 archivos
+## 7. Pruebas: 362 en 43 archivos
 
 | Archivo | Nº | Cubre |
 |---|---|---|
@@ -309,8 +309,11 @@ personaje provisional, iluminación, física Rapier, bucle de paso fijo, arquite
 | battleWorld.test.ts | 5 | Descenso físico, ráfagas, reinicio, reconciliación y offline |
 | battle.integration.test.ts | 3 | Reconexión, ciclo completo acelerado con 8 clientes y soak |
 | battleClient.test.tsx | 6 | Vidas reales, espectador táctil, tormenta y validación |
+| lobby.test.ts | 7 | Perfiles, permisos, anfitrión y estadísticas autoritativas |
+| lobbyClient.test.tsx | 6 | Pantallas, preferencias, resultados y nombres seguros |
+| lobby.integration.test.ts | 3 | Ocho clientes, host/reconexión, inicio, final y revancha |
 
-Regla: no bajar de 346; cada sistema nuevo llega con tests de su parte pura.
+Regla: no bajar de 362; cada sistema nuevo llega con tests de su parte pura.
 
 ---
 
@@ -335,8 +338,8 @@ Regla: no bajar de 346; cada sistema nuevo llega con tests de su parte pura.
 - Desde GitHub Pages (https) el modo online necesita un servidor `wss://`; no hay ninguno desplegado.
 
 **Juego**
-- Los cofres no se rellenan: no hay fin de partida ni reinicio de sala.
-- Muerte provisional (vuelta a los 3 s con el inventario); sin daño por caída; sin multiplicador por cabeza.
+- El ciclo de partida y el reinicio ya existen; fases 8 y 9 sustituyen las limitaciones antiguas.
+- Sin multiplicador por cabeza. Inventario conservado al reaparecer hasta definir otra regla.
 - El rifle épico deja a 0,8 de salud con 4 disparos (99,2): diseño deliberado (la rareza no ahorra disparos).
 
 **Combate (fase 6)**
@@ -351,7 +354,7 @@ Regla: no bajar de 346; cada sistema nuevo llega con tests de su parte pura.
 
 ## 9. Cómo continuar
 
-1. `cd brothers-royale && npm ci && npm run check` → deben salir 346 tests en verde.
+1. `cd brothers-royale && npm ci && npm run check` → deben salir 362 tests en verde.
 2. Leer `CLAUDE.md` (reglas, presupuestos de rendimiento, fuera de alcance) y la sección de la fase
    correspondiente en `PROJECT.md`.
 3. Trabajar en la rama indicada por el usuario (hasta ahora `brothers-royale-phase-3.1`), sin fusionar con
@@ -359,14 +362,14 @@ Regla: no bajar de 346; cada sistema nuevo llega con tests de su parte pura.
 4. Al cerrar un avance: tests nuevos, actualizar `PROJECT.md` (y este archivo si cambia la arquitectura,
    el estado o los errores conocidos), `npm run build:pages`, `npm run check`, commit y push a la rama.
 
-**Fuera de alcance hasta que se pida**: fase 9, lobby y persistencia de cuentas. Ganchos listos: evento `death` y
+**Fuera de alcance hasta que se pida**: fase 10 y persistencia de cuentas. Ganchos listos: evento `death` y
 `CombatState.onDeath`, `CombatLog`, bit `BUILD`, `MotorModifiers`, capa `build`, `PredictionController`.
 
 **Probar el combate**: sin conexión hay 3 muñecos de práctica delante del punto de aparición; en `?debug`,
 `__BR_GAME__.debugGive({ kind: 'rifle', qty: 1, rarity: 'epic' })` y `debugGive({ kind: 'ammo_medium', qty: 90 })`
 dan objetos. En línea: `npm run server` + «Jugar en línea» en dos pestañas (las armas salen de los cofres).
 
-**Roadmap pendiente** (PROJECT.md): fase 9 y posteriores, lobby y prueba de 30 minutos reales en fase 10. Candidatos técnicos: suavizar correcciones,
+**Roadmap pendiente** (PROJECT.md): fase 10 y posteriores; prueba de 30 minutos reales en fase 10. Candidatos técnicos: suavizar correcciones,
 cuantizar los mensajes de combate, colisión de cámara con copas, fin de partida/reinicio de sala, despliegue de
 un servidor `wss://`, medición en móviles reales.
 
@@ -401,7 +404,7 @@ descripciones de fases anteriores son históricas.
 - Suite final de 313 pruebas. Ocho clientes reales recolectan, construyen y destruyen con disparos,
   incluyendo reconexión. El informe contiene mediciones y límites de SwiftShader.
 
-## Fase 8 — Estado vigente
+## Fase 8 — Historial del ciclo (el lobby se sustituye en fase 9)
 
 Leer PHASE-8.md para reglas completas, métricas y reproducción. Protocolo v7.
 
@@ -432,4 +435,37 @@ Leer PHASE-8.md para reglas completas, métricas y reproducción. Protocolo v7.
   fugas nativas de esa ventana corta. En gráficos: Baja 15–19 llamadas, Normal 14–31 con 8 jugadores
   y 16 piezas; tras dispose, 0 geometrías/texturas. Faltan teléfonos físicos y prueba larga.
 - La validación real de 30 minutos se reserva para fase 10 por instrucción explícita. No iniciar
-  fase 9 ni fusionar main sin petición del usuario.
+  fase 10 ni fusionar main sin petición del usuario.
+
+## Fase 9 — Estado vigente
+
+PHASE-9.md contiene el flujo y las mediciones. Protocolo v8. No iniciar fase 10.
+
+- Pantalla principal con personaje 3D en la misma escena/canvas, nombre, doce polos, crear/entrar,
+  práctica y Ajustes. La cámara de presentación no cambia la perspectiva de juego guardada.
+- LobbyState en shared/lobby: miembros, host, estados Listo/cargado/conectado y permisos. Solo el
+  anfitrión inicia, con mínimo dos, todos cargados/conectados y participantes listos. Cuenta atrás 10 s.
+  La caída de un miembro cancela la cuenta atrás; el host pasa al primer conectado y no se revierte
+  al reconectar. Máximo ocho, incluidas reservas de reconexión de 15 s.
+- BrothersRoom activa BattleRound.managed: bloquea movimiento/combate/botín/construcción en lobby,
+  desactiva inicio automático y conserva resultados hasta returnLobby o rematch. Las clases puras
+  mantienen el modo anterior para fixtures; la sala real siempre usa el nuevo flujo, sin bypass de red.
+- Privadas: código aleatorio de ocho caracteres, unlisted, único por instancia y comprobado incluso
+  por roomId. Entrar no crea una sala si no existe. Públicas usan código vacío, independientes de privadas.
+- Skins en shared/lobby/profile.ts solo cambian polo; misma geometría, hitbox y estadísticas. Registro
+  de perfil en br.profile.v1 con migración de br.name. Ajustes/HUD/volumen/calidad conservan sus claves.
+- NameTags usa hasta ocho nodos DOM, texto literal, proyección y visión a 10 Hz, sin draw calls nuevos.
+- Resultados: posición con empates, eliminaciones definitivas, muertes, daño efectivo en HP, precisión
+  de disparos contra jugadores, madera acreditada, colocaciones aceptadas y supervivencia hasta última
+  vida/retirada. Los contadores proceden de CombatState/BuildingState; no se aceptan estadísticas cliente.
+- Revancha abre lobby limpio y marca listo solo al solicitante. Los otros deciden; el host vuelve a
+  iniciar. El resultado de cada cliente permanece mientras otros vuelven al lobby. Caché por sesión/ronda
+  evita reabrir resultados ante latencia o confundir rondas de salas diferentes.
+- Menú principal forma parte del HUD editable, con migración automática de layouts previos.
+- 362 pruebas en 43 archivos (346 conservadas +16 nuevas). Integración con ocho SDK y navegador con
+  dos clientes táctiles + seis SDK. Reconexión conserva vidas/inventario, transferencia de host probada.
+- Lobby observado: 10 draw calls, un solo canvas; juego: Baja 12–16, Normal hasta 27 en las muestras.
+  Tras dispose: 0 geometrías/texturas. SwiftShader no representa móviles reales; shader warmup genera picos.
+- No hay cuentas ni almacenamiento externo. Se conservan diez resultados en memoria por sala.
+  GitHub Pages sigue necesitando un servidor wss://; no se despliega ninguno. Validación real de 30 min
+  reservada para fase 10. Main y los otros juegos permanecen fuera del alcance.

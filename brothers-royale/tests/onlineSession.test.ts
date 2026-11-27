@@ -55,6 +55,7 @@ describe('OnlineSession: dos clientes simultáneos contra el servidor', () => {
     const a = await makeClient('Ana', 'E2E1');
     const b = await makeClient('Beto', 'E2E1');
     expect(a.session.info.roomId).toBe(b.session.info.roomId);
+    (matchMaker.getLocalRoomById(a.session.info.roomId) as BrothersRoom).world.round.start();await wait(80);
     await play([a, b], 15, () => ({ x: 0, y: 0 }), 1);
     expect(a.session.players().map((p) => p.id).sort()).toEqual([a.session.localPlayerId, b.session.localPlayerId].sort());
     expect(a.session.identity(b.session.localPlayerId).name).toBe('Beto');

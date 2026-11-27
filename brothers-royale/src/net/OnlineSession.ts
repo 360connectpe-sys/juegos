@@ -1,3 +1,6 @@
+import { validLobby, type LobbySnapshot } from '@shared/lobby/LobbyState';
+import { validProfile, type Profile } from '@shared/lobby/profile';
+import { newRoomCode } from '@/game/profile';
 import type { RoundSnapshot } from '@shared/battle/BattleRound';
 import { validRound } from '@shared/battle/validation';
 import type { BuildingWorld } from '@/physics/BuildingWorld';
@@ -48,6 +51,9 @@ export interface OnlineInfo {
 }
 
 export interface OnlineOptions {
+  skin?:number;
+  mode?:'create'|'join'|'quick';
+  visibility?:'private'|'public';
   building?: BuildingWorld;
   url: string;
   name: string;
@@ -104,6 +110,8 @@ export class OnlineSession implements GameSession {
   onMatchEvent: ((e: ClientMatchEvent) => void) | null = null;
   private disposed = false;
   battle?: RoundSnapshot;
+  lobby?:LobbySnapshot;
+  lobbyError='';
 
   private constructor(
     private readonly room: Room,
@@ -113,6 +121,7 @@ export class OnlineSession implements GameSession {
     chests: readonly ChestPlacement[] = [],
     readonly building?: BuildingWorld,
   ) {
+    if(validLobby(welcome.lobby))this.lobby=welcome.lobby;
     this.replica = new ReplicatedMatch(chests);
     this.replica.load(welcome.match, welcome.inventory);
     if (validRound(welcome.battle)) this.battle = welcome.battle;
@@ -137,9 +146,10 @@ export class OnlineSession implements GameSession {
     opts.signal?.throwIfAborted();
     const timeout = opts.timeoutMs ?? 8000;
     const client = new Client(opts.url);
-    const join: JoinOptions = { protocol: PROTOCOL_VERSION, name: opts.name, code: sanitizeRoomCode(opts.code) };
+    const code=opts.mode==='create'?(opts.visibility==='private'?newRoomCode():''):sanitizeRoomCode(opts.code);
+    const join: JoinOptions & {mode?:string;visibility?:string} = { protocol: PROTOCOL_VERSION, name: opts.name, code, skin:opts.skin??0,mode:opts.mode,visibility:opts.visibility };
     let expired = false;
-    const joining = client.joinOrCreate(ROOM_NAME, join);
+    const joining = opts.mode==='create'?client.create(ROOM_NAME,join):opts.mode==='join'?client.join(ROOM_NAME,join):client.joinOrCreate(ROOM_NAME, join);
     void joining.then((late) => { if (expired) void late.leave(true).catch(() => undefined); }, () => undefined);
     const room = await withTimeout(joining, timeout, 'No se pudo conectar al servidor')
       .catch((error) => { expired = true; throw error; });
@@ -162,6 +172,8 @@ export class OnlineSession implements GameSession {
         room.onMessage('join', (m: RosterEntry) => (session ? session.onJoin(m) : early.join.push(m)));
         room.onMessage('leave', (m: { id: string; netId: number }) => session?.onLeave(m.netId));
         room.onMessage('pong', (m: { t: number }) => session?.onPong(m));
+        room.onMessage('lobby',(m:unknown)=>{if(session&&validLobby(m))session.onLobby(m);});
+        room.onMessage('lobbyError',(m:{message?:unknown})=>{if(session&&typeof m?.message==='string')session.lobbyError=m.message.slice(0,160);});
         room.onMessage('battle', (s: unknown) => { if (session && validRound(s)) session.battle = s; });
         room.onMessage('building', (s: BuildingSnapshot) => { if (s && session?.building && s.revision >= session.building.state.revision) session.building.load(s); });
         room.onMessage('match', (m: { tick: number; events: PublicMatchEvent[] }) => session?.onMatch(m));
@@ -240,6 +252,17 @@ export class OnlineSession implements GameSession {
   get combat(): CombatView {
     return { vitals: this.vitalsState };
   }
+
+  private onLobby(s:LobbySnapshot):void{
+    if(this.lobby&&s.revision<this.lobby.revision)return;
+    this.lobby=s;this.lobbyError='';
+    for(const p of s.players)for(const r of this.roster.values())if(r.id===p.id){r.name=p.name;r.color=p.skin;if(p.id===this.localPlayerId)this.body.state.name=p.name;}
+  }
+  lobbyReady(ready:boolean):void{if(this.info.status==='connected')this.room.send('lobbyReady',{ready});}
+  setProfile(profile:Profile):boolean{if(this.info.status!=='connected'||!validProfile(profile))return false;this.room.send('profile',profile);return true;}
+  startRound():boolean{if(this.info.status!=='connected')return false;this.room.send('start',{});return true;}
+  returnToLobby():boolean{if(this.info.status!=='connected')return false;this.room.send('returnLobby',{});return true;}
+  rematch():boolean{if(this.info.status!=='connected')return false;this.room.send('rematch',{});return true;}
 
   requestBuild(request: BuildRequest): boolean {
     if (this.info.status !== 'connected') return false;
@@ -324,6 +347,7 @@ export class OnlineSession implements GameSession {
       return;
     }
     // Tras reconectar: estado autoritativo fresco y sin entradas pendientes viejas.
+    if(validLobby(w.lobby))this.onLobby(w.lobby);
     this.replica.load(w.match, w.inventory);
     if (validRound(w.battle)) this.battle = w.battle;
     if (w.building) this.building?.load(w.building);

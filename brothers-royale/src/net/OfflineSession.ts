@@ -96,6 +96,8 @@ export class OfflineSession implements GameSession {
         }
       },
     }, false);
+    this.round.holdResults=true;
+    if(building){building.state.onHarvest=(id,n)=>this.round.harvest(id,n);building.state.onBuild=id=>this.round.built(id);}
     this.fight.onRespawn = id => this.round.respawn(id);
     this.fight.drain();
     this.ctx = {
@@ -137,6 +139,11 @@ export class OfflineSession implements GameSession {
     return this.round.canAct(this.localPlayerId) && (this.building?.state.place(this.localPlayerId, request, this.local.state.position) ?? false);
   }
 
+  resetPractice():void{this.round.returnToLobby(true);}
+  returnToLobby():boolean{return this.round.returnToLobby();}
+  rematch():boolean{if(this.round.phase==='finished')this.round.returnToLobby();return this.round.start();}
+  setProfile(profile:{name:string;skin:number}):boolean{this.local.state.name=profile.name;this.localColor=profile.skin;return true;}
+  private localColor=0;
   get battle() { return this.round.snapshot(); }
   startRound(): boolean { return this.round.start(); }
 
@@ -197,7 +204,7 @@ export class OfflineSession implements GameSession {
   identity(id: string): PlayerIdentity {
     const d = this.dummies.get(id);
     if (d) return { name: d.name, color: d.color };
-    return { name: this.local.state.name, color: 0 };
+    return { name: this.local.state.name, color: this.localColor };
   }
 
   localPlayer(): PlayerState {

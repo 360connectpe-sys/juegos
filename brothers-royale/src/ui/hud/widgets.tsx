@@ -355,12 +355,13 @@ export function Minimap({ game }: { game: Game | null }) {
   );
 }
 
-export type InfoWidgetId = 'wood' | 'construction' | 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
-export const INFO_WIDGETS: readonly InfoWidgetId[] = ['wood', 'construction', 'health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
+export type InfoWidgetId = 'menu' | 'wood' | 'construction' | 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
+export const INFO_WIDGETS: readonly InfoWidgetId[] = ['menu', 'wood', 'construction', 'health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
 
 /** Indicadores del HUD (todas las pantallas). */
-export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = false) {
+export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = false, onMenu?:()=>void) {
   switch (id) {
+    case 'menu': return <button type="button" className="menu-button" onClick={preview?undefined:onMenu}>Menú principal</button>;
     case 'wood':
       return <ConstructionWidget game={game} counter />;
     case 'construction':

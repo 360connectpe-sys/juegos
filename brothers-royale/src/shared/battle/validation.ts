@@ -20,6 +20,7 @@ export function validRound(s: unknown): s is RoundSnapshot {
       !result.winners.every(id => typeof id === 'string' && result.scores.some(p => p && p.id === id)) ||
       !result.scores.every(p => p && typeof p.id === 'string' && p.id.length <= 64 && typeof p.name === 'string' && p.name.length <= 64 &&
         typeof p.forfeited === 'boolean' && Number.isInteger(p.lives) && number(p.lives, 0, 3) && number(p.hp, 0, 100) &&
+        ['position','survivalSeconds','woodCollected','structuresBuilt','accuracy'].every(key=>p[key as keyof typeof p]===undefined||number(p[key as keyof typeof p],key==='position'?1:0,key==='accuracy'?100:key==='position'?8:key==='survivalSeconds'?1800:1e9))&&
         ['shots', 'hits', 'damageDealt', 'damageTaken', 'kills', 'eliminations', 'deaths', 'healed'].every(key => number(p[key as keyof typeof p], 0, 1e9)))) return false;
   }
   return true;

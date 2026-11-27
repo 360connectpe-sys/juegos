@@ -1,3 +1,5 @@
+import { matchMaker } from '@colyseus/core';
+import type { BrothersRoom } from '../server/BrothersRoom';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client, type Room } from '@colyseus/sdk';
 import { createServer } from '../server/index';
@@ -56,6 +58,7 @@ describe('servidor autoritativo (Colyseus) con dos clientes', () => {
     const a = await connect('Ana');
     const b = await connect('Ana'); // mismo nombre → se desambigua
     expect(a.room.roomId).toBe(b.room.roomId);
+    (matchMaker.getLocalRoomById(a.room.roomId) as BrothersRoom).world.round.start();await wait(80);
     expect(a.welcome!.protocol).toBe(PROTOCOL_VERSION);
     expect(a.welcome!.tickRate).toBe(30);
     expect(b.welcome!.roster.map((r) => r.name).sort()).toEqual(['Ana', 'Ana 2']);

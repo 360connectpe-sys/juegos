@@ -1,3 +1,5 @@
+import type { Profile } from './lobby/profile';
+import type { LobbySnapshot } from './lobby/LobbyState';
 import type { RoundSnapshot } from './battle/BattleRound';
 import type { BuildingSnapshot, BuildRequest } from './building/BuildingState';
 /**
@@ -16,8 +18,9 @@ import type { PlayerInput } from './types';
  * del snapshot y mensajes `combat`, `hits` y `vitals`.
  * v6 (fase 7): materiales, árboles destructibles y construcciones autoritativas.
  * v7 (fase 8): vidas finitas, descenso, protección, tormenta y resultados de ronda.
+ * v8 (fase 9): perfiles cosméticos, permisos del lobby y estadísticas finales.
  */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** Nombre de la sala registrada en el servidor. */
 export const ROOM_NAME = 'brothers';
@@ -87,6 +90,7 @@ export interface JoinOptions {
   name: string;
   /** Código de sala (vacío = sala pública). */
   code?: string;
+  skin?: number;
 }
 
 /** Entrada del roster: identidad pública de un jugador en la sala. */
@@ -102,6 +106,11 @@ export interface RosterEntry {
 
 // --- Cliente → servidor ----------------------------------------------------
 export interface ClientMessages {
+  profile:Profile;
+  lobbyReady:{ready:boolean};
+  start:Record<string,never>;
+  rematch:Record<string,never>;
+  returnLobby:Record<string,never>;
   build: BuildRequest;
   input: PlayerInput;
   /** Elegir hueco del inventario (0..4). */
@@ -133,6 +142,7 @@ export interface WelcomeMessage {
   vitals?: Vitals;
   building?: BuildingSnapshot;
   battle?: RoundSnapshot;
+  lobby?: LobbySnapshot;
 }
 
 /** Combate visible para toda la sala: disparos, golpes, eliminaciones y vueltas. */
@@ -164,6 +174,8 @@ export interface CorrectionMessage {
 }
 
 export interface ServerMessages {
+  lobby: LobbySnapshot;
+  lobbyError: { message: string };
   battle: RoundSnapshot;
   building: BuildingSnapshot;
   welcome: WelcomeMessage;

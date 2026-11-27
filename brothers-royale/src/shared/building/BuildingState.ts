@@ -40,6 +40,8 @@ export const buildTop = (p: BuildRequest): number => p.y + (p.kind === 'wall' ||
 
 /** Autoridad compartida. Las consultas de colisión son inyectadas por el mundo físico. */
 export class BuildingState {
+  onHarvest: ((id:string,amount:number)=>void)|null=null;
+  onBuild: ((id:string)=>void)|null=null;
   readonly pieces = new Map<number, BuildPiece>();
   readonly wood = new Map<string, number>();
   readonly trees: number[];
@@ -86,13 +88,17 @@ export class BuildingState {
     if (!this.canPlace(id, r, feet) || !validBuildRequest(r)) return false;
     this.wood.set(id, this.wood.get(id)! - BUILD.cost);
     this.pieces.set(this.nextId, { kind: r.kind, x: r.x, y: r.y, z: r.z, rotation: r.rotation, id: this.nextId++, owner: id, hp: BUILD.hp });
+    this.onBuild?.(id);
     this.touch(); return true;
   }
   hitTree(id: string, index: number, damage: number, axe: boolean): boolean {
     if (!this.wood.has(id) || !(damage > 0) || !(this.trees[index]! > 0)) return false;
     const actual = Math.min(this.trees[index]!, damage);
     this.trees[index] = Math.max(0, this.trees[index]! - damage);
-    if (axe) this.wood.set(id, Math.min(BUILD.woodCap, this.wood.get(id)! + Math.floor(actual / 15 * BUILD.woodPerHit)));
+    if (axe) {
+      const before=this.wood.get(id)!;const after=Math.min(BUILD.woodCap,before+Math.floor(actual/15*BUILD.woodPerHit));
+      this.wood.set(id,after);if(after>before)this.onHarvest?.(id,after-before);
+    }
     this.touch(); return true;
   }
   hitPiece(id: number, damage: number): boolean {

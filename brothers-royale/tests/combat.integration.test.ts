@@ -102,6 +102,7 @@ describe('combate en línea con 8 jugadores y latencia simulada', () => {
     for (let i = 0; i < 8; i++) clients.push(await makeClient(`P${i}`, 'PVP8'));
     clients.forEach((c, i) => addLatency(c.session, 60 + (i % 4) * 25, 25, i + 1));
     const room = roomOf(clients[0]!);
+    room.world.round.start();await wait(80);
     expect(room.world.players.size).toBe(8);
     const center = clearing(8);
     const ids = clients.map((c) => c.session.localPlayerId);
@@ -171,6 +172,7 @@ describe('combate en línea con 8 jugadores y latencia simulada', () => {
     const target = await makeClient('Blanco', 'LAG');
     addLatency(shooter.session, 150, 20, 7);
     const room = roomOf(shooter);
+    room.world.round.start();await wait(80);
     const center = clearing(8);
     const place = (c: TestClient, x: number, z: number) => {
       const p = room.world.players.get(c.session.localPlayerId)!;

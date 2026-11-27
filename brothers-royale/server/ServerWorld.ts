@@ -25,13 +25,13 @@ import { worldColliders } from '@shared/world/colliders';
 import { generateWorldLayout, spawnPoint, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
 
-export const AVATAR_COLORS = 8;
+export const AVATAR_COLORS = 12;
 
 export interface ServerPlayer {
   readonly id: string;
   readonly netId: number;
-  readonly name: string;
-  readonly color: number;
+  name: string;
+  color: number;
   readonly body: CharacterBody;
   /** Entradas válidas pendientes de simular (orden de secuencia). */
   readonly queue: PlayerInput[];
@@ -94,6 +94,8 @@ export class ServerWorld {
       reset: ids => this.resetRound(ids),
       spawn: (id, zone, index) => { const p = this.players.get(id); if (p) this.spawnSky(p, zone, index); },
     });
+    this.building.state.onHarvest=(id,n)=>this.round.harvest(id,n);
+    this.building.state.onBuild=id=>this.round.built(id);
     this.combat.onRespawn = id => this.round.respawn(id);
   }
 

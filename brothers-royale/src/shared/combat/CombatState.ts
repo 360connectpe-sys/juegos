@@ -96,8 +96,12 @@ export interface AttackContext {
 /** Estadísticas acumuladas por jugador (para futuras estadísticas de partida). */
 export interface FighterStats {
   shots: number;
+  rangedShots?: number;
+  accurateShots?: number;
   hits: number;
   damageDealt: number;
+  effectiveDamageDealt?: number;
+  effectiveDamageTaken?: number;
   damageTaken: number;
   kills: number;
   /** Oponentes que han agotado su tercera vida (criterio del desempate). */
@@ -466,6 +470,8 @@ export class CombatState {
     f.actionTimer = 0.15;
     const stats = this.log.of(f.id);
     stats.shots++;
+    stats.rangedShots=(stats.rangedShots??0)+1;
+    if(damage.size>0)stats.accurateShots=(stats.accurateShots??0)+1;
     this.events.push({ type: 'shot', by: f.id, weapon: kind, rarity, origin: round2(origin), ends, hits });
     for (const [victim, d] of damage) {
       stats.hits++;
@@ -514,7 +520,11 @@ export class CombatState {
   private applyDamage(victim: string, by: string, weapon: AttackKind, amount: number, at: Vec3, distance: number, tick: number): void {
     const v = this.fighters.get(victim);
     if (!v || v.dead || !this.active || v.protection > 0 || !(amount > 0) || !Number.isFinite(amount)) return;
+    const before=v.hp;
     v.hp = roundDamage(Math.max(0, v.hp - amount));
+    const actual=roundDamage(before-v.hp);
+    this.log.of(victim).effectiveDamageTaken=(this.log.of(victim).effectiveDamageTaken??0)+actual;
+    if(this.fighters.has(by))this.log.of(by).effectiveDamageDealt=(this.log.of(by).effectiveDamageDealt??0)+actual;
     if (v.heal) v.heal = null; // recibir daño cancela la curación
     if (this.fighters.has(by)) this.log.of(by).damageDealt += amount;
     this.log.of(victim).damageTaken += amount;

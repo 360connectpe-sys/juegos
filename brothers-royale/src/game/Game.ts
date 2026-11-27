@@ -1,3 +1,6 @@
+import { NameTags } from './entities/NameTags';
+import type { Profile } from '@shared/lobby/profile';
+import { loadProfile } from './profile';
 import { StormView } from './world/StormView';
 import { contains } from '@shared/battle/zone';
 import { BuildingWorld } from '@/physics/BuildingWorld';
@@ -19,7 +22,7 @@ import type { InsideState } from '@shared/world/prefab';
 import { worldColliders } from '@shared/world/colliders';
 import { generateWorldLayout, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
-import { Frustum, Matrix4, Sphere, type Group, type Object3D } from 'three';
+import { PerspectiveCamera, Frustum, Matrix4, Sphere, type Group, type Object3D } from 'three';
 import { BlobShadows, disposeAvatarResources, PlayerAvatar } from './entities/PlayerAvatar';
 import { Vector3 } from 'three';
 import { moveToWorld, type CameraMode } from '@/engine/camera/cameraMath';
@@ -75,6 +78,9 @@ export interface OnlineRequest {
   url: string;
   name: string;
   code?: string;
+  skin?:number;
+  mode?:'create'|'join'|'quick';
+  visibility?:'private'|'public';
 }
 
 /** Objetivo de interacción cercano (para el botón Abrir / Recoger). */
@@ -173,6 +179,7 @@ export class Game {
   private weapons = new WeaponBatch();
   private readonly fx = new CombatFx();
   readonly sound = new SoundFx();
+  private readonly nameTags=typeof document==='undefined'?null:new NameTags();
   private readonly overlay: CombatOverlay | null = typeof document === 'undefined' ? null : new CombatOverlay();
   private readonly localWeapon = new LocalWeapon();
   private vitals: Vitals = fullVitals();
@@ -186,6 +193,11 @@ export class Game {
   private lastAiming = false;
   private statsTimer = 0;
   private disposed = false;
+  private presentation=false;
+  private readonly lobbyCamera=new PerspectiveCamera(34,1,.1,180);
+  private localColor=0;
+  private sessionSerial=0;
+  private readonly remoteColors=new Map<string,number>();
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -205,6 +217,7 @@ export class Game {
   /** Capa DOM del combate (mira, números de daño) sobre el lienzo. */
   attachOverlay(parent: HTMLElement): void {
     this.overlay?.attach(parent);
+    if(this.nameTags)parent.append(this.nameTags.root);
   }
 
   setVolume(v: number): void {
@@ -234,7 +247,8 @@ export class Game {
       const spawn = { x: layout.spawn.x, y: terrainHeight(layout.spawn.x, layout.spawn.z, layout.terrain) + 0.1, z: layout.spawn.z };
       this.session = new OfflineSession(physics, spawn, 'Jugador', layout.chests, undefined, this.dummySpots(layout), this.buildingWorld);
       this.attachSession(this.session);
-      this.avatar = new PlayerAvatar(0, this.quality.shadows);
+      const profile=loadProfile();this.session.setProfile?.(profile);this.localColor=profile.skin;
+      this.avatar = new PlayerAvatar(profile.skin, this.quality.shadows);
       this.engine.scene.add(this.avatar.root);
       const first = this.session.localPlayer();
       if (first) this.avatar.pushState(first, true);
@@ -343,6 +357,8 @@ export class Game {
       local.gear = this.localGear(session);
       this.avatar.pushState(local);
     }
+    const color=session.identity(session.localPlayerId).color;
+    if(color!==this.localColor)this.replaceLocalAvatar(color);
     this.syncRemotes(session);
   }
 
@@ -656,6 +672,13 @@ export class Game {
       for (const [id, remote] of this.remotes) remote.root.visible = !(spectator && id === this.spectatedId && cameras.mode === 'first');
       this.lighting.follow(cameras.focus);
     }
+    if(this.presentation){
+      this.lobbyCamera.aspect=this.engine.aspect??1;this.lobbyCamera.updateProjectionMatrix();
+      this.lobbyCamera.position.set(avatar.position.x+2.8,avatar.position.y+1.7,avatar.position.z+4.3);
+      this.lobbyCamera.lookAt(avatar.position.x,avatar.position.y+1,avatar.position.z);
+      this.engine.activeCamera=this.lobbyCamera;avatar.root.visible=true;
+      for(const av of this.remotes.values())av.root.visible=false;
+    }
     // El "corte" de techos y paredes es propio de la vista isométrica.
     const cutaway = !cameras || cameras.mode === 'isometric';
     for (const s of this.structures) s.update(p.x, p.y, p.z, dt, cutaway);
@@ -674,9 +697,19 @@ export class Game {
         const half = ((cameras.perspective.fov * Math.PI) / 180) / 2;
         gap = 5 + (Math.tan(spread) / Math.tan(half)) * (rect.height / 2);
       }
+      this.overlay.root.style.visibility=this.presentation?'hidden':'visible';
       this.overlay.frame(cam, rect.width, rect.height, dt, gap);
     }
 
+    if(this.nameTags){
+      this.nameTags.root.hidden=this.presentation;
+      if(!this.presentation){
+        const session=this.session,all=this.allAvatars();
+        const entries=function*(){for(const av of all){const id=av===avatar?session?.localPlayerId??'':av.root.name.replace('remote:','');yield{id,name:session?.identity(id).name??'',position:av.position,shown:av.root.visible};}};
+        const rect=this.engine.canvas.getBoundingClientRect();
+        this.nameTags.frame(entries(),this.engine.activeCamera??cam,rect.width,rect.height,dt,(a,b)=>this.physics?.lineOfSight(a,b)??false);
+      }
+    }
     this.statsTimer += dt;
     if (this.statsTimer >= 0.5) {
       this.statsTimer = 0;
@@ -754,6 +787,14 @@ export class Game {
     };
   }
 
+  setPresentation(value:boolean):void{this.presentation=value;}
+  getFrontendState(){return{...this.lobbyUi,sessionKey:this.sessionSerial};}
+  returnToMenu():void{if(this.online())this.goOffline();else (this.session as OfflineSession|null)?.resetPractice?.();}
+  get lobbyUi(){return{lobby:this.session?.lobby,localId:this.session?.localPlayerId??'',battle:this.session?.battle,error:this.online()?.lobbyError??'',net:this.netStatus};}
+  lobbyReady(ready:boolean):void{this.session?.lobbyReady?.(ready);}
+  updateProfile(profile:Profile):void{this.session?.setProfile?.(profile);}
+  returnToLobby():boolean{return this.session?.returnToLobby?.()??false;}
+  rematch():boolean{return this.session?.rematch?.()??false;}
   get battleUi() {
     const round = this.session?.battle;
     const local = this.session?.localPlayer();
@@ -793,6 +834,7 @@ export class Game {
 
   /** Conecta la sesión con las vistas de cofres/objetos y el HUD. */
   private attachSession(session: GameSession): void {
+    this.sessionSerial++;
     session.onMatchEvent = (e) => this.onMatchEvent(e);
     session.onCombatEvent = (e) => this.onCombatEvent(e);
     this.vitals = { ...session.combat.vitals };
@@ -908,11 +950,14 @@ export class Game {
       if (st.id === session.localPlayerId) continue;
       seen.add(st.id);
       let av = this.remotes.get(st.id);
+      const color=session.identity(st.id).color;
+      if(av&&this.remoteColors.get(st.id)!==color){av.dispose();this.remotes.delete(st.id);av=undefined;}
       if (!av) {
         av = new PlayerAvatar(session.identity(st.id).color, this.quality.shadows);
         av.root.name = `remote:${st.id}`;
         this.engine.scene.add(av.root);
         this.remotes.set(st.id, av);
+        this.remoteColors.set(st.id,color);
         av.pushState(st, true);
       } else {
         av.pushState(st);
@@ -922,6 +967,7 @@ export class Game {
       if (seen.has(id)) continue;
       av.dispose();
       this.remotes.delete(id);
+      this.remoteColors.delete(id);
       this.weapons.release(id);
       this.heldMatrix.delete(id);
     }
@@ -934,6 +980,7 @@ export class Game {
       this.heldMatrix.delete(id);
     }
     this.remotes.clear();
+    this.remoteColors.clear();
   }
 
   /** Sustituye el avatar local (p. ej. para usar el color asignado por la sala). */
@@ -941,6 +988,7 @@ export class Game {
     const local = this.session?.localPlayer();
     if (!local) return;
     this.avatar?.dispose();
+    this.localColor=color;
     this.avatar = new PlayerAvatar(color, this.quality.shadows);
     this.engine.scene.add(this.avatar.root);
     this.avatar.pushState(local, true);
@@ -972,7 +1020,7 @@ export class Game {
         building: this.buildingWorld ?? undefined,
         signal: abort.signal,
         url: req.url,
-        name: req.name,
+        name: req.name,skin:req.skin??loadProfile().skin,mode:req.mode,visibility:req.visibility,
         code: req.code ?? '',
         physics: this.physics,
         seed: this.layout.seed,
@@ -1022,7 +1070,8 @@ export class Game {
     this.heldMatrix.delete(online.localPlayerId);
     this.session = new OfflineSession(this.physics, pos, 'Jugador', this.layout?.chests ?? [], undefined, this.layout ? this.dummySpots(this.layout) : [], this.buildingWorld ?? undefined);
     this.attachSession(this.session);
-    this.replaceLocalAvatar(0);
+    this.session.setProfile?.(loadProfile());
+    this.replaceLocalAvatar(loadProfile().skin);
     this.events.emit('net', reason ? { status: 'offline', reason } : { status: 'offline' });
   }
 
@@ -1077,6 +1126,7 @@ export class Game {
     this.weapons.dispose();
     this.fx.dispose();
     this.overlay?.dispose();
+    this.nameTags?.dispose();
     this.sound.dispose();
     this.stormView?.dispose();
     this.buildingView?.dispose();

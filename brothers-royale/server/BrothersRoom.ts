@@ -1,3 +1,5 @@
+import { LobbyState } from '@shared/lobby/LobbyState';
+import { validProfile } from '@shared/lobby/profile';
 import type { WebSocketClient } from '@colyseus/ws-transport';
 import { type Client, Room, ServerError } from '@colyseus/core';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
@@ -13,9 +15,11 @@ import {
   type PublicMatchEvent,
   type WelcomeMessage,
 } from '@shared/protocol';
-import { sanitizeRoomCode, uniqueName, validateJoinOptions } from '@shared/session';
+import { sanitizeName, sanitizeRoomCode, uniqueName, validateJoinOptions } from '@shared/session';
 import { benchPrefix } from './bench';
 import { ServerWorld } from './ServerWorld';
+
+const privateCodes=new Map<string,string>();
 
 interface ClientMeta {
   ready: boolean;
@@ -26,6 +30,8 @@ interface ClientMeta {
 
 export interface CreateOptions {
   code?: string;
+  mode?: 'create'|'join'|'quick';
+  visibility?: 'private'|'public';
 }
 
 /**
@@ -45,14 +51,24 @@ export class BrothersRoom extends Room {
 
   world!: ServerWorld;
   code = '';
+  lobby!: LobbyState;
+  private lobbyRevision=-1;
+  private lobbyPhase='';
   private loop!: FixedStepLoop;
   private readonly meta = new Map<string, ClientMeta>();
   private readonly skipScratch: Client[] = [];
 
   async onCreate(options: CreateOptions = {}): Promise<void> {
     this.code = sanitizeRoomCode(options.code);
-    this.world = await ServerWorld.create();
-    await this.setMetadata({ code: this.code });
+    if(options.visibility!==undefined&&!['private','public'].includes(options.visibility)||options.visibility==='private'&&!this.code||options.visibility==='public'&&!!this.code)throw new ServerError(4105,'Visibilidad o código inválido');
+    if(this.code){
+      if(privateCodes.has(this.code))throw new ServerError(4105,'Ese código ya existe');
+      privateCodes.set(this.code,this.roomId);
+    }
+    try{this.world = await ServerWorld.create();}catch(error){if(privateCodes.get(this.code)===this.roomId)privateCodes.delete(this.code);throw error;}
+    this.world.round.managed=true;
+    this.lobby=new LobbyState(this.code,()=>this.world.round.phase);
+    await this.setMatchmaking({code:this.code,unlisted:!!this.code,metadata:{code:this.code,visibility:this.code?'private':'public'}});
 
     this.onMessage('*', (client) => {
       if (!this.countMessage(client)) return;
@@ -60,6 +76,33 @@ export class BrothersRoom extends Room {
       if (player && ++player.invalidInputs > NET.maxInvalidInputs) {
         client.leave(CloseCodes.INVALID_INPUT, 'Tipo de mensaje inválido');
       }
+    });
+    this.onMessage('lobbyReady',(client,message:unknown)=>{
+      if(!this.countMessage(client)||!this.meta.get(client.sessionId)?.ready)return;
+      if(!message||typeof message!=='object'||!this.lobby.ready(client.sessionId,(message as {ready?:unknown}).ready))this.lobbyError(client,'No se puede cambiar Listo ahora');
+    });
+    this.onMessage('profile',(client,message:unknown)=>{
+      if(!this.countMessage(client)||!this.meta.get(client.sessionId)?.ready)return;
+      if(!validProfile(message)||this.world.round.phase!=='waiting'){this.lobbyError(client,'Perfil o estado no válido');return;}
+      const p=this.world.players.get(client.sessionId);if(!p)return;
+      const name=uniqueName(sanitizeName(message.name),[...this.world.players.values()].filter(q=>q.id!==p.id).map(q=>q.name));
+      if(this.lobby.profile(p.id,name,message.skin)){p.name=p.body.state.name=name;p.color=message.skin;}
+    });
+    this.onMessage('start',(client)=>{
+      if(!this.countMessage(client)||!this.meta.get(client.sessionId)?.ready)return;
+      if(!this.lobby.mayStart(client.sessionId)||!this.world.round.requestCountdown())this.lobbyError(client,'Solo el anfitrión puede iniciar con todos listos');
+    });
+    this.onMessage('rematch',(client)=>{
+      if(!this.countMessage(client)||!this.meta.get(client.sessionId)?.ready)return;
+      // La primera petición abre un lobby limpio; cada participante confirma su propia revancha.
+      if(this.world.round.phase==='finished'){this.world.round.returnToLobby();this.lobby.resetReady();}
+      if(!this.lobby.ready(client.sessionId,true))this.lobbyError(client,'No se puede pedir revancha durante una partida');
+    });
+    this.onMessage('returnLobby',(client)=>{
+      if(!this.countMessage(client)||!this.meta.get(client.sessionId)?.ready)return;
+      if(this.world.round.phase==='finished'){this.world.round.returnToLobby();this.lobby.resetReady();}
+      else if(this.world.round.phase==='waiting')this.lobby.ready(client.sessionId,false);
+      else this.lobbyError(client,'La partida todavía no ha terminado');
     });
     this.onMessage('ready', (client) => this.handleReady(client));
     this.onMessage('input', (client, message) => this.handleInput(client, message));
@@ -95,8 +138,11 @@ export class BrothersRoom extends Room {
     if (!v.ok) {
       throw new ServerError(CloseCodes.PROTOCOL_MISMATCH, v.reason === 'protocol' ? `Versión de protocolo distinta (servidor ${PROTOCOL_VERSION})` : 'Opciones de unión inválidas');
     }
+    if(v.options.code!==this.code)throw new ServerError(4105,'Código de sala incorrecto');
     const name = uniqueName(v.options.name, [...this.world.players.values()].map((p) => p.name));
     const player = this.world.addPlayer(client.sessionId, name);
+    player.color=v.options.skin;
+    this.lobby.add(player.id,player.name,player.color);
     // SOLO pruebas de carga (variable de entorno del SERVIDOR, nunca del cliente):
     // los jugadores cuyo nombre empiece por ese prefijo (p. ej. "Bot") entran
     // armados para medir el combate.
@@ -112,6 +158,7 @@ export class BrothersRoom extends Room {
     const player = this.world.players.get(client.sessionId);
     if (!this.countMessage(client) || !meta || !player || meta.ready) return;
     meta.ready = true;
+    this.lobby.loaded(client.sessionId);
     const welcome: WelcomeMessage = {
       protocol: PROTOCOL_VERSION,
       playerId: player.id,
@@ -128,10 +175,13 @@ export class BrothersRoom extends Room {
       vitals: this.world.combat.vitals(player.id)!,
       building: this.world.building.state.snapshot(),
       battle: this.world.round.snapshot(),
+      lobby: this.lobby.snapshot(),
     };
     client.send('welcome', welcome);
     player.correctionDirty = false;
   }
+
+  private lobbyError(client:Client,message:string):void{client.send('lobbyError',{message});}
 
   private handleInput(client: Client, message: unknown): void {
     if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready) return;
@@ -161,7 +211,12 @@ export class BrothersRoom extends Room {
   private buildingRevision = -1;
   private resetRevision = 0;
   private tick(): void {
+    if(this.world.round.phase==='countdown'&&!this.lobby.canStart)this.world.round.cancelCountdown();
     this.world.step();
+    if(this.lobbyRevision!==this.lobby.revision||this.lobbyPhase!==this.world.round.phase){
+      this.lobbyRevision=this.lobby.revision;this.lobbyPhase=this.world.round.phase;
+      this.broadcast('lobby',this.lobby.snapshot(),{except:this.clients.filter(c=>!this.meta.get(c.sessionId)?.ready)});
+    }
     if (this.clients.length === 0) {
       this.world.drainMatchEvents();
       this.world.drainCombatEvents();
@@ -260,6 +315,7 @@ export class BrothersRoom extends Room {
     const p = this.world.players.get(client.sessionId);
     if (p) {
       p.connected = false;
+      this.lobby.connected(client.sessionId,false);
       p.queue.length = 0;
       p.credits = 0;
     }
@@ -272,7 +328,7 @@ export class BrothersRoom extends Room {
 
   onReconnect(client: Client): void {
     const p = this.world.players.get(client.sessionId);
-    if (p) p.connected = true;
+    if (p) {p.connected = true;this.lobby.connected(client.sessionId,true);}
     const meta = this.meta.get(client.sessionId);
     if (meta) meta.ready = false; // el cliente vuelve a pedir la bienvenida
   }
@@ -280,10 +336,12 @@ export class BrothersRoom extends Room {
   onLeave(client: Client): void {
     const p = this.world.removePlayer(client.sessionId);
     this.meta.delete(client.sessionId);
+    this.lobby.remove(client.sessionId);
     if (p) this.broadcast('leave', { id: p.id, netId: p.netId });
   }
 
   onDispose(): void {
+    if(privateCodes.get(this.code)===this.roomId)privateCodes.delete(this.code);
     this.world?.dispose();
   }
 }

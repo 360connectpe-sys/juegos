@@ -67,7 +67,7 @@ describe('identificación y opciones de unión', () => {
     expect(validateJoinOptions({ protocol: PROTOCOL_VERSION - 1, name: 'x' })).toEqual({ ok: false, reason: 'protocol' });
     expect(validateJoinOptions({ protocol: PROTOCOL_VERSION, name: '   ' })).toEqual({
       ok: true,
-      options: { protocol: PROTOCOL_VERSION, name: 'Jugador', code: '' },
+      options: { protocol: PROTOCOL_VERSION, name: 'Jugador', code: '', skin: 0 },
     });
   });
   it('nombres únicos en la sala', () => {

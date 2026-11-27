@@ -28,6 +28,7 @@ it('ocho jugadores recolectan, construyen, disparan y destruyen, y reconectan co
     }
     const room = matchMaker.getLocalRoomById(clients[0]!.sdk.roomId) as BrothersRoom;
     const world = room.world;
+    world.round.start();await wait(80);
     const place = world.building.state.place.bind(world.building.state);
     vi.spyOn(world.building.state, 'place').mockImplementation((...args) => {
       const start = performance.now(); const result = place(...args); placements.push(performance.now() - start); return result;

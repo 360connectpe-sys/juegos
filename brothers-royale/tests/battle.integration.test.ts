@@ -55,6 +55,7 @@ it('ocho clientes conservan vidas al reconectar; una sesión nueva observa; todo
     const beforeReset=clients.slice(1).map(c=>c.welcomes);
     w.round.elapsed=1800;w.step();await wait(400);
     expect(clients.slice(1).every(c=>c.battle?.phase==='finished')).toBe(true);
+    w.round.returnToLobby();
     for(let t=0;t<300;t++)w.step();await wait(150);
     expect(clients.slice(1).every((c,i)=>c.welcomes>beforeReset[i]!)).toBe(true);
     expect(clients.slice(1).every(c=>c.vitals?.lives===3)).toBe(true);
@@ -84,6 +85,7 @@ it('simula treinta minutos con ocho clientes reales, cierre total y reinicio',as
     expect(w.round.snapshot().zone.current.radius).toBe(0);
     expect(clients.every(c=>c.battle?.result?.scores.length===8)).toBe(true);
     expect(clients.every(c=>c.phases.size===8)).toBe(true);
+    w.round.returnToLobby();
     for(let t=0;t<300;t++)w.step();await wait(100);
     expect(clients.every(c=>c.vitals?.lives===3)).toBe(true);
     console.log('PHASE8_ACCELERATED_NET',JSON.stringify({virtualSeconds:1800,manualTicks:ticks,realMs:performance.now()-start,phases:[...phases],clients:8}));

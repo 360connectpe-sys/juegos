@@ -8,6 +8,7 @@ import { clamp } from '@shared/math';
 import { Buttons } from '@shared/types';
 
 export type HudElementId =
+  | 'menu'
   | 'wood'
   | 'construction'
   | 'joystick'
@@ -48,6 +49,7 @@ export interface HudElementInfo {
 }
 
 export const HUD_ELEMENTS: readonly HudElementInfo[] = [
+  {id:'menu',label:'Menú principal',kind:'info'},
   { id: 'joystick', label: 'Joystick', kind: 'control' },
   { id: 'jump', label: 'Saltar', kind: 'control' },
   { id: 'sprint', label: 'Correr', kind: 'control' },
@@ -84,6 +86,7 @@ const el = (x: number, y: number, scale = 1, opacity = 1): HudElementLayout => (
  */
 export function defaultHudLayout(): HudLayout {
   return {
+    menu:el(.25,.05,.85),
     wood: el(0.36, 0.77, 0.9),
     construction: el(0.48, 0.68, 0.85),
     joystick: el(0.14, 0.72),

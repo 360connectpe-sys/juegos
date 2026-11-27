@@ -1,3 +1,4 @@
+import { isSkin } from './lobby/profile';
 import { PROTOCOL_VERSION, type JoinOptions } from './protocol';
 
 export const NAME_MAX = 16;
@@ -27,7 +28,8 @@ export function validateJoinOptions(raw: unknown): JoinValidation {
   if (typeof raw !== 'object' || raw === null) return { ok: false, reason: 'options' };
   const o = raw as Record<string, unknown>;
   if (o.protocol !== PROTOCOL_VERSION) return { ok: false, reason: 'protocol' };
-  return { ok: true, options: { protocol: PROTOCOL_VERSION, name: sanitizeName(o.name) || 'Jugador', code: sanitizeRoomCode(o.code) } };
+  if (o.skin !== undefined && !isSkin(o.skin)) return { ok: false, reason: 'options' };
+  return { ok: true, options: { protocol: PROTOCOL_VERSION, name: sanitizeName(o.name) || 'Jugador', code: sanitizeRoomCode(o.code), skin: isSkin(o.skin) ? o.skin : 0 } };
 }
 
 /** Evita nombres repetidos en la sala: "Ana", "Ana 2", "Ana 3"… */
