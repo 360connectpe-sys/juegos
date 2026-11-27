@@ -16,9 +16,9 @@ Continuar desde aquí sin repetir trabajo. Rama: `brothers-royale-phase-3.1`; pu
 |---|---|
 | 1. Integrar `brothers-royale-server-deploy` (29b1e23) en desarrollo (aba1015) | HECHO: merge, 402 pruebas |
 | 2. Salas públicas/privadas, 8 máx., ping/conexión/reconexión, anfitrión, revanchas, aislamiento | HECHO: `NetBadge` en partida; lo demás ya cubierto por lobby/battle.integration |
-| 3. Prueba de 30 min, 8 clientes, combate y 128 estructuras (métricas y fugas) | EN CURSO: `BR_SOAK10_SECONDS=1800 BR_SOAK10_OUT=soak30.json npx vitest run tests/soak10.integration.test.ts` |
+| 3. Prueba de 30 min, 8 clientes, combate y 128 estructuras (métricas y fugas) | HECHO: 30,24 Hz, 0 desconexiones, sin fuga (PHASE-10.md, SOAK-10.json) |
 | 4. Despliegue real (necesita cuenta del usuario) + `config.js` de la beta | PENDIENTE (bloqueado por el usuario) |
-| 5. Docs (DEPLOY.md, PHASE-10.md), `npm run check`, commit/push, beta, verificación pública | PENDIENTE |
+| 5. Docs (DEPLOY.md, PHASE-10.md), `npm run check`, commit/push, beta, verificación pública | HECHO (beta con `config.js` vacío hasta tener la URL del servidor) |
 
 Comando para continuar a mano: `cd brothers-royale && git pull && npm ci && npm run check`, y seguir por el
 primer paso no HECHO de esta tabla.
@@ -35,7 +35,7 @@ primer paso no HECHO de esta tabla.
 | Bundle publicado | `jugar/` regenerado e idéntico a `dist/` (`diff -qr dist jugar` sin diferencias) |
 | Protocolo de red | v8 (`PROTOCOL_VERSION`) |
 | Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6, 7, 8, 9 |
-| Siguiente | Fase 10, pendiente de autorización; incluye validación real de 30 min reservada. |
+| Siguiente | Fase 10 hecha salvo el despliegue real (necesita la cuenta del usuario, ver checkpoint paso 4). No iniciar la fase 11 sin petición. |
 | Beta publicada | https://360connectpe-sys.github.io/juegos/brothers-royale/beta/ — GitHub Pages sirve la rama `brothers-royale-beta-pages` (= `main` + `brothers-royale/beta/`, copia de `jugar/`). |
 | Despliegue del servidor | Preparado en la rama independiente `brothers-royale-server-deploy` (DEPLOY.md); aún sin desplegar. |
 | Pendiente móvil | Medir FPS en iPhone 13 Pro físico (Safari) tras la corrección; ver MOBILE-FIXES.md §7 y §9. |

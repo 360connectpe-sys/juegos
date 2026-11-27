@@ -129,8 +129,8 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 
 ## Estado vigente y fuera de alcance
 
-Fases 7, 8 y 9 implementadas; leer PHASE-7.md, PHASE-8.md y PHASE-9.md. No iniciar fase 10,
-cuentas ni persistencia externa sin petición. La prueba real de 30 minutos está reservada para fase 10.
+Fases 7, 8, 9 y 10 implementadas; leer PHASE-7.md … PHASE-10.md. No iniciar fase 11, cuentas ni
+persistencia externa sin petición. Prueba de 30 min: tests/soak10.integration.test.ts (BR_SOAK10_SECONDS).
 
 Construcción: BuildingState, BuildingWorld y BuildingView; materiales y colocaciones solo cambian
 en la autoridad. Respetar límites y soporte. Desde la corrección móvil (MOBILE-FIXES.md): sin ventana
