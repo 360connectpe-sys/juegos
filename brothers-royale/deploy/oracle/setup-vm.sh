@@ -4,7 +4,7 @@
 # Instala Docker, abre los puertos 80/443 en el cortafuegos de la VM y clona el repositorio.
 # (Además hay que abrir 80/443 en la «Security List» de la VCN desde la consola de Oracle: DEPLOY.md.)
 set -euo pipefail
-BRANCH="${BRANCH:-brothers-royale-server-deploy}"
+BRANCH="${BRANCH:-brothers-royale-phase-3.1}"
 REPO="${REPO:-https://github.com/360connectpe-sys/juegos.git}"
 
 sudo apt-get update -y

@@ -9,7 +9,7 @@ services:
     plan: free
     # Render no tiene región en Sudamérica: Virginia (EE. UU. este) es la más cercana a Perú.
     region: virginia
-    branch: brothers-royale-server-deploy
+    branch: brothers-royale-phase-3.1
     # Rutas desde la raíz del repositorio. Solo se redepliega si cambia brothers-royale/.
     dockerfilePath: ./brothers-royale/Dockerfile
     dockerContext: ./brothers-royale

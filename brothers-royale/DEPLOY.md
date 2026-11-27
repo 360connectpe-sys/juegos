@@ -1,6 +1,6 @@
 # BROTHERS ROYALE — Despliegue del servidor multijugador
 
-Rama: `brothers-royale-server-deploy` (sobre `181d2a6`). Nada de esto toca `main`, el HUD, la construcción ni
+Rama: `brothers-royale-phase-3.1` (sobre `181d2a6`). Nada de esto toca `main`, el HUD, la construcción ni
 los controles de combate. El modo sin conexión sigue funcionando igual con o sin servidor.
 
 ## 1. Resumen y recomendación
@@ -84,7 +84,7 @@ No hay secretos: ninguna variable es una contraseña ni una clave.
 ## 5. Opción A — Render Free (la más rápida, sin tarjeta)
 
 1. Entra en <https://render.com> con tu cuenta de GitHub y autoriza el repositorio `360connectpe-sys/juegos`.
-2. **New → Blueprint** → elige el repositorio y la rama `brothers-royale-server-deploy`.
+2. **New → Blueprint** → elige el repositorio y la rama `brothers-royale-phase-3.1`.
    En **Blueprint file path** escribe `brothers-royale/render.yaml` (el `render.yaml` de la raíz es de otro
    juego y no se toca).
 3. Revisa el servicio `brothers-royale-server` (plan **Free**, región **Virginia**, runtime Docker) y pulsa
@@ -111,7 +111,7 @@ unirse, así que el primer jugador verá «Conectando…» un rato.
    `0.0.0.0/0`, TCP, puertos **80** y **443** (el 80 lo necesita Let's Encrypt).
 4. **Preparar la VM** (por SSH, `ssh ubuntu@IP_PUBLICA`):
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/360connectpe-sys/juegos/brothers-royale-server-deploy/brothers-royale/deploy/oracle/setup-vm.sh -o setup-vm.sh
+   curl -fsSL https://raw.githubusercontent.com/360connectpe-sys/juegos/brothers-royale-phase-3.1/brothers-royale/deploy/oracle/setup-vm.sh -o setup-vm.sh
    bash setup-vm.sh
    ```
    Instala Docker, abre 80/443 en el cortafuegos interno de la VM y clona la rama.
