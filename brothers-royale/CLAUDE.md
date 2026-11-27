@@ -1,5 +1,8 @@
 # BROTHERS ROYALE — instrucciones permanentes
 
+> **Sesión nueva: lee primero `PROJECT_CONTEXT.md`** (arquitectura, funcionalidades, decisiones, auditorías,
+> pruebas, errores conocidos y estado actual). Permite continuar sin el historial de conversaciones anteriores.
+
 Battle Royale web multijugador, low poly, cámara isométrica 2.5D, para celular y computadora.
 Inspirado en las mecánicas de Fortnite pero con identidad propia: no copiar nombres, personajes,
 arte, música, mapas ni el aspecto de ningún juego existente.
