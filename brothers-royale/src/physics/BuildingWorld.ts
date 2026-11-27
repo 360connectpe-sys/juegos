@@ -44,7 +44,7 @@ export class BuildingWorld {
     this.sync();
   }
   reset(): void {
-    this.load({ revision: 0, trees: this.layout.trees.map(() => BUILD.treeHp), pieces: [], wood: {} });
+    this.load({ revision: this.state.revision + 1, trees: this.layout.trees.map(() => BUILD.treeHp), pieces: [], wood: {} });
   }
   load(snapshot: BuildingSnapshot): boolean {
     if (!snapshot || !Number.isSafeInteger(snapshot.revision) || !Array.isArray(snapshot.trees) || snapshot.trees.length !== this.layout.trees.length ||

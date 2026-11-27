@@ -1,3 +1,4 @@
+import type { RoundSnapshot } from '@shared/battle/BattleRound';
 import type { BuildingWorld } from '@/physics/BuildingWorld';
 import type { BuildRequest } from '@shared/building/BuildingState';
 import type { PlayerId, PlayerInput, PlayerState } from '@shared/types';
@@ -20,6 +21,8 @@ export interface PlayerIdentity {
  *    los demás jugadores se interpolan con `PlayerAvatar`.
  */
 export interface GameSession {
+  readonly battle?: RoundSnapshot;
+  startRound?(): boolean;
   readonly building?: BuildingWorld;
   requestBuild?(request: BuildRequest): boolean;
   readonly kind: 'offline' | 'online';

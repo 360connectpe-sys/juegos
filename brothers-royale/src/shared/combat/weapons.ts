@@ -25,8 +25,8 @@ export const HEAL = {
   seconds: 5,
 } as const;
 
-/** Muerte provisional (fase 6): tras unos segundos se vuelve con salud completa. Fase 8 la sustituye. */
-export const DEATH = { respawnSeconds: 3 } as const;
+/** Espera entre vidas; BattleRound controla el ciclo y la autoridad el descenso. */
+export const DEATH = { respawnSeconds: 5 } as const;
 
 /** Altura de los ojos (origen de disparos y golpes) sobre los pies. */
 export const EYE_HEIGHT = 1.5;

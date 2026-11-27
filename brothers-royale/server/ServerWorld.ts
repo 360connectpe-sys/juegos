@@ -1,3 +1,6 @@
+import { BattleRound } from '@shared/battle/BattleRound';
+import { DEFAULT_MODIFIERS } from '@shared/movement';
+import type { Circle } from '@shared/battle/zone';
 /**
  * Mundo autoritativo del servidor. No depende de Colyseus ni del DOM: se
  * prueba en Node directamente y la sala (BrothersRoom) solo lo conecta a la red.
@@ -61,6 +64,8 @@ export class ServerWorld {
   /** Disparos, salud, curación y muertes: SOLO el servidor los decide. */
   readonly combat: CombatState;
   readonly building: BuildingWorld;
+  readonly round: BattleRound;
+  resetRevision = 0;
   /** Poses recientes de todos para la compensación de latencia. */
   readonly history = new PoseHistory();
   tick = 0;
@@ -84,20 +89,17 @@ export class ServerWorld {
       damageObstacle: (by, o, d, max, damage, axe) => this.building.damageRay(by, o, d, max, damage, axe),
       castStatic: (o, d, max) => physics.castStatic(o, d, max),
     };
-    // Vuelta provisional de los eliminados (fase 6): a un punto de aparición.
-    this.combat.onRespawn = (id) => {
-      const p = this.players.get(id);
-      if (p) {
-        this.respawnAt(p, this.spawnCounter++);
-        this.history.forget(id);
-        this.history.record(this.tick, id, p.body.state.position);
-      }
-    };
+    this.round = new BattleRound(this.combat, layout.terrain.size, matchSeed, {
+      actors: () => [...this.players.values()].map(p => ({ id: p.id, name: p.name, feet: p.body.state.position, grounded: p.body.state.grounded, connected: p.connected })),
+      reset: ids => this.resetRound(ids),
+      spawn: (id, zone, index) => { const p = this.players.get(id); if (p) this.spawnSky(p, zone, index); },
+    });
+    this.combat.onRespawn = id => this.round.respawn(id);
   }
 
   /** Objetivos rebobinados al tick que veía el atacante (limitado a LAG_COMPENSATION). */
   targetsAt(viewTick: number | undefined): Iterable<TargetPose> {
-    return this.history.at(this.tick, viewTick, this.players.keys());
+    return this.history.at(this.tick, viewTick, [...this.players.keys()].filter(id => !this.combat.isDead(id)));
   }
 
   /** Eventos de combate pendientes. */
@@ -181,6 +183,7 @@ export class ServerWorld {
     this.match.addPlayer(id);
     this.building.state.addPlayer(id);
     this.combat.addFighter(id);
+    this.round.joined(id);
     this.history.record(this.tick, id, body.state.position);
     return player;
   }
@@ -188,6 +191,7 @@ export class ServerWorld {
   removePlayer(id: string): ServerPlayer | undefined {
     const p = this.players.get(id);
     if (!p) return undefined;
+    this.round.departed(id);
     this.match.removePlayer(id, p.body.state.position);
     this.combat.removeFighter(id);
     this.building.state.removePlayer(id);
@@ -222,23 +226,27 @@ export class ServerWorld {
 
   /** Avanza un tick de simulación autoritativa. */
   step(dt: number = SIMULATION.fixedDt): void {
+    this.round.before(dt);
     for (const p of this.players.values()) {
+      const vitals = this.combat.vitals(p.id);
+      p.body.modifiers = { ...DEFAULT_MODIFIERS, frozen: !this.round.canAct(p.id),
+        ...(vitals?.descending ? { descent: this.round.zone.current, canSprint: false, canJump: false } : {}) };
       p.credits = Math.min(p.credits + 1, NET.maxInputsPerTick);
       let processed = 0;
       while (p.credits > 0 && p.queue.length > 0) {
         const raw = p.queue.shift()!;
         // Eliminado: no se mueve ni actúa, pero su secuencia avanza.
-        const dead = this.combat.isDead(p.id);
+        const dead = !this.round.canAct(p.id);
         const input = dead ? deadInput(raw) : raw;
         p.body.step(input, dt);
+        if (p.body.state.grounded) this.combat.landed(p.id);
         // Interacción (abrir cofre / recoger): solo en el flanco de pulsación y
         // con la posición AUTORITATIVA tras ese mismo paso.
         const interact = hasButton(input.buttons, Buttons.INTERACT);
         if (interact && !p.interactHeld) this.match.interact(p.id, p.body.state.position, this.los);
         p.interactHeld = interact;
         // Combate con la misma posición autoritativa (y el tick visto, rebobinado).
-        if (dead) this.combat.idle(p.id, dt);
-        else this.combat.step(p.id, raw, this.attackContext(p, dt));
+        if (!dead) this.combat.step(p.id, raw, this.attackContext(p, dt));
         p.credits--;
         processed++;
       }
@@ -253,11 +261,34 @@ export class ServerWorld {
         p.credits = 0; // Este tick ya avanzó la simulación: no se puede gastar dos veces.
         p.correctionDirty = true;
       }
-      if (p.body.state.position.y < -20) this.respawnAt(p, p.netId);
+      if (p.body.state.position.y < -20 && !this.combat.isDead(p.id)) this.combat.environmentalDamage(p.id, 100, p.body.state.position, this.tick, 'fall');
     }
     this.physics.step();
+    this.round.after(dt, this.tick);
     this.tick++;
     for (const p of this.players.values()) this.history.record(this.tick, p.id, p.body.state.position);
+  }
+
+  canAct(id: string): boolean { return this.round.canAct(id); }
+  private resetRound(ids: readonly string[]): void {
+    this.match.reset(ids); this.building.reset(); this.combat.reset(ids);
+    for (const p of this.players.values()) {
+      if (!ids.includes(p.id)) { this.match.addPlayer(p.id); this.combat.addFighter(p.id); this.combat.exclude(p.id); }
+      this.building.state.addPlayer(p.id);
+      p.queue.length = 0; p.credits = 0; p.interactHeld = false;
+      p.body.modifiers = { ...DEFAULT_MODIFIERS };
+      this.respawnAt(p, p.netId); this.history.forget(p.id);
+    }
+    this.resetRevision++;
+  }
+  private spawnSky(p: ServerPlayer, zone: Circle, index: number): void {
+    // Lejos del borde y de otros puntos de reaparición; solo coordenadas del servidor.
+    const angle = Math.max(0, index) * 2.399963;
+    const distance = Math.min(12, zone.radius * .4);
+    const x = zone.x + Math.sin(angle) * distance, z = zone.z + Math.cos(angle) * distance;
+    const y = (this.physics.groundHeightAt(x, z) ?? terrainHeight(x, z, this.layout.terrain)) + 30;
+    p.body.teleport({ x, y, z }); p.correctionDirty = true;
+    this.history.forget(p.id); this.history.record(this.tick, p.id, p.body.state.position);
   }
 
   private respawnAt(p: ServerPlayer, index: number): void {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ServerWorld, type ServerPlayer } from '../server/ServerWorld';
 import { unpackGear } from '@shared/combat/gear';
-import { EQUIP_SECONDS, LAG_COMPENSATION, WEAPON_STATS } from '@shared/combat/weapons';
+import { DEATH, EQUIP_SECONDS, LAG_COMPENSATION, WEAPON_STATS } from '@shared/combat/weapons';
 import type { CombatEvent } from '@shared/combat/CombatState';
 import { addItem } from '@shared/inventory';
 import { quatFromEuler } from '@shared/math';
@@ -145,7 +145,7 @@ describe('combate autoritativo en ServerWorld (Rapier real)', () => {
     expect(ev.filter((e) => e.type === 'shot' && e.by === 'a')).toHaveLength(0);
     expect(Math.abs(a.body.state.position.x - before.x)).toBeLessThan(0.05);
     expect(unpackGear(unpackPlayers(world.snapshot().p).find((p) => p.netId === a.netId)!.gear).dead).toBe(true);
-    run(70, new Map([[a, () => input(a, 0, EAST)]]));
+    run(Math.ceil(DEATH.respawnSeconds * 30), new Map([[a, () => input(a, 0, EAST)]]));
     expect(world.combat.isDead('a')).toBe(false);
     expect(world.combat.hp('a')).toBe(100);
   });

@@ -82,8 +82,8 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
    entradas procesadas y sin "ahorrar" disparos; el cargador vive en `ItemStack.mag`; el rebobinado de la
    compensación de latencia se limita a `LAG_COMPENSATION.maxRewindTicks`. Valores de armas y rarezas SOLO en
    `shared/combat/weapons.ts`, y cualquier cambio de balance pasa `tests/combatBalance.test.ts` y se documenta.
-   El estado visible de los demás viaja en 10 bits del snapshot (`combat/gear.ts`). La muerte es provisional
-   (vuelta a los 3 s): la fase 8 la sustituye usando el evento `death` y `CombatState.onDeath`.
+   El estado visible de los demás viaja en 10 bits del snapshot (`combat/gear.ts`). Fase 8: tres vidas,
+   espera de 5 s y reaparición desde el cielo; la tercera muerte es definitiva. Véase PHASE-8.md.
    Vista: lo que se lleva en la mano va en el `BatchedMesh` de los edificios (`WeaponBatch`, 0 draw calls);
    trazadoras/chispas en una InstancedMesh (`CombatFx`); números de daño y mira en DOM (`CombatOverlay`);
    sonidos sintetizados (`SoundFx`). La predicción del arma propia (`LocalWeapon`) es SOLO visual.
@@ -124,12 +124,17 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 7. Código y comentarios en español; nombres de identificadores en inglés.
 8. Cada sistema nuevo llega con tests de su parte pura. Actualizar `PROJECT.md` al cerrar cada avance.
 
-## Fuera de alcance hasta nueva fase
-Tres vidas y reaparición definitiva (fase 8) y tormenta: no
-implementarlos sin pedirlo. La fase 7 está implementada y documentada en PHASE-7.md. Los ganchos ya existen (evento `death` y
-`CombatState.onDeath`, bit `BUILD`, `MotorModifiers`, capa `build`, `PredictionController`).
-`BR_BENCH_LOADOUT` (servidor) es SOLO para pruebas de carga.
+## Estado vigente y fuera de alcance
 
-Fase 7: usar BuildingState, BuildingWorld y BuildingView. Las colocaciones y materiales solo cambian
-en la autoridad, con protocolo v6. Respetar límites y soporte. BR_BENCH_LOADOUT requiere
-NODE_ENV=test y --br-bench-loadout; jamás habilitarlo en producción.
+Fases 7 y 8 implementadas, documentadas en PHASE-7.md y PHASE-8.md. No iniciar fase 9, lobby,
+cuentas ni persistencia externa sin petición. La prueba real de 30 minutos está reservada para fase 10.
+
+Construcción: BuildingState, BuildingWorld y BuildingView; materiales y colocaciones solo cambian
+en la autoridad. Respetar límites y soporte.
+Ciclo: BattleRound y zone, compartidos servidor/offline. Vidas, protección y espera avanzan una
+vez por tick real de simulación, no por entrada. Máximo 1800 s también con reloj monotónico.
+Desempate: vidas, eliminations (definitivas), HP. El inventario se conserva al reaparecer hasta
+que se defina otra regla. No reiniciar secuencias ni retroceder revisiones de construcción.
+Red v7: nuevas sesiones durante una ronda son espectadoras; reconectar conserva las vidas.
+Registro: hasta diez resultados por sala y 2000 eventos de combate por ronda. No persistencia externa.
+BR_BENCH_LOADOUT requiere NODE_ENV=test y --br-bench-loadout; jamás habilitarlo en producción.

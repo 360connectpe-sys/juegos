@@ -1,8 +1,8 @@
 # BROTHERS ROYALE — Estado del proyecto
 
-## Estado actual (fase 7 cerrada)
-Fases 1–7 hechas. Combate con armas, curación y muertes provisionales, autoritativo y con compensación de
-latencia. **313 pruebas** en 36 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
+## Estado actual (fase 8 cerrada)
+Fases 1–8 hechas. Tres vidas, reaparición desde el cielo, tormenta, espectador, ganador y reinicio
+autoritativos; modo offline compatible. **346 pruebas** en 40 archivos. Contexto completo para retomar: `PROJECT_CONTEXT.md`.
 
 ## Auditoría integral de fases 3.2, 4 y 5
 
@@ -30,8 +30,20 @@ computadora. Mecánicas inspiradas en el género (caída, botín, construcción,
 | 5 | Mapa ampliado (casas pequeñas), cofres, botín e inventario sincronizado | ✅ Hecha |
 | 6 | Armas, combate y curación (autoridad del servidor, compensación de latencia) | ✅ Hecha |
 | 7 | Madera, tala y construcción autoritativa | ✅ Hecha |
-| 8 | Tres vidas y reaparición definitiva (sobre los eventos de muerte de la fase 6) | Pendiente |
-| — | Tormenta, partida completa, lobby | Pendiente |
+| 8 | Tres vidas, tormenta y ciclo completo de partida | ✅ Hecha |
+| 9 | Próxima fase, no iniciada | Pendiente |
+| 10 | Validación de 30 minutos reales reservada por el usuario | Pendiente |
+| — | Lobby y servicios persistentes | Pendiente |
+
+## Fase 8 — Ciclo completo Battle Royale
+
+PHASE-8.md documenta reglas y decisiones, cronograma, pruebas aceleradas y soak real de 300 s.
+Protocolo v7, tres vidas de 100 HP, espera 5 s, descenso controlable y protección de 3 s cancelada
+al atacar. Espectador definitivo, tormenta autoritativa, límite estricto de 1800 s, desempates y
+reinicio completo. Registro en memoria de los últimos diez resultados para fase 9.
+Ocho clientes: 30,003 Hz, paso p95 1,005 ms, cero desconexiones en cinco minutos.
+Se conservan las 313 pruebas anteriores; una espera antigua pasa de 3 a 5 s sin quitar aserciones.
+Los 30 minutos reales se reservan para fase 10. La fase 9 no está iniciada.
 
 ## Fase 7 — Tala y construcción de madera
 
@@ -42,6 +54,7 @@ vista previa. HUD editable con contador y menú. Sin edición posterior ni mecá
 La auditoría previa está en AUDIT-6.md, commit independiente 55b38f6.
 
 ## Fase 6 — Armas, combate y curación (2026-11-27)
+Descripción histórica: las reapariciones provisionales se sustituyen en fase 8.
 **Hecho**
 - **Armas**: pistola, subfusil, rifle y escopeta (disparo instantáneo, «hitscan») y hacha cuerpo a cuerpo
   (`shared/combat/weapons.ts`). Cadencia, cargador, recarga (`R`, mando X, botón «Recargar», o automática al

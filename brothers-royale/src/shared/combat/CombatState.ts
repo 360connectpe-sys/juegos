@@ -42,13 +42,16 @@ import {
 } from './weapons';
 
 /** Con qué se hizo el daño. */
-export type AttackKind = WeaponKind | 'axe';
+export type AttackKind = WeaponKind | 'axe' | 'storm' | 'fall';
 
 /** Lo que el propio jugador necesita saber de sí mismo (HUD). */
 export interface Vitals {
   hp: number;
+  lives?: number;
+  descending?: boolean;
+  protection?: number;
   dead: boolean;
-  /** Segundos para volver (muerte provisional de la fase 6). */
+  /** Segundos para volver; 0 si la eliminación es definitiva. */
   respawnIn: number;
   /** Recarga en curso: segundos restantes y totales (0 = ninguna). */
   reload: number;
@@ -97,6 +100,8 @@ export interface FighterStats {
   damageDealt: number;
   damageTaken: number;
   kills: number;
+  /** Oponentes que han agotado su tercera vida (criterio del desempate). */
+  eliminations: number;
   deaths: number;
   healed: number;
 }
@@ -121,7 +126,7 @@ export class CombatLog {
   of(id: string): FighterStats {
     let s = this.stats.get(id);
     if (!s) {
-      s = { shots: 0, hits: 0, damageDealt: 0, damageTaken: 0, kills: 0, deaths: 0, healed: 0 };
+      s = { shots: 0, hits: 0, damageDealt: 0, damageTaken: 0, kills: 0, eliminations: 0, deaths: 0, healed: 0 };
       this.stats.set(id, s);
     }
     return s;
@@ -139,6 +144,9 @@ export class CombatLog {
 }
 
 interface Fighter {
+  lives: number;
+  descending: boolean;
+  protection: number;
   id: string;
   hp: number;
   dead: boolean;
@@ -169,9 +177,12 @@ export class CombatState {
   private events: CombatEvent[] = [];
   private readonly rng: Rng;
   readonly log = new CombatLog();
-  /** Gancho para la fase 8 (vidas, eliminación definitiva, botín al morir). */
+  /** ServerWorld/OfflineSession avanzan vidas una sola vez por tick, no por entrada. */
+  externalLifeClock = false;
+  active = true;
+  /** Notifica una vida perdida sin decidir inventario ni posición. */
   onDeath: ((e: Extract<CombatEvent, { type: 'death' }>) => void) | null = null;
-  /** La autoridad recoloca al jugador al volver (vuelta provisional de la fase 6). */
+  /** La autoridad inicia la reaparición desde el cielo tras cinco segundos. */
   onRespawn: ((id: string) => void) | null = null;
 
   constructor(
@@ -190,7 +201,7 @@ export class CombatState {
   addFighter(id: string, dummy = false): void {
     if (this.fighters.has(id)) return;
     this.fighters.set(id, {
-      id, hp: HEALTH.max, dead: false, respawnIn: 0, cooldown: 0, equip: 0, slot: this.match.inventory(id)?.selected ?? 0,
+      id, lives: 3, descending: false, protection: 0, hp: HEALTH.max, dead: false, respawnIn: 0, cooldown: 0, equip: 0, slot: this.match.inventory(id)?.selected ?? 0,
       reload: null, heal: null, bloom: 0, bloomMax: 0, bloomRecovery: 1, reloadHeld: false, fireHeld: false, aiming: false,
       action: 'none', actionTimer: 0, dummy,
     });
@@ -217,7 +228,7 @@ export class CombatState {
     const f = this.fighters.get(id);
     if (!f) return null;
     return {
-      hp: f.hp,
+      hp: f.hp, lives: f.lives, descending: f.descending, protection: f.protection,
       dead: f.dead,
       respawnIn: Math.max(0, f.respawnIn),
       reload: f.reload ? Math.max(0, f.reload.left) : 0,
@@ -226,6 +237,33 @@ export class CombatState {
       healTotal: f.heal?.total ?? 0,
     };
   }
+
+  lives(id: string): number { return this.fighters.get(id)?.lives ?? 0; }
+  /** Daño ambiental autoritativo; no genera estadísticas para un atacante ficticio. */
+  environmentalDamage(id: string, amount: number, at: Vec3, tick: number, kind: 'storm' | 'fall' = 'storm'): void {
+    this.applyDamage(id, kind, kind, amount, at, 0, tick);
+  }
+  tickLives(dt: number): void { for (const f of this.fighters.values()) this.advanceLife(f, dt); }
+  private advanceLife(f: Fighter, dt: number): void {
+    f.protection = Math.max(0, f.protection - dt);
+    if (f.dead && f.lives > 0 && this.active) {
+      f.respawnIn = Math.max(0, f.respawnIn - dt);
+      if (f.respawnIn <= 1e-9) this.respawn(f);
+    }
+  }
+  landed(id: string): void {
+    const f = this.fighters.get(id);
+    if (f && f.descending && !f.dead) { f.descending = false; f.protection = 3; this.pushVitals(f); }
+  }
+  exclude(id: string): void {
+    const f = this.fighters.get(id);
+    if (f) { f.hp = 0; f.dead = true; f.lives = 0; f.respawnIn = 0; f.protection = 0; f.descending = false; f.reload = f.heal = null; this.pushVitals(f); }
+  }
+  reset(ids: readonly string[]): void {
+    this.fighters.clear(); this.events = []; this.log.entries.length = 0; this.log.stats.clear(); this.active = true;
+    for (const id of ids) { this.addFighter(id); this.pushVitals(this.fighters.get(id)!); }
+  }
+  private attacked(f: Fighter): void { if (f.protection > 0) { f.protection = 0; this.pushVitals(f); } }
 
   /** Estado visible (snapshot público). */
   gear(id: string): number {
@@ -263,7 +301,7 @@ export class CombatState {
   /** Procesa la entrada de un tick DESPUÉS de su paso de movimiento. */
   step(id: string, input: PlayerInput, ctx: AttackContext): void {
     const f = this.fighters.get(id);
-    if (!f || f.dummy) return;
+    if (!f || f.dummy || !this.active) return;
     const dt = ctx.dt;
     if (!this.advance(f, dt)) return; // muerto
     let inv = this.match.inventory(id);
@@ -296,11 +334,13 @@ export class CombatState {
         if (!f.heal && firePressed) this.startHeal(f);
       } else if (item.kind === 'axe') {
         if (f.equip <= 0 && f.cooldown <= 0) {
+          this.attacked(f);
           this.melee(f, input, ctx);
           attacked = true;
         }
       } else if (isWeapon(item.kind) && !f.reload && f.equip <= 0 && f.cooldown <= 0) {
         if (magOf(item) > 0) {
+          this.attacked(f);
           this.shoot(f, inv, item.kind, rarityOf(item.rarity), input, ctx);
           attacked = true;
         } else if (!this.startReload(f, inv) && firePressed) {
@@ -322,11 +362,8 @@ export class CombatState {
     f.equip = Math.max(0, f.equip - dt);
     f.actionTimer = Math.max(0, f.actionTimer - dt);
     f.bloom = Math.max(0, f.bloom - f.bloomRecovery * dt);
-    if (f.dead) {
-      f.respawnIn -= dt;
-      if (f.respawnIn <= 0) this.respawn(f);
-      return false;
-    }
+    if (!this.externalLifeClock) this.advanceLife(f, dt);
+    if (f.dead || !this.active) return false;
     const current = this.match.inventory(f.id);
     if (current && current.selected !== f.slot && (f.reload || f.heal)) {
       f.reload = null;
@@ -476,20 +513,25 @@ export class CombatState {
 
   private applyDamage(victim: string, by: string, weapon: AttackKind, amount: number, at: Vec3, distance: number, tick: number): void {
     const v = this.fighters.get(victim);
-    if (!v || v.dead || !(amount > 0)) return;
+    if (!v || v.dead || !this.active || v.protection > 0 || !(amount > 0) || !Number.isFinite(amount)) return;
     v.hp = roundDamage(Math.max(0, v.hp - amount));
     if (v.heal) v.heal = null; // recibir daño cancela la curación
-    this.log.of(by).damageDealt += amount;
+    if (this.fighters.has(by)) this.log.of(by).damageDealt += amount;
     this.log.of(victim).damageTaken += amount;
     this.log.push({ tick, kind: 'damage', attacker: by, victim, weapon, amount, distance: Math.round(distance * 10) / 10 });
     this.events.push({ type: 'damage', victim, by, weapon, amount, hp: v.hp, at: round2(at) });
     if (v.hp <= 0) {
       v.dead = true;
-      v.respawnIn = DEATH.respawnSeconds;
+      v.lives = Math.max(0, v.lives - 1);
+      v.respawnIn = v.lives > 0 ? DEATH.respawnSeconds : 0;
+      v.descending = false;
       v.reload = null;
       v.heal = null;
       v.fireHeld = false;
-      this.log.of(by).kills++;
+      if (by !== victim && this.fighters.has(by)) {
+        this.log.of(by).kills++;
+        if (v.lives === 0) this.log.of(by).eliminations++;
+      }
       this.log.of(victim).deaths++;
       this.log.push({ tick, kind: 'death', attacker: by, victim, weapon, amount, distance: Math.round(distance * 10) / 10 });
       const death = { type: 'death' as const, victim, killer: by, weapon, tick, at: round2(at) };
@@ -499,9 +541,11 @@ export class CombatState {
     this.pushVitals(v);
   }
 
-  /** Muerte PROVISIONAL (fase 6): vuelve con salud completa. La fase 8 pondrá las vidas. */
+  /** Vuelve con 100 HP sin alterar inventario; la autoridad inicia el descenso. */
   private respawn(f: Fighter): void {
     f.dead = false;
+    f.descending = true;
+    f.protection = 0;
     f.hp = HEALTH.max;
     f.respawnIn = 0;
     f.cooldown = 0;

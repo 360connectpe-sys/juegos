@@ -22,13 +22,16 @@ export const fullVitals = (): Vitals => ({ hp: HEALTH.max, dead: false, respawnI
 const num = (v: unknown, min = -Infinity, max = Infinity): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 const isVec = (v: unknown): v is Vec3 => typeof v === 'object' && v !== null && num((v as Vec3).x) && num((v as Vec3).y) && num((v as Vec3).z);
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 64;
-const isAttack = (v: unknown) => v === 'axe' || (isItemKind(v) && isWeapon(v));
+const isAttack = (v: unknown) => v === 'axe' || v === 'storm' || v === 'fall' || (isItemKind(v) && isWeapon(v));
 
 /** Valida la salud y acciones propias recibidas (nunca confiar a ciegas). */
 export function isValidVitals(v: unknown): v is Vitals {
   if (typeof v !== 'object' || v === null) return false;
   const o = v as Vitals;
-  return num(o.hp, 0, HEALTH.max) && typeof o.dead === 'boolean' && num(o.respawnIn, 0, 60)
+  return (o.lives === undefined || (Number.isInteger(o.lives) && num(o.lives, 0, 3)))
+    && (o.descending === undefined || typeof o.descending === 'boolean')
+    && (o.protection === undefined || num(o.protection, 0, 3))
+    && num(o.hp, 0, HEALTH.max) && typeof o.dead === 'boolean' && num(o.respawnIn, 0, 60)
     && num(o.reload, 0, 10) && num(o.reloadTotal, 0, 10) && num(o.heal, 0, 10) && num(o.healTotal, 0, 10);
 }
 
@@ -56,5 +59,5 @@ export function isValidDamageEvent(e: unknown): e is DamageEvent {
   if (typeof e !== 'object' || e === null) return false;
   const o = e as DamageEvent;
   return o.type === 'damage' && isId(o.victim) && isId(o.by) && isAttack(o.weapon)
-    && num(o.amount, 0, HEALTH.maxShotDamage) && num(o.hp, 0, HEALTH.max) && isVec(o.at);
+    && num(o.amount, 0, o.weapon === 'fall' ? HEALTH.max : o.weapon === 'storm' ? 50 : HEALTH.maxShotDamage) && num(o.hp, 0, HEALTH.max) && isVec(o.at);
 }

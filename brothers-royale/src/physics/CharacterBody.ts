@@ -1,3 +1,4 @@
+import { constrain } from '@shared/battle/zone';
 import type RAPIERNS from '@dimforge/rapier3d-compat';
 import { PLAYER, SIMULATION } from '@shared/constants';
 import {
@@ -102,6 +103,11 @@ export class CharacterBody {
   }
 
   private simulate(input: PlayerInput, dt: number, replaying: boolean): void {
+    if (this.modifiers.frozen) {
+      this.state.velocity.x = this.state.velocity.y = this.state.velocity.z = 0;
+      this.lastEvents.jumped = this.lastEvents.landed = false; this.lastEvents.impactSpeed = 0;
+      return;
+    }
     const m = this.motor;
     const wasGrounded = m.grounded;
     const vyBefore = m.vy;
@@ -111,6 +117,11 @@ export class CharacterBody {
     d.x = m.vx * dt;
     d.y = m.vy * dt;
     d.z = m.vz * dt;
+    if (this.modifiers.descent) {
+      const p = this.body.translation();
+      const next = constrain(this.modifiers.descent, { x: p.x + d.x, z: p.z + d.z }, PLAYER.radius);
+      d.x = next.x - p.x; d.z = next.z - p.z;
+    }
     this.controller.computeColliderMovement(this.collider, d, undefined, PLAYER_GROUPS);
     const move = this.controller.computedMovement();
     const grounded = this.controller.computedGrounded() && !jumped;

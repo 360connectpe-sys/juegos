@@ -300,6 +300,13 @@ export function Minimap({ game }: { game: Game | null }) {
       const half = st.size / 2;
       const u = (x: number) => ((x + half) / st.size) * MAP_PX;
       c.clearRect(0, 0, MAP_PX, MAP_PX);
+      if (st.zone) {
+        for (const [circle, color, dashed] of [[st.zone.current, '#ac78ff', false], [st.zone.next, '#ffffff', true]] as const) {
+          c.beginPath(); c.strokeStyle = color; c.lineWidth = 2; c.setLineDash(dashed ? [3, 3] : []);
+          c.arc(u(circle.x), u(circle.z), circle.radius / st.size * MAP_PX, 0, Math.PI * 2); c.stroke();
+        }
+        c.setLineDash([]);
+      }
       // Cofres aún cerrados (dorados).
       c.fillStyle = '#ffd34d';
       c.strokeStyle = '#5e3b1c';
@@ -365,7 +372,7 @@ export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = 
     case 'killfeed':
       return <LiveKillFeed game={preview ? null : game} />;
     case 'lives':
-      return <Lives />;
+      return game ? <LiveLives game={game} /> : <Lives />;
     case 'inventory':
       return <LiveInventory game={game} />;
     case 'minimap':
@@ -398,4 +405,10 @@ export function ConstructionWidget({ game, counter = false }: { game: Game | nul
       <p>{ui.valid ? 'Colocación válida' : 'Sin material, soporte o espacio libre'}</p>
     </>}
   </div>;
+}
+
+function LiveLives({ game }: { game: Game }) {
+  const [v, setV] = useState(game.currentVitals);
+  useEffect(() => game.events.on('vitals', setV), [game]);
+  return <Lives lives={v.lives ?? 3} />;
 }

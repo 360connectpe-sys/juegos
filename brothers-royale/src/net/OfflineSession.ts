@@ -1,3 +1,6 @@
+import { BattleRound } from '@shared/battle/BattleRound';
+import { DEFAULT_MODIFIERS } from '@shared/movement';
+import { WORLD } from '@shared/constants';
 import type { BuildingWorld } from '@/physics/BuildingWorld';
 import type { BuildRequest } from '@shared/building/BuildingState';
 import { CharacterBody } from '@/physics/CharacterBody';
@@ -10,7 +13,7 @@ import type { ClientCombatEvent, CombatView } from './CombatView';
 import type { GameSession, PlayerIdentity } from './GameSession';
 import type { ClientMatchEvent, MatchView } from './MatchView';
 
-/** Muñeco de práctica (solo sin conexión): no se mueve ni ataca; vuelve a los 3 s. */
+/** Muñeco de práctica (solo sin conexión): no ataca; comparte vidas y reaparición. */
 interface Dummy {
   state: PlayerState;
   name: string;
@@ -31,6 +34,7 @@ export class OfflineSession implements GameSession {
   readonly state: MatchState;
   /** … y también la del combate (mismas reglas que el servidor). */
   readonly fight: CombatState;
+  readonly round: BattleRound;
   private readonly dummies = new Map<string, Dummy>();
   onMatchEvent: ((e: ClientMatchEvent) => void) | null = null;
   onCombatEvent: ((e: ClientCombatEvent) => void) | null = null;
@@ -68,9 +72,31 @@ export class OfflineSession implements GameSession {
       this.fight.addFighter(id, true);
       this.list.push(state);
     });
-    this.fight.onRespawn = (id) => {
-      if (id === this.localPlayerId) this.local.teleport(this.spawn);
-    };
+    this.round = new BattleRound(this.fight, building?.layout.terrain.size ?? WORLD.size, matchSeed, {
+      actors: () => this.list.map(s => ({ id: s.id, name: s.name, feet: s.position, grounded: s.grounded, connected: true })),
+      reset: ids => {
+        this.state.reset(ids); building?.reset();
+        for (const id of ids) building?.state.addPlayer(id);
+        this.fight.reset(ids);
+        for (const id of this.dummies.keys()) { this.fight.removeFighter(id); this.fight.addFighter(id, true); }
+        for (const [i, dummy] of [...this.dummies.values()].entries()) {
+          dummy.state.position = { ...dummies[i]! }; dummy.state.velocity = { x: 0, y: 0, z: 0 }; dummy.state.grounded = true; dummy.state.gear = 0;
+        }
+        this.local.modifiers = { ...DEFAULT_MODIFIERS }; this.local.teleport(this.spawn);
+        this.onMatchEvent?.({ type: 'reset' });
+      },
+      spawn: (id, zone, index) => {
+        const angle = Math.max(0, index) * 2.399963, d = Math.min(12, zone.radius * .4);
+        const x = zone.x + Math.sin(angle) * d, z = zone.z + Math.cos(angle) * d;
+        const y = (physics.groundHeightAt(x, z) ?? spawn.y) + 30;
+        if (id === this.localPlayerId) this.local.teleport({ x, y, z });
+        else {
+          const dummy = this.dummies.get(id);
+          if (dummy) { dummy.state.position = { x, y, z }; dummy.state.grounded = false; dummy.state.locomotion = 'fall'; }
+        }
+      },
+    }, false);
+    this.fight.onRespawn = id => this.round.respawn(id);
     this.fight.drain();
     this.ctx = {
       feet: this.local.state.position,
@@ -108,8 +134,11 @@ export class OfflineSession implements GameSession {
   }
 
   requestBuild(request: BuildRequest): boolean {
-    return !this.fight.isDead(this.localPlayerId) && (this.building?.state.place(this.localPlayerId, request, this.local.state.position) ?? false);
+    return this.round.canAct(this.localPlayerId) && (this.building?.state.place(this.localPlayerId, request, this.local.state.position) ?? false);
   }
+
+  get battle() { return this.round.snapshot(); }
+  startRound(): boolean { return this.round.start(); }
 
   selectSlot(slot: number): void {
     this.state.selectSlot(this.localPlayerId, slot);
@@ -122,9 +151,14 @@ export class OfflineSession implements GameSession {
   }
 
   tick(input: PlayerInput, dt: number): void {
-    const dead = this.fight.isDead(this.localPlayerId);
+    this.round.before(dt);
+    const v = this.fight.vitals(this.localPlayerId);
+    this.local.modifiers = { ...DEFAULT_MODIFIERS, frozen: !this.round.canAct(this.localPlayerId),
+      ...(v?.descending ? { descent: this.round.zone.current, canJump: false, canSprint: false } : {}) };
+    const dead = !this.round.canAct(this.localPlayerId);
     const move = dead ? { seq: input.seq, moveX: 0, moveZ: 0, buttons: 0, aimYaw: input.aimYaw } : input;
     const s = this.local.step(move, dt);
+    if (s.grounded) this.fight.landed(this.localPlayerId);
     // Mismas reglas que el servidor: flanco de interacción con la posición tras el paso.
     const interact = hasButton(move.buttons, Buttons.INTERACT);
     if (interact && !this.interactHeld) this.state.interact(this.localPlayerId, s.position, (a, b) => this.physics.lineOfSight(a, b));
@@ -141,13 +175,19 @@ export class OfflineSession implements GameSession {
     }
     for (const [id, d] of this.dummies) {
       this.fight.idle(id, dt);
+      if (this.fight.vitals(id)?.descending) {
+        const p = d.state.position, ground = this.physics.groundHeightAt(p.x, p.z) ?? this.spawn.y;
+        p.y = Math.max(ground, p.y - 6 * dt); d.state.velocity.y = -6;
+        if (p.y <= ground) { d.state.grounded = true; d.state.locomotion = 'idle'; d.state.velocity.y = 0; this.fight.landed(id); }
+      }
       d.state.gear = this.fight.gear(id);
     }
     this.local.state.gear = this.fight.gear(this.localPlayerId);
+    this.round.after(dt, this.tickCount);
     this.tickCount++;
     this.flush();
     this.physics.step();
-    if (s.position.y < -20) this.local.teleport(this.spawn);
+    if (s.position.y < -20 && !this.fight.isDead(this.localPlayerId)) this.fight.environmentalDamage(this.localPlayerId, 100, s.position, this.tickCount, 'fall');
   }
 
   players(): readonly PlayerState[] {

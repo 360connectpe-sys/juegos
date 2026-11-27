@@ -64,7 +64,7 @@ export class BrothersRoom extends Room {
     this.onMessage('ready', (client) => this.handleReady(client));
     this.onMessage('input', (client, message) => this.handleInput(client, message));
     this.onMessage('build', (client, message: unknown) => {
-      if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready || this.world.combat.isDead(client.sessionId)) return;
+      if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready || !this.world.canAct(client.sessionId)) return;
       const p = this.world.players.get(client.sessionId);
       if (p) this.world.building.state.place(p.id, message, p.body.state.position);
     });
@@ -84,6 +84,7 @@ export class BrothersRoom extends Room {
     let last = performance.now();
     this.setSimulationInterval(() => {
       const now = performance.now();
+      this.world.round.syncWallTime(now / 1000);
       this.loop.advance((now - last) / 1000);
       last = now;
     }, 1000 / NET.tickRate);
@@ -126,6 +127,7 @@ export class BrothersRoom extends Room {
       inventory: this.world.match.inventory(player.id)!,
       vitals: this.world.combat.vitals(player.id)!,
       building: this.world.building.state.snapshot(),
+      battle: this.world.round.snapshot(),
     };
     client.send('welcome', welcome);
     player.correctionDirty = false;
@@ -157,6 +159,7 @@ export class BrothersRoom extends Room {
   }
 
   private buildingRevision = -1;
+  private resetRevision = 0;
   private tick(): void {
     this.world.step();
     if (this.clients.length === 0) {
@@ -164,6 +167,14 @@ export class BrothersRoom extends Room {
       this.world.drainCombatEvents();
       return;
     }
+    if (this.resetRevision !== this.world.resetRevision) {
+      this.resetRevision = this.world.resetRevision;
+      for (const client of this.clients) {
+        const meta = this.meta.get(client.sessionId);
+        if (meta?.ready) { meta.ready = false; this.handleReady(client); }
+      }
+    }
+    if (this.world.tick % 10 === 0) this.broadcast('battle', this.world.round.snapshot(), { except: this.clients.filter(c => !this.meta.get(c.sessionId)?.ready) });
     if (this.buildingRevision !== this.world.building.state.revision) {
       this.buildingRevision = this.world.building.state.revision;
       this.broadcast('building', this.world.building.state.snapshot(), { except: this.clients.filter(c => !this.meta.get(c.sessionId)?.ready) });

@@ -94,6 +94,11 @@ export class MatchState {
     this.opened = chests.map(() => false);
   }
 
+  reset(ids: readonly string[]): void {
+    this.opened.fill(false); this.pickups.clear(); this.inventories.clear(); this.events = []; this.nextPickupId = 1;
+    for (const id of ids) this.addPlayer(id);
+  }
+
   drain(): MatchEvent[] {
     const e = this.events;
     this.events = [];

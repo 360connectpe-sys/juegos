@@ -1,4 +1,5 @@
 import { PLAYER, SIMULATION } from './constants';
+import type { Circle } from './battle/zone';
 import { rotateTowards } from './math';
 import { Buttons, hasButton, type Locomotion, type PlayerInput, type Vec2 } from './types';
 
@@ -31,6 +32,8 @@ export function screenToWorld(screenX: number, screenY: number): Vec2 {
  * combate (apuntar ralentiza), construcción, daño, vehículos, etc.
  */
 export interface MotorModifiers {
+  frozen?: boolean;
+  descent?: Circle;
   speedMultiplier: number;
   canSprint: boolean;
   canJump: boolean;
@@ -138,6 +141,8 @@ export function motorIntent(
   } else {
     s.jumpBuffer = Math.max(0, s.jumpBuffer - dt);
   }
+
+  if (mods.descent) { s.vy = -6; s.jumpBuffer = 0; return { jumped: false }; }
 
   // Gravedad (más fuerte al caer) con velocidad terminal.
   const g = SIMULATION.gravity * (s.vy < 0 ? PLAYER.fallGravityMultiplier : 1);

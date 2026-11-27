@@ -1,3 +1,5 @@
+import { StormView } from './world/StormView';
+import { contains } from '@shared/battle/zone';
 import { BuildingWorld } from '@/physics/BuildingWorld';
 import { BuildingView } from './world/BuildingView';
 import { buildTop, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
@@ -125,6 +127,8 @@ export class Game {
   private session: GameSession | null = null;
   private buildingWorld: BuildingWorld | null = null;
   private buildingView: BuildingView | null = null;
+  private stormView: StormView | null = null;
+  private spectatedId: string | null = null;
   private buildOpen = false;
   private buildKind: BuildKind = 'wall';
   private buildRotation = 0;
@@ -292,6 +296,7 @@ export class Game {
     }
     const trees: Group = createTrees(layout.trees, layout.seed, this.quality.shadows);
     scene.add(trees);
+    this.stormView = new StormView(layout.terrain); scene.add(this.stormView.line);
     this.buildingView = new BuildingView(layout.trees, trees);
     scene.add(this.buildingView.root);
     this.buildingView.setShadows(this.quality.shadows);
@@ -318,7 +323,7 @@ export class Game {
       input.moveZ = 0;
       input.buttons = 0;
     }
-    if (this.vitals.dead) {
+    if (this.vitals.dead || session.battle?.phase === 'finished') {
       // Eliminado: no se mueve ni actúa (la autoridad hace lo mismo).
       input.moveX = 0;
       input.moveZ = 0;
@@ -369,7 +374,7 @@ export class Game {
       let base = ground;
       for (const p of world.state.pieces.values()) if (Math.abs(p.x - x) < 1.6 && Math.abs(p.z - z) < 1.6 && buildTop(p) <= feet.y + 3.1) base = Math.max(base, buildTop(p));
       this.buildCandidate = { kind: this.buildKind, x, y: base + this.buildLevel * 3, z, rotation: this.buildRotation };
-      this.buildValid = !this.vitals.dead && world.state.canPlace(this.session!.localPlayerId, this.buildCandidate, feet);
+      this.buildValid = !this.vitals.dead && this.session?.battle?.phase !== 'finished' && world.state.canPlace(this.session!.localPlayerId, this.buildCandidate, feet);
       if (fire && !this.buildFireHeld && this.buildValid) this.placeBuild();
       input.buttons &= ~Buttons.FIRE;
     }
@@ -538,10 +543,10 @@ export class Game {
         }
         break;
       case 'death': {
-        const killer = e.killer === me ? 'Tú' : session.identity(e.killer).name;
+        const killer = e.weapon === 'storm' ? 'Tormenta' : e.weapon === 'fall' ? 'Caída' : e.killer === me ? 'Tú' : session.identity(e.killer).name;
         const victim = e.victim === me ? 'ti' : session.identity(e.victim).name;
         this.events.emit('killfeed', { killer, victim, weapon: e.weapon, mine: e.killer === me, me: e.victim === me });
-        if (e.victim === me) this.events.emit('eliminated', { by: e.killer === me ? 'ti mismo' : session.identity(e.killer).name });
+        if (e.victim === me) this.events.emit('eliminated', { by: e.killer === me ? 'ti mismo' : killer });
         break;
       }
       case 'healed':
@@ -633,13 +638,22 @@ export class Game {
       r.render(alpha, dt, this.frustum.intersectsSphere(this.cullSphere));
     }
     if (this.quality.blobShadows) this.blobs.update(this.allAvatars());
-    const p = avatar.position;
+    const battle = this.session?.battle;
+    const spectator = (this.vitals.lives ?? 3) === 0;
+    const targets = spectator ? [...this.remotes.keys()].filter(id => (battle?.players.find(p => p.id === id)?.lives ?? 0) > 0) : [];
+    if (!spectator) this.spectatedId = null;
+    else if (!this.spectatedId || !targets.includes(this.spectatedId)) this.spectatedId = targets[0] ?? null;
+    const watched = this.spectatedId ? this.remotes.get(this.spectatedId) : null;
+    const followed = watched ?? avatar;
+    const p = followed.position;
+    this.stormView?.update(battle?.phase === 'running' ? battle.zone.current : null);
     const zoom = this.input.consumeZoom();
     if (cameras) {
       if (zoom !== 0 && !this.inputSuspended) cameras.addZoom(zoom);
-      cameras.update(p, avatar.velocity.x, avatar.velocity.z, dt);
+      cameras.update(p, followed.velocity.x, followed.velocity.z, dt);
       this.engine.activeCamera = cameras.camera;
-      avatar.root.visible = !cameras.hideAvatar;
+      avatar.root.visible = !spectator && !cameras.hideAvatar;
+      for (const [id, remote] of this.remotes) remote.root.visible = !(spectator && id === this.spectatedId && cameras.mode === 'first');
       this.lighting.follow(cameras.focus);
     }
     // El "corte" de techos y paredes es propio de la vista isométrica.
@@ -727,15 +741,34 @@ export class Game {
     local: { x: number; z: number; yaw: number } | null;
     others: { x: number; z: number }[];
     chests: { x: number; z: number; opened: boolean }[];
+    zone?: import('@shared/battle/zone').ZoneState;
   } {
     const local = this.session?.localPlayer();
     const m = this.session?.match;
     return {
       size: this.layout?.terrain.size ?? 0,
+      zone: this.session?.battle?.phase === 'running' ? this.session.battle.zone : undefined,
       local: local ? { x: local.position.x, z: local.position.z, yaw: local.yaw } : null,
       others: [...this.remotes.values()].map((r) => ({ x: r.position.x, z: r.position.z })),
       chests: (m?.chests ?? []).map((c) => ({ x: c.x, z: c.z, opened: m?.opened[c.id] ?? false })),
     };
+  }
+
+  get battleUi() {
+    const round = this.session?.battle;
+    const local = this.session?.localPlayer();
+    const player = round?.players.find(p => p.id === this.session?.localPlayerId);
+    const viewpoint = this.spectatedId ? this.remotes.get(this.spectatedId)?.position : local?.position;
+    return { round, offline: this.session?.kind === 'offline', protection: player?.protection ?? 0,
+      descending: player?.descending ?? false, spectator: (this.vitals.lives ?? 3) === 0,
+      target: this.spectatedId ? this.session?.identity(this.spectatedId).name : null,
+      outside: !!round && round.phase === 'running' && !!viewpoint && !contains(round.zone.current, viewpoint) };
+  }
+  startRound(): void { this.session?.startRound?.(); }
+  spectateNext(direction = 1): void {
+    const ids = this.session?.battle?.players.filter(p => p.id !== this.session?.localPlayerId && p.lives > 0).map(p => p.id) ?? [];
+    const index = ids.indexOf(this.spectatedId ?? '');
+    this.spectatedId = ids[(index + direction + ids.length) % ids.length] ?? null;
   }
 
   /** Salud y acciones propias actuales (lo decide la autoridad). */
@@ -793,6 +826,8 @@ export class Game {
         this.events.emit('notice', e.code);
         break;
       case 'reset':
+        this.buildOpen = false; this.buildCandidate = null; this.spectatedId = null;
+        this.localWeapon.sync(this.session?.match.inventory ?? null);
         if (this.session) {
           this.chestView?.sync(this.session.match.opened);
           this.pickupView.reset(this.session.match.pickups.values());
@@ -1043,6 +1078,7 @@ export class Game {
     this.fx.dispose();
     this.overlay?.dispose();
     this.sound.dispose();
+    this.stormView?.dispose();
     this.buildingView?.dispose();
     this.engine.dispose();
     this.input.dispose();

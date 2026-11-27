@@ -1,3 +1,4 @@
+import type { RoundSnapshot } from './battle/BattleRound';
 import type { BuildingSnapshot, BuildRequest } from './building/BuildingState';
 /**
  * Contrato de red cliente ↔ servidor (Colyseus).
@@ -14,8 +15,9 @@ import type { PlayerInput } from './types';
  * v5 (fase 6): entrada con aimPitch y viewTick, estado de combate en los flags
  * del snapshot y mensajes `combat`, `hits` y `vitals`.
  * v6 (fase 7): materiales, árboles destructibles y construcciones autoritativas.
+ * v7 (fase 8): vidas finitas, descenso, protección, tormenta y resultados de ronda.
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** Nombre de la sala registrada en el servidor. */
 export const ROOM_NAME = 'brothers';
@@ -130,6 +132,7 @@ export interface WelcomeMessage {
   /** Salud y acciones propias (siempre enviado; validado en el cliente). */
   vitals?: Vitals;
   building?: BuildingSnapshot;
+  battle?: RoundSnapshot;
 }
 
 /** Combate visible para toda la sala: disparos, golpes, eliminaciones y vueltas. */
@@ -161,6 +164,7 @@ export interface CorrectionMessage {
 }
 
 export interface ServerMessages {
+  battle: RoundSnapshot;
   building: BuildingSnapshot;
   welcome: WelcomeMessage;
   snapshot: SnapshotMessage;

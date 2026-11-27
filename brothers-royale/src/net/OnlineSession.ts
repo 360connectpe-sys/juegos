@@ -1,3 +1,5 @@
+import type { RoundSnapshot } from '@shared/battle/BattleRound';
+import { validRound } from '@shared/battle/validation';
 import type { BuildingWorld } from '@/physics/BuildingWorld';
 import type { BuildingSnapshot, BuildRequest } from '@shared/building/BuildingState';
 import { Client, type Room } from '@colyseus/sdk';
@@ -101,6 +103,7 @@ export class OnlineSession implements GameSession {
   private readonly replica: ReplicatedMatch;
   onMatchEvent: ((e: ClientMatchEvent) => void) | null = null;
   private disposed = false;
+  battle?: RoundSnapshot;
 
   private constructor(
     private readonly room: Room,
@@ -112,6 +115,7 @@ export class OnlineSession implements GameSession {
   ) {
     this.replica = new ReplicatedMatch(chests);
     this.replica.load(welcome.match, welcome.inventory);
+    if (validRound(welcome.battle)) this.battle = welcome.battle;
     if (welcome.building) building?.load(welcome.building);
     if (isValidVitals(welcome.vitals)) this.vitalsState = welcome.vitals;
     if (welcome.roster.length > NET.maxPlayersPerRoom) throw new Error('El servidor supera el máximo de 8 jugadores por sala');
@@ -158,6 +162,7 @@ export class OnlineSession implements GameSession {
         room.onMessage('join', (m: RosterEntry) => (session ? session.onJoin(m) : early.join.push(m)));
         room.onMessage('leave', (m: { id: string; netId: number }) => session?.onLeave(m.netId));
         room.onMessage('pong', (m: { t: number }) => session?.onPong(m));
+        room.onMessage('battle', (s: unknown) => { if (session && validRound(s)) session.battle = s; });
         room.onMessage('building', (s: BuildingSnapshot) => { if (s && session?.building && s.revision >= session.building.state.revision) session.building.load(s); });
         room.onMessage('match', (m: { tick: number; events: PublicMatchEvent[] }) => session?.onMatch(m));
         room.onMessage('inventory', (m: unknown) => session?.onInventory(m));
@@ -320,6 +325,7 @@ export class OnlineSession implements GameSession {
     }
     // Tras reconectar: estado autoritativo fresco y sin entradas pendientes viejas.
     this.replica.load(w.match, w.inventory);
+    if (validRound(w.battle)) this.battle = w.battle;
     if (w.building) this.building?.load(w.building);
     this.onMatchEvent?.({ type: 'reset' });
     this.vitalsState = isValidVitals(w.vitals) ? w.vitals : fullVitals();
