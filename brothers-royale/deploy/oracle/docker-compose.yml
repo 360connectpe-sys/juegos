@@ -1,0 +1,32 @@
+# BROTHERS ROYALE en una VM gratuita de Oracle Cloud (Always Free, región Santiago).
+# Caddy obtiene y renueva solo el certificado HTTPS (Let's Encrypt) → wss://DOMINIO.
+# Uso (en la VM, dentro de brothers-royale/deploy/oracle): cp .env.example .env && editar → docker compose up -d --build
+services:
+  server:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "2567"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://360connectpe-sys.github.io}
+      MAX_ROOMS: ${MAX_ROOMS:-6}
+    expose:
+      - "2567"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Define DOMAIN en .env (p. ej. 203-0-113-7.sslip.io)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:

@@ -18,6 +18,23 @@ Informe completo con métricas: **MOBILE-FIXES.md**. Sin nuevas mecánicas.
   Baja 155 → 20 y Normal 307 → 32. Sin cambio de programa por frame y con menos basura (19,1 → 14,6 MB/5 s).
   Pendiente: medición física en iPhone.
 
+## Preparación del despliegue multijugador (2026-11-27, rama `brothers-royale-server-deploy`)
+Sin cambios de jugabilidad, HUD, construcción ni controles de combate. Guía completa: **DEPLOY.md**.
+- Investigación de alojamiento gratuito con WSS y baja latencia para Perú: **Oracle Cloud Always Free en
+  Santiago** (principal: siempre encendido, ~20–40 ms estimados) y **Render Free en Virginia** (alternativa sin
+  tarjeta; se duerme tras 15 min). Descartados: Cloud Run (facturación, escala a cero), Fly.io/Railway (sin
+  gratis permanente), Koyeb (incierto).
+- Servidor: `server/config.ts` (PORT, HOST, ALLOWED_ORIGINS, MAX_ROOMS validados), `GET /health`, CORS y
+  handshake WebSocket limitados a los orígenes permitidos, límite de salas simultáneas con código 4105
+  («servidor lleno»). Máximo de 8 jugadores por sala intacto y no configurable.
+- Cliente: `public/config.js` (URL del servidor editable sin recompilar; prioridad `?server=` > config.js >
+  `VITE_SERVER_URL`), despertar del servidor antes de unirse (GET /health, hasta 75 s) y errores de red en
+  español. El modo sin conexión no cambia.
+- Despliegue: `Dockerfile` (amd64/arm64, sin root, healthcheck), `render.yaml` (Blueprint propio en
+  `brothers-royale/`), `deploy/oracle/` (Docker Compose + Caddy con Let's Encrypt + script de la VM).
+- Pruebas: `tests/deploy.test.ts` (10); total 372 en 44 archivos. Verificado: imagen Docker real (salud, bienvenida SDK, origen ajeno 401),
+  `docker compose config`, `caddy validate` y navegador (config.js → «Crear sala» → sala 1/8).
+
 ## Auditoría integral de fases 3.2, 4 y 5
 
 Revisión de 5103899 frente a 5da1a88. Informe completo en AUDIT-3.2-5.md.

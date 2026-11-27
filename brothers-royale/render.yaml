@@ -1,0 +1,27 @@
+# Render Blueprint del servidor de BROTHERS ROYALE (plan GRATUITO).
+# En render.com: New → Blueprint → este repositorio → «Blueprint file path»:
+#   brothers-royale/render.yaml   (así no toca el render.yaml de la raíz, que es de otro juego)
+# Pasos completos y limitaciones (se duerme tras 15 min sin uso): DEPLOY.md.
+services:
+  - type: web
+    name: brothers-royale-server
+    runtime: docker
+    plan: free
+    # Render no tiene región en Sudamérica: Virginia (EE. UU. este) es la más cercana a Perú.
+    region: virginia
+    branch: brothers-royale-server-deploy
+    # Rutas desde la raíz del repositorio. Solo se redepliega si cambia brothers-royale/.
+    dockerfilePath: ./brothers-royale/Dockerfile
+    dockerContext: ./brothers-royale
+    buildFilter:
+      paths:
+        - brothers-royale/**
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Solo la web publicada puede abrir el juego en línea desde un navegador.
+      - key: ALLOWED_ORIGINS
+        value: https://360connectpe-sys.github.io
+      # La instancia gratuita tiene 0,1 CPU: pocas salas simultáneas (8 jugadores cada una).
+      - key: MAX_ROOMS
+        value: "2"

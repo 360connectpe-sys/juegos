@@ -18,6 +18,7 @@ import {
 import { sanitizeName, sanitizeRoomCode, uniqueName, validateJoinOptions } from '@shared/session';
 import { benchPrefix } from './bench';
 import { ServerWorld } from './ServerWorld';
+import { roomBudget } from './capacity';
 
 const privateCodes=new Map<string,string>();
 
@@ -58,7 +59,24 @@ export class BrothersRoom extends Room {
   private readonly meta = new Map<string, ClientMeta>();
   private readonly skipScratch: Client[] = [];
 
+  /** Esta sala ocupa una plaza de MAX_ROOMS. */
+  private holdsBudget = false;
+
   async onCreate(options: CreateOptions = {}): Promise<void> {
+    // Límite de salas del proceso (MAX_ROOMS): protege instancias gratuitas.
+    if (!roomBudget.tryAcquire()) throw new ServerError(CloseCodes.SERVER_FULL, 'Servidor lleno: límite de salas alcanzado');
+    this.holdsBudget = true;
+    try {
+      await this.setup(options);
+    } catch (e) {
+      // Colyseus descarta la sala sin llamar a onDispose: devolver la plaza aquí.
+      this.holdsBudget = false;
+      roomBudget.release();
+      throw e;
+    }
+  }
+
+  private async setup(options: CreateOptions): Promise<void> {
     this.code = sanitizeRoomCode(options.code);
     if(options.visibility!==undefined&&!['private','public'].includes(options.visibility)||options.visibility==='private'&&!this.code||options.visibility==='public'&&!!this.code)throw new ServerError(4105,'Visibilidad o código inválido');
     if(this.code){
@@ -341,6 +359,10 @@ export class BrothersRoom extends Room {
   }
 
   onDispose(): void {
+    if (this.holdsBudget) {
+      this.holdsBudget = false;
+      roomBudget.release();
+    }
     if(privateCodes.get(this.code)===this.roomId)privateCodes.delete(this.code);
     this.world?.dispose();
   }

@@ -6,6 +6,23 @@ Estado a 27 de noviembre de 2026, tras cerrar la **fase 9 (lobby, personalizaci�
 
 ---
 
+## Checkpoint fase 10 (multijugador real) — actualizar en cada avance
+
+Reanudación automática programada: 2026-11-27 04:25 hora de Perú (09:25 UTC), por si se agota la cuota.
+Continuar desde aquí sin repetir trabajo. Rama: `brothers-royale-phase-3.1`; publicación: `brothers-royale-beta-pages`
+(solo `brothers-royale/beta/`). No fusionar con `main`, no tocar otros juegos, sin pagos, no iniciar fase 11.
+
+| Paso | Estado |
+|---|---|
+| 1. Integrar `brothers-royale-server-deploy` (29b1e23) en desarrollo (aba1015) | HECHO: merge, 402 pruebas |
+| 2. Salas públicas/privadas, 8 máx., ping/conexión/reconexión, anfitrión, revanchas, aislamiento | EN CURSO |
+| 3. Prueba de 30 min, 8 clientes, combate y 128 estructuras (métricas y fugas) | PENDIENTE |
+| 4. Despliegue real (necesita cuenta del usuario) + `config.js` de la beta | PENDIENTE (bloqueado por el usuario) |
+| 5. Docs (DEPLOY.md, PHASE-10.md), `npm run check`, commit/push, beta, verificación pública | PENDIENTE |
+
+Comando para continuar a mano: `cd brothers-royale && git pull && npm ci && npm run check`, y seguir por el
+primer paso no HECHO de esta tabla.
+
 ## 1. Estado actual
 
 | Dato | Valor |

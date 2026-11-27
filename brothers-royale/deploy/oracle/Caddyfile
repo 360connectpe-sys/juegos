@@ -1,0 +1,5 @@
+# Proxy inverso con HTTPS automático (Let's Encrypt): wss://DOMINIO → servidor Colyseus (WebSocket incluido).
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy server:2567
+}
