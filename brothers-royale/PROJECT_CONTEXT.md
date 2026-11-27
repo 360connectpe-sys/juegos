@@ -19,6 +19,8 @@ Estado a 27 de noviembre de 2026, tras cerrar la **fase 9 (lobby, personalizaci�
 | Protocolo de red | v8 (`PROTOCOL_VERSION`) |
 | Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6, 7, 8, 9 |
 | Siguiente | Fase 10, pendiente de autorización; incluye validación real de 30 min reservada. |
+| Despliegue | Preparado en la rama `brothers-royale-server-deploy` (sobre `181d2a6`): guía **DEPLOY.md** (Oracle Santiago o Render Free, WSS, `config.js` para GitHub Pages). Pendiente: crear la cuenta y desplegar. |
+| GitHub Pages | Sirve la rama `brothers-royale-beta-pages` (main + `brothers-royale/beta/` = `jugar/` de `181d2a6`). |
 
 ### Historial de commits de la rama (antiguo → reciente)
 

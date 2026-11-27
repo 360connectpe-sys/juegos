@@ -8,3 +8,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface Window {
+  /** public/config.js: configuración de despliegue editable sin recompilar. */
+  BR_CONFIG?: { serverUrl?: unknown };
+}

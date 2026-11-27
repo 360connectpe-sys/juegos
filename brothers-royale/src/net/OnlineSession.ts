@@ -6,6 +6,7 @@ import { validRound } from '@shared/battle/validation';
 import type { BuildingWorld } from '@/physics/BuildingWorld';
 import type { BuildingSnapshot, BuildRequest } from '@shared/building/BuildingState';
 import { Client, type Room } from '@colyseus/sdk';
+import { wakeServer } from './config';
 import { CharacterBody } from '@/physics/CharacterBody';
 import type { PhysicsWorld } from '@/physics/PhysicsWorld';
 import { SIMULATION } from '@shared/constants';
@@ -67,6 +68,15 @@ export interface OnlineOptions {
   /** Tiempo máximo para unirse y recibir la bienvenida (ms). */
   timeoutMs?: number;
   signal?: AbortSignal;
+}
+
+/** Errores de red del navegador (en inglés y poco útiles) → mensaje claro para el jugador. */
+export function friendlyJoinError(error: unknown): unknown {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (/failed to fetch|networkerror|load failed|fetch failed|econnrefused/i.test(msg)) {
+    return new Error('No se pudo contactar con el servidor de juego. Puede estar apagado, despertando o no admitir esta página; inténtalo de nuevo o juega sin conexión.');
+  }
+  return error;
 }
 
 const withTimeout = <T>(p: Promise<T>, ms: number, what: string) =>
@@ -144,6 +154,9 @@ export class OnlineSession implements GameSession {
   /** Conecta, se une (o crea) la sala y espera la bienvenida. */
   static async connect(opts: OnlineOptions): Promise<OnlineSession> {
     opts.signal?.throwIfAborted();
+    // Instancias gratuitas dormidas: primero se despiertan (GET /health), luego se cuenta el plazo de unión.
+    await wakeServer(opts.url, 75_000, opts.signal);
+    opts.signal?.throwIfAborted();
     const timeout = opts.timeoutMs ?? 8000;
     const client = new Client(opts.url);
     const code=opts.mode==='create'?(opts.visibility==='private'?newRoomCode():''):sanitizeRoomCode(opts.code);
@@ -152,7 +165,7 @@ export class OnlineSession implements GameSession {
     const joining = opts.mode==='create'?client.create(ROOM_NAME,join):opts.mode==='join'?client.join(ROOM_NAME,join):client.joinOrCreate(ROOM_NAME, join);
     void joining.then((late) => { if (expired) void late.leave(true).catch(() => undefined); }, () => undefined);
     const room = await withTimeout(joining, timeout, 'No se pudo conectar al servidor')
-      .catch((error) => { expired = true; throw error; });
+      .catch((error) => { expired = true; throw friendlyJoinError(error); });
     room.reconnection.minUptime = 0;
     room.reconnection.maxDelay = 2000;
     room.reconnection.maxRetries = 10; // Reintentos durante aproximadamente los 15 s reservados por el servidor.

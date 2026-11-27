@@ -21,6 +21,9 @@ servidor, `@colyseus/sdk` en el cliente, cargado de forma diferida) · Vitest.
   `?online&server=ws://localhost:2567&name=Ana&code=SALA1` (dos pestañas o dispositivos = dos jugadores).
 - `npm test`, `npm run typecheck`, `npm run build`, `npm run preview`.
 - `npm run build:pages` — regenera `jugar/` (versión publicada en GitHub Pages). Ejecutarlo y commitear `jugar/` al cerrar cada avance.
+  Incluye `config.js` (URL del servidor editable sin recompilar; queda vacío tras compilar).
+- Despliegue del servidor (Docker, Render, Oracle + Caddy/WSS, variables `PORT`, `HOST`, `ALLOWED_ORIGINS`,
+  `MAX_ROOMS`): **DEPLOY.md**. El máximo de 8 jugadores por sala no se configura por entorno.
 
 ## Arquitectura y reglas
 ```

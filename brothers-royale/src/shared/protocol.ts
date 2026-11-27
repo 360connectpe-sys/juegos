@@ -56,6 +56,8 @@ export const CloseCodes = {
   FLOODING: 4102,
   SLOW_CONSUMER: 4103,
   ROOM_CAPACITY: 4104,
+  /** El servidor alcanzó su límite de salas simultáneas (MAX_ROOMS). */
+  SERVER_FULL: 4105,
 } as const;
 
 /** Mensaje claro para el jugador según cómo se cerró la conexión. */
@@ -79,6 +81,8 @@ export function closeReason(code: number, reason?: string): string {
       return 'La conexión no puede recibir el estado del juego a tiempo';
     case CloseCodes.FLOODING:
       return 'Se enviaron demasiados mensajes al servidor';
+    case CloseCodes.SERVER_FULL:
+      return 'El servidor está lleno ahora mismo; prueba en unos minutos o juega sin conexión';
     default:
       return reason ? `Conexión cerrada: ${reason}` : `Conexión cerrada (código ${code})`;
   }
