@@ -1,5 +1,5 @@
-const RELEASE = {"build":"f5e108a7c607f68c","protocol":10};
-const PRECACHE = ["./assets/OnlineSession-C_2j5iHO.js","./assets/index-C_0qhxBs.css","./assets/index-hs6qWvGW.js","./assets/net-l_Ctl5Lz.js","./assets/rapier-BVOi10Q1.js","./assets/react-AMYRZFjK.js","./assets/rolldown-runtime-Dl_DZoUm.js","./assets/three-BDkWa-TC.js","./config.js","./favicon.svg","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png","./icons/mark.svg","./index.html","./manifest.webmanifest","./version.json"];
+const RELEASE = {"build":"85bd8043d4782e2d","protocol":11};
+const PRECACHE = ["./assets/OnlineSession-BfIZ26PD.js","./assets/index-ChmhdskN.js","./assets/index-D13dxaT5.css","./assets/net-l_Ctl5Lz.js","./assets/rapier-BVOi10Q1.js","./assets/react-AMYRZFjK.js","./assets/rolldown-runtime-Dl_DZoUm.js","./assets/three-BDkWa-TC.js","./config.js","./favicon.svg","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png","./icons/mark.svg","./index.html","./manifest.webmanifest","./version.json"];
 /* RELEASE y PRECACHE los genera el build. Ámbito y cachés exclusivos de esta instalación. */
 const SCOPE = self.registration.scope;
 const PREFIX = 'brothers-royale-pwa:' + SCOPE + ':';
@@ -29,10 +29,13 @@ async function states() {
 
 async function cleanup() {
   const pages = await states();
-  // No borrar recursos de pestañas antiguas o de clientes que todavía no contestan.
-  if (pages.some(page => !page)) return;
-  const keep = new Set([CACHE, ...pages.map(page => PREFIX + page.build)]);
-  for (const key of await caches.keys()) if (key.startsWith(PREFIX) && !keep.has(key)) await caches.delete(key);
+  const keys = (await caches.keys()).filter(key => key.startsWith(PREFIX) && key !== CACHE);
+  // No borrar recursos de pestañas antiguas o de clientes que todavía no contestan…
+  const keep = new Set([CACHE, ...pages.filter(Boolean).map(page => PREFIX + page.build)]);
+  // …pero, si alguno no contesta, conservar solo la caché anterior más reciente (fase 15, H17):
+  // antes se conservaban todas para siempre y crecían con cada publicación.
+  if (pages.some(page => !page) && keys.length) keep.add(keys[keys.length - 1]);
+  for (const key of keys) if (!keep.has(key)) await caches.delete(key);
 }
 
 self.addEventListener('activate', event => {
@@ -74,7 +77,10 @@ self.addEventListener('fetch', event => {
     // La URL de Render y la información de versión se consultan en red; fallback sin conexión.
     if (path === new URL('./config.js', SCOPE).pathname || path === new URL('./version.json', SCOPE).pathname) {
       try {
-        const response = await fetch(new Request(request, { cache: 'no-store' }));
+        // Fase 15 (H1): red con tiempo máximo (2 s); si la red cuelga, la copia guardada.
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2000);
+        const response = await fetch(new Request(request, { cache: 'no-store', signal: ctrl.signal })).finally(() => clearTimeout(timer));
         if (!response.ok) throw new Error('Recurso no disponible');
         await (await caches.open(CACHE)).put(request, response.clone());
         return response;
