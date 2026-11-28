@@ -22,28 +22,26 @@ Comprobaciones: `npx vitest run tests/phase14Protocol.test.ts` (9 casos),
 exhaustivas, jugabilidad, multijugador ni benchmarks, por petición del usuario.
 Pendiente prueba física de controles, mira, mapa y legibilidad en iPhone.
 
-## Publicación coordinada pendiente
+## Publicación autorizada
 
-Render se redepliega al subir a `brothers-royale-phase-3.1`. Sin acceso al estado del
-servicio ni credenciales, no es posible garantizar que no haya partidas en curso.
-El entorno restringido devuelve CONNECT 403 para Render y GitHub Pages. Por ello se
-prepara la actualización y se sube una rama de entrega sin activar el despliegue.
-La beta pública sigue en fase 13/v9 hasta coordinar servidor y cliente.
+El usuario confirmó que no hay partidas activas y autorizó integrar los checkpoints en
+las ramas existentes, aun cuando la red impida comprobar las URLs públicas.
 
-1. Habilitar acceso a `brothers-royale-server.onrender.com`, `360connectpe-sys.github.io`
-   y, si se usa el panel para desplegar, `dashboard.render.com`/`api.render.com`.
-2. Coordinar ventana sin partidas y desactivar temporalmente auto-deploy si hace falta;
-   subir el commit final a desarrollo sin forzar historial. No tocar `main`.
-3. Desplegar Render v10 y comprobar salud/protocolo. El handshake rechaza clientes v9.
-4. Copiar `jugar/` a `brothers-royale/beta/` en la rama beta, conservar el `config.js`
-   de Render y chunks anteriores; no reemplazar archivos de otros juegos.
-5. Publicar beta y comprobar `version.json`, manifest, SW y rutas. La PWA ofrece
-   «Actualizar y jugar» fuera de partida, previa comprobación de protocolo.
+- Desarrollo: avance directo de `brothers-royale-phase-3.1` con `64e08c1` y el checkpoint
+  de publicación. El push activa el auto-deploy ya configurado de Render.
+- Beta: avance directo de `brothers-royale-beta-pages` a `ea4e850`; solo seis archivos
+  de Brothers Royale. Se conservan `config.js` WSS y trece chunks anteriores.
+- Cliente/servidor: protocolo **v10**. PWA: build **`f5e108a7c607f68c`**.
+- Commits funcionales: `b078c44`, `58efe4f`; bundle: `ae6b5b8`.
+- Sin cambios de infraestructura, servicios nuevos, main ni otros juegos.
 
-URL existente: https://360connectpe-sys.github.io/juegos/brothers-royale/beta/
+La red sigue devolviendo CONNECT 403 para Render y GitHub Pages. No se confirma desde
+este entorno que Render haya terminado ni que la URL pública sirva ya la nueva versión.
+El usuario hará esa comprobación manual; no se ejecutaron pruebas extensas adicionales.
 
-Commits de preparación: `b078c44` (reglas/v10), `58efe4f` (HUD), `ae6b5b8` (bundle).
-Beta lista en `ea4e850`, rama `brothers-royale-phase-14-beta-ready`; desarrollo preparado
-en `brothers-royale-phase-14-ready`. Build PWA: `f5e108a7c607f68c`.
-Verificado por Git remoto: desarrollo sigue `2882118`, beta publicada sigue `b2024a0`,
-main sigue `85dee86`. El bloqueo de red se confirmó al cerrar las comprobaciones.
+Comprobar `/health.protocol=10` en https://brothers-royale-server.onrender.com/health
+y protocolo 10/build `f5e108a7c607f68c` en la beta (`version.json`). La PWA ofrece
+«Actualizar y jugar» fuera de partida y valida el protocolo antes de aplicar el cambio.
+El handshake impide jugar con versiones distintas durante el despliegue.
+
+URL: https://360connectpe-sys.github.io/juegos/brothers-royale/beta/

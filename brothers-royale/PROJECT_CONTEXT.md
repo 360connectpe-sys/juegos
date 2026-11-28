@@ -2,10 +2,10 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 28 de noviembre de 2026: fase 14 preparada; fase 13 PWA continúa publicada.
+Estado a 28 de noviembre de 2026: fase 14 autorizada para desarrollo y beta; despliegue público pendiente de verificación externa.
 
 
-## Fase 14 — lista para despliegue coordinado (2026-11-28)
+## Fase 14 — publicación autorizada (2026-11-28)
 
 Base de desarrollo sincronizada: `2882118` (PWA fase 13). Trabajo aislado de los cambios
 antiguos de `/workspace/juegos`; solo se modifica `brothers-royale/`.
@@ -31,19 +31,32 @@ antiguos de `/workspace/juegos`; solo se modifica `brothers-royale/`.
   `/health` local v10/máximo 8, sintaxis SW y rutas/manifest/caché. No se ejecutó la suite completa,
   partidas, benchmarks ni pruebas físicas. Se actualizaron expectativas antiguas que cambiaron
   expresamente con esta fase; no se declara que las suites no ejecutadas estén aprobadas.
-- **Publicación pendiente**: Render tiene `autoDeploy: true` sobre desarrollo. La red del entorno
-  bloquea Render y Pages (CONNECT 403); no hay credenciales de despliegue. No hacer push a desarrollo
-  hasta coordinar una ventana sin partidas; hacerlo reiniciaría el servidor gratuito. No publicar
-  cliente v10 contra servidor v9. La versión pública PWA v9 permanece operativa e intacta.
-- Entrega segura: commits por bloques y rama remota de preparación `brothers-royale-phase-14-ready`.
-  Commits: `b078c44` (reglas/protocolo), `58efe4f` (HUD), `ae6b5b8` (bundle).
-  Beta preparada: `ea4e850` en `brothers-royale-phase-14-beta-ready`, basada en `b2024a0`;
-  solo seis archivos beta, conserva WSS y los trece chunks anteriores. Build `f5e108a7c607f68c`.
-  Después: avanzar desarrollo, desplegar Render en ventana acordada, comprobar `/health.protocol=10`,
-  copiar `jugar/` a `brothers-royale/beta/` conservando `config.js` y chunks anteriores, y publicar beta.
-  El SW existente aplaza la actualización hasta salir de partida y comprueba protocolo del servidor.
-  Las ventanas antiguas v9 deberán actualizar para entrar al servidor v10; no pueden seguir jugando
-  en línea tras la migración. Ver instrucciones breves en `PHASE-14.md`.
+- **Publicación autorizada por el usuario**, quien confirmó que no hay partidas activas.
+  Se integran los commits preparados mediante avance directo de las ramas existentes,
+  sin crear servicios, modificar infraestructura ni fusionar con `main`.
+- Desarrollo: `brothers-royale-phase-3.1` recibe los commits de `64e08c1` y este checkpoint.
+  Su push activa el auto-deploy existente de Render (`autoDeploy: true`). Servidor esperado:
+  `wss://brothers-royale-server.onrender.com`, `/health.protocol=10`, máximo ocho jugadores.
+- Publicación: `brothers-royale-beta-pages` recibe `ea4e850`, preparado sobre `b2024a0`.
+  Solo seis archivos de `brothers-royale/beta/`; conserva `config.js` con WSS y los trece
+  chunks anteriores. Bundle idéntico a `jugar/`, salvo la configuración WSS preservada.
+  Build PWA **`f5e108a7c607f68c`**, protocolo **v10** en fuente, servidor y bundle.
+- Commits de implementación: `b078c44` (reglas/protocolo), `58efe4f` (HUD), `ae6b5b8`
+  (bundle). Ramas de preparación conservadas como checkpoints, sin nuevo desarrollo.
+- Verificación local de publicación: contrato v10, coincidencia de bundles, URL WSS y
+  alcance de archivos; no se repiten suites extensas ni pruebas de jugabilidad.
+- **Limitación confirmada**: Render y Pages devuelven CONNECT 403 por restricciones
+  de red del entorno. El push solicita los despliegues existentes; no prueba que Render
+  haya terminado ni permite confirmar `/health` o el contenido servido por la URL pública.
+  El usuario autorizó publicar en estas condiciones y verificará manualmente desde iPhone.
+- Comprobación manual: esperar que Render esté listo con `/health.protocol=10`; abrir
+  `https://360connectpe-sys.github.io/juegos/brothers-royale/beta/version.json` y comprobar
+  protocolo 10 / build `f5e108a7c607f68c`. En la PWA, salir al lobby y pulsar
+  «Actualizar y jugar». El SW difiere la actualización en partidas y comprueba el protocolo
+  del servidor; el handshake rechaza versiones distintas. Hasta que Render termine,
+  los clientes v10 pueden rechazar la conexión. Las ventanas v9 deben actualizarse.
+  No se declara comprobada una conexión multijugador pública. Resumen: `PHASE-14.md`.
+
 
 
 ## Fase 13 — PWA iPhone (2026-11-28)
