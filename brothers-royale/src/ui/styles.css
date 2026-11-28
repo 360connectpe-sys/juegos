@@ -1576,3 +1576,12 @@ kbd {
   .interact__btn { min-height: 36px; padding: 3px 10px; }
   .interact__action { font-size: .88rem; }
 }
+/* Fase 15.1: cartografía real, gestos aislados de los controles del juego. */
+.w-map { touch-action:none; position:relative; }
+.w-map > canvas { position:absolute; inset:0; width:100%; height:100%; image-rendering:auto; }
+.map-panel { position:relative; }
+.map-panel--full { display:flex; flex-direction:column; align-items:center; gap:5px; }
+.map-panel--full .w-map--full { width:min(64dvh,72vw,600px); height:min(64dvh,72vw,600px); }
+.map-zoom { display:flex;align-items:center;gap:10px; color:white; }
+.map-zoom button { min-width:36px;min-height:34px;touch-action:manipulation; }
+.map-zoom output { min-width:38px;text-align:center;font-variant-numeric:tabular-nums; }

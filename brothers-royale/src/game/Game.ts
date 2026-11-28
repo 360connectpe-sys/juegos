@@ -1011,7 +1011,6 @@ export class Game {
     size: number;
     markers: readonly {x:number;z:number}[];
     local: { x: number; z: number; yaw: number } | null;
-    others: { x: number; z: number }[];
     chests: { x: number; z: number; opened: boolean }[];
     zone?: import('@shared/battle/zone').ZoneState;
     /** Fase 12: rutas de los aviones en vuelo y su posición actual. */
@@ -1024,9 +1023,8 @@ export class Game {
       markers: this.mapMarkers,
       zone: this.session?.battle?.phase === 'running' ? this.session.battle.zone : undefined,
       local: local ? { x: local.position.x, z: local.position.z, yaw: local.yaw } : null,
-      others: [...this.remotes.values()].map((r) => ({ x: r.position.x, z: r.position.z })),
       chests: (m?.chests ?? []).map((c) => ({ x: c.x, z: c.z, opened: m?.opened[c.id] ?? false })),
-      planes: this.session?.battle?.phase === 'running' ? this.session.battle.planes.map((r) => {
+      planes: this.session?.battle?.phase === 'running' ? this.session.battle.planes.filter(r=>this.airPlayer(this.session?.battle,this.session?.localPlayerId)?.plane===r.id).map((r) => {
         const pose = this.airView?.planePose(r.id);
         const mine = this.airPlayer(this.session?.battle, this.session?.localPlayerId)?.plane === r.id;
         return { ax: r.ax, az: r.az, bx: r.bx, bz: r.bz, x: pose?.x ?? r.ax, z: pose?.z ?? r.az, mine };

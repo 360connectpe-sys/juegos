@@ -5,7 +5,8 @@ import { magOf, type Inventory as InventoryState } from '@shared/inventory';
 import { isWeapon, supportsScope, ITEMS, itemName, type ItemKind, type ItemStack } from '@shared/items';
 import type { Vitals } from '@shared/combat/CombatState';
 import { HEALTH, WEAPON_STATS } from '@shared/combat/weapons';
-import { terrainHeight } from '@shared/world/terrain';
+import { Minimap } from '../map/Minimap';
+export { Minimap } from '../map/Minimap';
 
 /** Barra de salud (0..100, sin escudos). Se muestra redondeada hacia arriba: 0,4 sigue siendo 1. */
 export function HealthBar({ value = 100, max = 100 }: { value?: number; max?: number }) {
@@ -256,128 +257,6 @@ export function LiveInventory({ game }: { game: Game | null }) {
 }
 
 
-
-/**
- * Minimapa: el terreno se pinta UNA vez en un canvas pequeño; encima, otro
- * canvas con los jugadores se redibuja 10 veces por segundo (no por frame).
- * Va girado 45° para coincidir con la vista isométrica (arriba = hacia donde
- * "sube" la pantalla).
- */
-export function Minimap({ game, expanded = false, onOpen }: { game: Game | null; expanded?: boolean; onOpen?:()=>void }) {
-  const MAP_PX = expanded ? 512 : 128;
-  const baseRef = useRef<HTMLCanvasElement>(null);
-  const dotsRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const layout = game?.worldLayout;
-    const c = baseRef.current?.getContext('2d');
-    if (!layout || !c) return;
-    const n = 64;
-    const cell = MAP_PX / n;
-    const half = layout.terrain.size / 2;
-    for (let i = 0; i < n; i++)
-      for (let j = 0; j < n; j++) {
-        const x = -half + (i + 0.5) * (layout.terrain.size / n);
-        const z = -half + (j + 0.5) * (layout.terrain.size / n);
-        const h = terrainHeight(x, z, layout.terrain);
-        c.fillStyle = h < -0.5 ? '#3fa7d6' : h < -0.2 ? '#e8d08a' : h < 1.2 ? '#7cc456' : '#4f9a3a';
-        c.fillRect(i * cell, j * cell, cell + 0.5, cell + 0.5);
-      }
-    c.fillStyle = '#1f6e3a';
-    for (const t of layout.trees) c.fillRect(((t.x + half) / layout.terrain.size) * MAP_PX - 1, ((t.z + half) / layout.terrain.size) * MAP_PX - 1, 2, 2);
-    c.fillStyle = '#b23a37';
-    for (const s of layout.structures) {
-      if (s.def.id === 'chest') continue; // los cofres van en la capa dinámica
-      const r = s.def.id === 'house' ? 5 : s.def.id.startsWith('small-') ? 3.2 : 2.2;
-      c.fillStyle = s.def.id.startsWith('small-') ? '#8a3b2b' : '#b23a37';
-      c.fillRect(((s.x + half) / layout.terrain.size) * MAP_PX - r, ((s.z + half) / layout.terrain.size) * MAP_PX - r, r * 2, r * 2);
-    }
-  }, [game, MAP_PX, expanded]);
-
-  useEffect(() => {
-    if (!game) return;
-    const draw = () => {
-      const c = dotsRef.current?.getContext('2d');
-      const st = game.minimapState();
-      if (!c || !st.size) return;
-      const half = st.size / 2;
-      const u = (x: number) => ((x + half) / st.size) * MAP_PX;
-      c.clearRect(0, 0, MAP_PX, MAP_PX);
-      if (st.zone) {
-        // Fuera de la zona actual: velo violeta (regla par-impar: el círculo queda limpio).
-        c.beginPath(); c.rect(0, 0, MAP_PX, MAP_PX);
-        c.arc(u(st.zone.current.x), u(st.zone.current.z), st.zone.current.radius / st.size * MAP_PX, 0, Math.PI * 2);
-        c.fillStyle = '#6b3fd04d'; c.fill('evenodd');
-        for (const [circle, color, dashed] of [[st.zone.current, '#ac78ff', false], [st.zone.next, '#ffffff', true]] as const) {
-          c.beginPath(); c.strokeStyle = color; c.lineWidth = 2; c.setLineDash(dashed ? [3, 3] : []);
-          c.arc(u(circle.x), u(circle.z), circle.radius / st.size * MAP_PX, 0, Math.PI * 2); c.stroke();
-        }
-        c.setLineDash([]);
-      }
-      // Fase 12: ruta del avión (discontinua) y su posición; el propio, más visible.
-      for (const pl of st.planes ?? []) {
-        c.beginPath(); c.setLineDash([4, 3]); c.lineWidth = pl.mine ? 2 : 1; c.strokeStyle = pl.mine ? '#ffd34d' : '#ffffffaa';
-        c.moveTo(u(pl.ax), u(pl.az)); c.lineTo(u(pl.bx), u(pl.bz)); c.stroke(); c.setLineDash([]);
-        c.fillStyle = pl.mine ? '#ffd34d' : '#ffffff';
-        c.beginPath(); c.arc(u(pl.x), u(pl.z), pl.mine ? 4 : 3, 0, Math.PI * 2); c.fill();
-      }
-      // Cofres aún cerrados (dorados).
-      c.fillStyle = '#ffd34d';
-      c.strokeStyle = '#5e3b1c';
-      c.lineWidth = 1;
-      for (const ch of st.chests) {
-        if (ch.opened) continue;
-        c.fillRect(u(ch.x) - 1.8, u(ch.z) - 1.8, 3.6, 3.6);
-        c.strokeRect(u(ch.x) - 1.8, u(ch.z) - 1.8, 3.6, 3.6);
-      }
-      c.fillStyle = '#ff5a5f';
-      for (const o of st.others) {
-        c.beginPath();
-        c.arc(u(o.x), u(o.z), 3, 0, Math.PI * 2);
-        c.fill();
-      }
-      for(const mark of st.markers) {
-        c.fillStyle='#ffdf67'; c.strokeStyle='#3c234f'; c.lineWidth=1.5;
-        c.beginPath();c.arc(u(mark.x),u(mark.z),expanded?6:4,0,Math.PI*2);c.fill();c.stroke();
-        c.beginPath();c.moveTo(u(mark.x),u(mark.z)+4);c.lineTo(u(mark.x),u(mark.z)+10);c.stroke();
-      }
-      if (st.local) {
-        const { x, z, yaw } = st.local;
-        c.save();
-        c.translate(u(x), u(z));
-        c.rotate(-yaw);
-        c.fillStyle = '#ffffff';
-        c.strokeStyle = '#231f5c';
-        c.lineWidth = 1.5;
-        c.beginPath();
-        c.moveTo(0, 6);
-        c.lineTo(4, -4);
-        c.lineTo(-4, -4);
-        c.closePath();
-        c.fill();
-        c.stroke();
-        c.restore();
-      }
-    };
-    draw();
-    const t = window.setInterval(draw, 100);
-    return () => window.clearInterval(t);
-  }, [game, MAP_PX, expanded]);
-
-  return (
-    <div className={`w-map${expanded?' w-map--full':''}`} role="button" tabIndex={0} aria-label={expanded?'Mapa completo: toca para marcar destino':'Abrir mapa completo'}
-      onClick={e=>{
-        if(!expanded){onOpen?.();return;}
-        const rect=e.currentTarget.getBoundingClientRect(), size=game?.worldLayout?.terrain.size??0;
-        if(size)game?.addMapMarker(((e.clientX-rect.left)/rect.width-.5)*size,((e.clientY-rect.top)/rect.height-.5)*size);
-      }} onKeyDown={e=>{if(!expanded&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onOpen?.();}}}>
-      <div className="w-map__rot">
-        <canvas ref={baseRef} width={MAP_PX} height={MAP_PX} />
-        <canvas ref={dotsRef} width={MAP_PX} height={MAP_PX} />
-      </div>
-    </div>
-  );
-}
 
 export type InfoWidgetId = 'wood' | 'construction' | 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
 export const INFO_WIDGETS: readonly InfoWidgetId[] = ['wood', 'construction', 'health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
