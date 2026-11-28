@@ -11,6 +11,7 @@ export type SoundName = WeaponKind | 'axe' | 'hit' | 'kill' | 'hurt' | 'reload' 
 
 interface Voice {
   end: number;
+  release():void;
 }
 
 /** Parámetros de cada sonido: ruido filtrado y/o tono con envolvente. Datos, no código. */
@@ -120,7 +121,7 @@ export class SoundFx {
     try {
       const b = ctx.createBuffer(1, 1, ctx.sampleRate);
       const src = ctx.createBufferSource();
-      src.buffer = b; src.connect(ctx.destination); src.start(0);
+      src.buffer = b; src.connect(ctx.destination); src.onended=()=>src.disconnect?.(); src.start(0);
     } catch { /* sin audio */ }
   }
 
@@ -155,49 +156,58 @@ export class SoundFx {
     if (!ctx || !this.master || !this.noise || this._volume <= 0) return;
     if (ctx.state !== 'running') { this.ensure(false); return; }
     const now = ctx.currentTime;
-    this.voices = this.voices.filter((v) => v.end > now);
+    this.voices = this.voices.filter((v) => {if(v.end>now)return true;v.release();return false;});
     if (this.voices.length >= SoundFx.MAX_VOICES) return;
     const p = PRESETS[name];
     const att = 1 / (1 + distance / 12);
     if (att < 0.04) return;
-    const out = ctx.createGain();
+    const nodes:AudioNode[]=[];
+    let remaining=Number(p.noise>0)+Number(p.tone>0),released=false;
+    const release=()=>{if(released)return;released=true;for(const n of nodes)n.disconnect?.();nodes.length=0;};
+    const ended=()=>{remaining--;if(remaining<=0)release();};
+    const track=<T extends AudioNode>(n:T):T=>{nodes.push(n);return n;};
+    const out = track(ctx.createGain());
     out.gain.setValueAtTime(p.gain * att, now);
     out.gain.exponentialRampToValueAtTime(0.0001, now + p.decay);
     let tail: AudioNode = out;
     if (pan !== 0 && typeof ctx.createStereoPanner === 'function') {
-      const panner = ctx.createStereoPanner();
+      const panner = track(ctx.createStereoPanner());
       panner.pan.value = Math.max(-1, Math.min(1, pan));
       out.connect(panner);
       tail = panner;
     }
     tail.connect(this.master);
     if (p.noise > 0) {
-      const src = ctx.createBufferSource();
+      const src = track(ctx.createBufferSource());
+      src.onended=ended;
       src.buffer = this.noise;
-      const f = ctx.createBiquadFilter();
+      const f = track(ctx.createBiquadFilter());
       f.type = 'lowpass';
       f.frequency.value = p.filter;
-      const g = ctx.createGain();
+      const g = track(ctx.createGain());
       g.gain.value = p.noise;
       src.connect(f).connect(g).connect(out);
       src.start(now, Math.random() * 0.2, p.decay + 0.02);
     }
     if (p.tone > 0) {
-      const osc = ctx.createOscillator();
+      const osc = track(ctx.createOscillator());
+      osc.onended=ended;
       osc.type = name === 'heal' || name === 'kill' || name === 'hit' || name === 'pickup' ? 'sine' : 'triangle';
       osc.frequency.setValueAtTime(p.freq, now);
       if (name === 'heal' || name === 'kill') osc.frequency.linearRampToValueAtTime(p.freq * 1.5, now + p.decay);
       else osc.frequency.exponentialRampToValueAtTime(Math.max(30, p.freq * 0.5), now + p.decay);
-      const g = ctx.createGain();
+      const g = track(ctx.createGain());
       g.gain.value = p.tone;
       osc.connect(g).connect(out);
       osc.start(now);
       osc.stop(now + p.decay + 0.02);
     }
-    this.voices.push({ end: now + p.decay + 0.03 });
+    this.voices.push({ end: now + p.decay + 0.03, release });
   }
 
   dispose(): void {
+    for(const v of this.voices)v.release();this.voices=[];
+    this.master?.disconnect?.();this.master=null;this.noise=null;
     for (const ev of UNLOCK_EVENTS) this.target?.removeEventListener(ev, this.unlock);
     this.target?.removeEventListener('focus', this.onVisible);
     this.target?.removeEventListener('pageshow', this.onVisible);
