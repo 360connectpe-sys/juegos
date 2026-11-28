@@ -1,3 +1,4 @@
+import { crouchLegPose } from './crouchPose';
 import { SHIRTS } from '@shared/lobby/profile';
 import {
   Bone,
@@ -54,7 +55,7 @@ interface Pose {
 const POSE_KEYS: (keyof Pose)[] = ['armSwing', 'legSwing', 'cadence', 'lean', 'armsUp', 'legsTuck', 'bob', 'drop'];
 
 const POSES: Record<Locomotion, Pose> = {
-  crouch: { drop: 0.42, armSwing: 0.25, legSwing: 0.35, cadence: 2.6, lean: 0.32, armsUp: 0.15, legsTuck: 1.05, bob: 0.02 },
+  crouch: { drop: PLAYER.crouchDrop, armSwing: 0.25, legSwing: 0.35, cadence: 2.6, lean: 0.24, armsUp: 0.15, legsTuck: 0, bob: 0.02 },
   idle: { drop: 0, armSwing: 0.05, legSwing: 0, cadence: 0, lean: 0, armsUp: 0, legsTuck: 0, bob: 0.02 },
   walk: { drop: 0, armSwing: 0.7, legSwing: 0.75, cadence: 2.1, lean: 0.06, armsUp: 0, legsTuck: 0, bob: 0.05 },
   run: { drop: 0, armSwing: 1.1, legSwing: 1.0, cadence: 1.75, lean: 0.22, armsUp: 0.2, legsTuck: 0, bob: 0.09 },
@@ -67,7 +68,7 @@ const POSES: Record<Locomotion, Pose> = {
 // ---------------------------------------------------------------------------
 
 /** Huesos del esqueleto rígido (índice = skinIndex de los vértices). */
-const BONE = { root: 0, body: 1, armL: 2, armR: 3, legL: 4, legR: 5 } as const;
+const BONE = { root: 0, body: 1, armL: 2, armR: 3, legL: 4, legR: 5, kneeL: 6, kneeR: 7, ankleL: 8, ankleR: 9 } as const;
 
 /** Un solo material para todos los avatares: un único programa de shader. */
 let sharedMaterial: MeshLambertMaterial | null = null;
@@ -121,7 +122,7 @@ export function avatarGeometry(colors: AvatarColors): BufferGeometry {
     bind(ball(0.11, colors.shirt, 0.3, 1.4, 0, 1, 0.8, 1), BONE.body),
     bind(cyl(0.075, 0.085, 0.14, colors.skin, 0, 1.5, 0), BONE.body),
     bind(ball(0.24, colors.skin, 0, 1.73, 0.01, 0.95, 1.05, 0.95), BONE.body),
-    bind(ball(0.25, colors.hair, 0, 1.82, -0.03, 1, 0.62, 1), BONE.body),
+    bind(cyl(0.22, 0.27, 0.22, colors.hair, 0, 1.94, -0.01, 0.96), BONE.body),
     bind(box(0.4, 0.22, 0.08, colors.hair, 0, 1.73, -0.19), BONE.body),
     bind(box(0.07, 0.07, 0.02, '#1d1d1d', -0.09, 1.75, 0.225), BONE.body),
     bind(box(0.07, 0.07, 0.02, '#1d1d1d', 0.09, 1.75, 0.225), BONE.body),
@@ -138,8 +139,9 @@ export function avatarGeometry(colors: AvatarColors): BufferGeometry {
   }
   for (const [sx, bone] of [[-1, BONE.legL], [1, BONE.legR]] as const) {
     parts.push(bind(cyl(0.11, 0.09, 0.42, colors.pants, sx * 0.13, 0.58), bone));
-    parts.push(bind(cyl(0.09, 0.075, 0.38, colors.pants, sx * 0.13, 0.2), bone));
-    parts.push(bind(box(0.15, 0.09, 0.27, '#2a2a33', sx * 0.13, 0.045, 0.04), bone));
+    const knee = sx < 0 ? BONE.kneeL : BONE.kneeR, ankle = sx < 0 ? BONE.ankleL : BONE.ankleR;
+    parts.push(bind(cyl(0.09, 0.075, 0.38, colors.pants, sx * 0.13, 0.2), knee));
+    parts.push(bind(box(0.15, 0.09, 0.27, '#2a2a33', sx * 0.13, 0.045, 0.04), ankle));
   }
   const geo = merge(parts);
   geometryCache.set(key, geo);
@@ -182,6 +184,8 @@ export class PlayerAvatar {
   }
   private prevYaw = 0;
   private currYaw = 0;
+  private readonly crouchLeft={hip:0,knee:0,ankle:0};
+  private readonly crouchRight={hip:0,knee:0,ankle:0};
   private phase = 0;
   private speed = 0;
   private locomotion: Locomotion = 'idle';
@@ -205,8 +209,8 @@ export class PlayerAvatar {
    */
   constructor(colors: AvatarColors | number = DEFAULT_COLORS, castShadow = true) {
     const c = typeof colors === 'number' ? paletteColors(colors) : colors;
-    const bones = Array.from({ length: 6 }, () => new Bone());
-    const [root, body, armL, armR, legL, legR] = bones as [Bone, Bone, Bone, Bone, Bone, Bone];
+    const bones = Array.from({ length: 10 }, () => new Bone());
+    const [root, body, armL, armR, legL, legR, kneeL, kneeR, ankleL, ankleR] = bones as [Bone, Bone, Bone, Bone, Bone, Bone, Bone, Bone, Bone, Bone];
     body.position.set(0, 0.8, 0);
     armL.position.set(-0.41, 0.65, 0);
     armR.position.set(0.41, 0.65, 0);
@@ -214,6 +218,10 @@ export class PlayerAvatar {
     legR.position.set(0.15, 0.8, 0);
     root.add(body, legL, legR);
     body.add(armL, armR);
+    kneeL.position.y = kneeR.position.y = -.4;
+    ankleL.position.y = ankleR.position.y = -.4;
+    legL.add(kneeL); legR.add(kneeR); kneeL.add(ankleL); kneeR.add(ankleR);
+    bones.forEach((b,i)=>b.name=['hips-root','torso','arm-left','arm-right','thigh-left','thigh-right','knee-left','knee-right','ankle-left','ankle-right'][i]!);
     this.bones = bones;
 
     this.mesh = new SkinnedMesh(avatarGeometry(c), avatarMaterial());
@@ -322,6 +330,18 @@ export class PlayerAvatar {
     }
     root.position.y = bob - p.drop;
     root.scale.set(2 - squash, squash, 2 - squash);
+    const kneeL=b[6]!, kneeR=b[7]!, ankleL=b[8]!, ankleR=b[9]!;
+    if(p.drop>.001){
+      const move=amp*.12, lift=amp*.035;
+      const left=crouchLegPose(p.drop,s*move,Math.max(0,Math.cos(this.phase))*lift,bob,this.crouchLeft);
+      const right=crouchLegPose(p.drop,-s*move,Math.max(0,-Math.cos(this.phase))*lift,bob,this.crouchRight);
+      legL.rotation.x=left.hip; legR.rotation.x=right.hip;
+      kneeL.rotation.x=left.knee; kneeR.rotation.x=right.knee;
+      ankleL.rotation.x=left.ankle; ankleR.rotation.x=right.ankle;
+    }else{
+      kneeL.rotation.x=Math.max(0,-s)*amp*.3; kneeR.rotation.x=Math.max(0,s)*amp*.3;
+      ankleL.rotation.x=-kneeL.rotation.x*.5; ankleR.rotation.x=-kneeR.rotation.x*.5;
+    }
     this.combatPose(dt);
   }
 
@@ -347,13 +367,14 @@ export class PlayerAvatar {
     const mix = (cur: number, target: number) => cur + (target - cur) * w;
     if (gun) {
       const reload = g.action === 'reload';
+      const lean=this.pose.drop/PLAYER.crouchDrop*.24;
       const kick = (this.kickT / 0.12) * (g.held === 'sniper' ? 0.6 : g.held === 'shotgun' ? 0.45 : 0.22);
       const t = this.time * (g.held === 'sniper' ? 5 : 9);
-      armR.rotation.x = mix(armR.rotation.x, reload ? -0.7 + Math.sin(t) * 0.12 : -Math.PI / 2 - kick);
+      armR.rotation.x = mix(armR.rotation.x, reload ? -0.7 + Math.sin(t) * 0.12 : -Math.PI / 2 - kick - lean);
       armR.rotation.z = mix(armR.rotation.z, 0.08);
-      armL.rotation.x = mix(armL.rotation.x, reload ? -1.0 - Math.sin(t) * 0.2 : -Math.PI / 2 * 0.92 - kick * 0.6);
+      armL.rotation.x = mix(armL.rotation.x, reload ? -1.0 - Math.sin(t) * 0.2 : -Math.PI / 2 * 0.92 - kick * 0.6 - lean);
       armL.rotation.z = mix(armL.rotation.z, reload ? -0.3 : -0.55);
-      body.rotation.x = mix(body.rotation.x, reload ? 0.12 : 0.04);
+      body.rotation.x = mix(body.rotation.x, lean + (reload ? 0.12 : 0.04));
     } else if (g.held === 'axe') {
       // Hachazo de arriba abajo en 0,3 s; en reposo, el hacha delante.
       const k = this.swingT > 0 ? 1 - this.swingT / 0.3 : 1;
