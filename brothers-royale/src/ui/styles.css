@@ -1566,3 +1566,13 @@ kbd {
 .optic[data-zoom="2"] path { stroke: #8cffcf; stroke-width: .7; }
 .optic[data-zoom="2"] circle { fill: #ff6868; stroke: none; }
 @media(max-height:400px) { .w-health {grid-template-columns:85px auto;} .battle-status {top:48px;} .full-map header,.full-map footer {font-size:10px;} }
+/* Fase 15: aviso de recoger/abrir más compacto y fuera del centro de la mira. */
+.interact { top: 72%; }
+.interact__btn { padding: 4px 10px; min-height: 0; column-gap: 8px; }
+.interact__action { font-size: .9rem; }
+.interact__label { font-size: .72rem; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .interact { top: 74%; }
+  .interact__btn { min-height: 36px; padding: 3px 10px; }
+  .interact__action { font-size: .88rem; }
+}

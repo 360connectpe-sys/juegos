@@ -213,3 +213,27 @@ describe('fase 15.6: agacharse', () => {
     expect(unpackPlayers(out)[0]!.locomotion).toBe('crouch');
   });
 });
+
+import { rollChestLoot } from '@shared/match/loot';
+import { StormView } from '@/game/world/StormView';
+import { NormalBlending } from 'three';
+describe('fase 15.7: botín, tormenta', () => {
+  it('botiquines: al menos un tercio de los cofres, repartidos por sectores y distintos entre partidas', () => {
+    const l = generateWorldLayout();
+    for (const seed of [11, 12, 13]) {
+      const healing = l.chests.filter((c) => rollChestLoot(seed, c.id).some((it) => it.kind === 'medkit'));
+      expect(healing.length).toBeGreaterThanOrEqual(Math.floor(l.chests.length / 3));
+      expect(new Set(healing.map((c) => sectorAt(c.x, c.z, l.seed))).size).toBeGreaterThanOrEqual(3);
+    }
+    const a = l.chests.filter((c) => rollChestLoot(11, c.id).some((it) => it.kind === 'medkit')).map((c) => c.id);
+    const b = l.chests.filter((c) => rollChestLoot(12, c.id).some((it) => it.kind === 'medkit')).map((c) => c.id);
+    expect(a).not.toEqual(b);
+    expect(l.chests.filter((c) => c.where === 'outside').length).toBe(9);
+  });
+  it('la barrera es morada y opaca a medias (sin mezcla aditiva que la volvía azul/blanca)', () => {
+    const v = new StormView(generateWorldLayout().terrain);
+    expect(v.mesh.material.blending).toBe(NormalBlending);
+    expect(v.mesh.material.fragmentShader).toContain('0.62, 0.26, 0.92');
+    v.dispose();
+  });
+});

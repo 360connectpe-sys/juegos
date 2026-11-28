@@ -230,7 +230,9 @@ export function Inventory({
                 {i + 1}
               </span>
               {it && <ItemIcon kind={it.kind} />}
-              {it && isWeapon(it.kind) && <span className="w-inv__ammo" aria-label={`Munición ${magOf(it)} / ${inventory?.ammo[ITEMS[it.kind].ammo!] ?? 0}`}>{magOf(it)}<small>/{inventory?.ammo[ITEMS[it.kind].ammo!] ?? 0}</small></span>}
+              {/* Fase 15: el arma en la mano ya muestra cargador y reserva en el indicador inferior; en las
+                  demás casillas solo el cargador (sin duplicar la reserva en cada una). */}
+              {it && isWeapon(it.kind) && i !== inventory?.selected && <span className="w-inv__ammo" aria-label={`Munición ${magOf(it)} / ${inventory?.ammo[ITEMS[it.kind].ammo!] ?? 0}`}>{magOf(it)}</span>}
               {it && (it.scope || it.kind==='sniper') && <span className="w-inv__scope">{it.kind==='sniper'?'x4':'x2'}</span>}
               {it && it.qty > 1 && <span className="w-inv__qty">{it.qty}</span>}
             </button>

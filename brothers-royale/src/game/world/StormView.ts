@@ -1,4 +1,4 @@
-import { AdditiveBlending, CylinderGeometry, DoubleSide, Mesh, ShaderMaterial } from 'three';
+import { CylinderGeometry, DoubleSide, Mesh, ShaderMaterial } from 'three';
 import type { Circle } from '@shared/battle/zone';
 import type { TerrainParams } from '@shared/world/terrain';
 
@@ -26,10 +26,11 @@ void main() {
   float streak = 0.5 + 0.5 * sin(around * 6.2831 + vY * 0.35 - uTime * 2.2);
   float band = smoothstep(0.82, 1.0, 0.5 + 0.5 * sin(vY * 0.9 - uTime * 3.0));
   float fade = (1.0 - smoothstep(0.55, 1.0, vUv.y)) * smoothstep(0.0, 0.08, vUv.y);
-  vec3 blue = vec3(0.45, 0.18, 0.80);
-  vec3 violet = vec3(0.68, 0.32, 1.0);
-  vec3 color = mix(blue, violet, streak) + band * 0.35;
-  float alpha = (0.16 + 0.14 * streak + 0.22 * band) * fade * (0.85 + 0.3 * uPulse);
+  // Fase 15: morado claro sobre el cielo (mezcla normal, no aditiva: antes se veía azul/blanca).
+  vec3 deep = vec3(0.36, 0.12, 0.62);
+  vec3 violet = vec3(0.62, 0.26, 0.92);
+  vec3 color = mix(deep, violet, streak) + band * vec3(0.18, 0.06, 0.22);
+  float alpha = (0.30 + 0.16 * streak + 0.18 * band) * fade * (0.9 + 0.25 * uPulse);
   gl_FragColor = vec4(color, alpha);
 }`;
 
@@ -44,7 +45,7 @@ export class StormView {
     const geometry = new CylinderGeometry(1, 1, 1, STORM_WALL.segments, 1, true);
     geometry.translate(0, 0.5, 0);
     const material = new ShaderMaterial({
-      vertexShader: vertex, fragmentShader: fragment, transparent: true, depthWrite: false, side: DoubleSide, blending: AdditiveBlending,
+      vertexShader: vertex, fragmentShader: fragment, transparent: true, depthWrite: false, side: DoubleSide, 
       uniforms: { uTime: { value: 0 }, uRadius: { value: 1 }, uPulse: { value: 0 } },
     });
     this.mesh = new Mesh(geometry, material);

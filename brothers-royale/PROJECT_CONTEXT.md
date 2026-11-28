@@ -21,7 +21,7 @@ y seguir por el primer bloque PENDIENTE.
 | 15.4 Terreno/zonas/vegetación | HECHO |
 | 15.5 Personajes/armas/paracaídas | HECHO (armas: solo cámara de apuntado) |
 | 15.6 Animaciones/agacharse | HECHO |
-| 15.7 Botín/HUD/tormenta | PENDIENTE |
+| 15.7 Botín/HUD/tormenta | HECHO |
 | 15.8 Integración y preparación de publicación | PENDIENTE |
 
 **15.1** (`quality.ts`, `AdaptiveResolution.ts`, `Engine.ts`, `Game.ts`): sin sombras ni manchas en Baja y Normal;
@@ -70,6 +70,11 @@ velocidad, sin correr ni saltar, no se levanta si no cabe de pie (`canStand`), c
 Ctrl izq. mantiene, R3 en el mando, botón táctil «Agachar» conmutable y movible en el editor del HUD. Hacha,
 reacción del árbol (sacudida) y retroceso ya existían de fases previas; no se añadió destello. Pruebas en
 `tests/phase15.test.ts`.
+
+**15.7**: botiquín seguro en un tercio de los cofres (repartido por sectores, cambia con la semilla de partida; mismos
+sorteos para el resto del botín), 9 cofres exteriores (antes 6); aviso de recoger/abrir más compacto y más abajo
+(fuera del centro); la casilla del arma en la mano ya no repite la munición del indicador inferior y las demás solo
+muestran el cargador; barrera de tormenta morada con mezcla normal (la aditiva sobre el cielo se veía azul/blanca).
 
 Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
 izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.

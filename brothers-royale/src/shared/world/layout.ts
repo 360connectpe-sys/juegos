@@ -106,7 +106,8 @@ export const MAP = {
   houseRing: { min: 24, max: 44 },
   /** Límite |x|,|z| para que la zona plana no toque la costa. */
   houseEdge: 44,
-  outsideChests: 6,
+  /** Fase 15: más cofres en campo abierto, colinas y bosque (antes 6). */
+  outsideChests: 9,
 } as const;
 
 /** Todos los diseños repartidos por el mapa (fase 12: + moderna, balcón, garaje y abandonado). */

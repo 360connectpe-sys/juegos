@@ -32,7 +32,11 @@ export function rollChestLoot(matchSeed: number, chestId: number): ItemStack[] {
     { kind: ammo, qty: int(rng, AMMO_RANGE[ammo]) },
   ];
   if (rng() < 0.35) loot.push({ kind: 'scope2', qty: 1 });
-  if (rng() < 0.45) loot.push({ kind: 'medkit', qty: rng() < 0.33 ? 2 : 1 });
+  // Fase 15: un tercio de los cofres (repartidos por el mapa y distintos en cada partida) lleva
+  // botiquín seguro; el resto, con la probabilidad de antes. Mismos sorteos: no cambia lo demás.
+  const heal = rng() < 0.45;
+  const qty = rng() < 0.33 ? 2 : 1;
+  if (heal || ((chestId + (matchSeed >>> 0)) % 3) === 0) loot.push({ kind: 'medkit', qty });
   if (rng() < 0.3) {
     const extra = (['ammo_light', 'ammo_medium', 'ammo_shells'] as const)[Math.floor(rng() * 3)]!;
     loot.push({ kind: extra, qty: int(rng, AMMO_RANGE[extra]) });
