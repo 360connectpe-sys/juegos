@@ -36,6 +36,9 @@ antiguos de `/workspace/juegos`; solo se modifica `brothers-royale/`.
   hasta coordinar una ventana sin partidas; hacerlo reiniciaría el servidor gratuito. No publicar
   cliente v10 contra servidor v9. La versión pública PWA v9 permanece operativa e intacta.
 - Entrega segura: commits por bloques y rama remota de preparación `brothers-royale-phase-14-ready`.
+  Commits: `b078c44` (reglas/protocolo), `58efe4f` (HUD), `ae6b5b8` (bundle).
+  Beta preparada: `ea4e850` en `brothers-royale-phase-14-beta-ready`, basada en `b2024a0`;
+  solo seis archivos beta, conserva WSS y los trece chunks anteriores. Build `f5e108a7c607f68c`.
   Después: avanzar desarrollo, desplegar Render en ventana acordada, comprobar `/health.protocol=10`,
   copiar `jugar/` a `brothers-royale/beta/` conservando `config.js` y chunks anteriores, y publicar beta.
   El SW existente aplaza la actualización hasta salir de partida y comprueba protocolo del servidor.

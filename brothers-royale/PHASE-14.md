@@ -41,3 +41,9 @@ La beta pública sigue en fase 13/v9 hasta coordinar servidor y cliente.
    «Actualizar y jugar» fuera de partida, previa comprobación de protocolo.
 
 URL existente: https://360connectpe-sys.github.io/juegos/brothers-royale/beta/
+
+Commits de preparación: `b078c44` (reglas/v10), `58efe4f` (HUD), `ae6b5b8` (bundle).
+Beta lista en `ea4e850`, rama `brothers-royale-phase-14-beta-ready`; desarrollo preparado
+en `brothers-royale-phase-14-ready`. Build PWA: `f5e108a7c607f68c`.
+Verificado por Git remoto: desarrollo sigue `2882118`, beta publicada sigue `b2024a0`,
+main sigue `85dee86`. El bloqueo de red se confirmó al cerrar las comprobaciones.
