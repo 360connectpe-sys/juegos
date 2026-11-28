@@ -2,7 +2,24 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 27 de noviembre de 2026, tras cerrar la **fase 9 (lobby, personalización y resultados)**.
+Estado a 28 de noviembre de 2026: fase 13 PWA sobre la fase 12 publicada.
+
+
+## Fase 13 — PWA iPhone (2026-11-28)
+
+Base sincronizada: `5def706` (fase 12 de Claude). Los cambios locales anteriores de Codex
+quedan aparte; no se incorporan mecánicas de esas versiones. Protocolo **v9**, mismo Render:
+`wss://brothers-royale-server.onrender.com`. Sin cambios de jugabilidad ni de main.
+
+- PWA standalone con manifest relativo, PNG 180/192/512 originales, carga inicial de marca y áreas seguras.
+- SW exclusivo de cada ruta (`beta/` o `jugar/`): precaché atómica con ID del build, shell offline y recursos compartidos entre pestañas de la misma versión.
+- Comprueba versiones al abrir/recuperar la aplicación. «Actualizar y jugar» solo fuera de partida/cuenta atrás/conexión; consulta también las otras ventanas.
+- No cambia localStorage ni HUD. Conserva cachés usadas por ventanas antiguas y chunks anteriores en beta.
+- Si una futura versión cambia el protocolo, exige coincidencia en `/health` antes de activarla con el botón; el handshake multijugador existente sigue validando v9. `/health` permite lectura CORS solo a orígenes ya autorizados.
+- Publicación: copiar `jugar/` sobre `brothers-royale/beta/` conservando `config.js` de Render y los chunks anteriores. No cambiar otros archivos de la rama beta.
+- Validación limitada por instrucción del usuario: tipos, builds cliente/servidor, manifest, rutas, iconos y ciclo básico del SW. Sin suites completas, partidas, simulaciones ni benchmarks.
+- Instalación y uso físico en iPhone pendientes de la comprobación del usuario. iOS puede requerir girar manualmente a horizontal; la PWA no puede forzar todas las restricciones del sistema.
+- Detalle breve e instalación: `PHASE-13.md`.
 
 ---
 
@@ -51,11 +68,11 @@ primer paso no HECHO de esta tabla.
 |---|---|
 | Repositorio | `360connectpe-sys/juegos`, carpeta `brothers-royale/` (el resto de carpetas son otros juegos: no tocarlos) |
 | Rama de trabajo | `brothers-royale-phase-3.1` (todas las fases desde la 3.1 se acumulan en ella) |
-| Último trabajo | Corrección integral móvil sobre `181d2a6` (MOBILE-FIXES.md); fase 9 sobre `8d15ae3` |
+| Último trabajo | Fase 13 PWA sobre `5def706` (fase 12 de Claude) |
 | `main` | En `85dee86` (fase 2.2). **No fusionar con `main` salvo que se pida explícitamente.** |
 | Pruebas | **392 pruebas en 46 archivos, todas en verde** (`npm run check`): 362 de fase 9 + 30 de la corrección móvil |
 | Bundle publicado | `jugar/` regenerado e idéntico a `dist/` (`diff -qr dist jugar` sin diferencias) |
-| Protocolo de red | v8 (`PROTOCOL_VERSION`) |
+| Protocolo de red | v9 (`PROTOCOL_VERSION`, conservado en fase 13) |
 | Fases hechas | 1, 2 (2.1, 2.2), 3.1, 3.2, 4, 5, 6, 7, 8, 9 |
 | Siguiente | Fase 10 hecha salvo el despliegue real (necesita la cuenta del usuario, ver checkpoint paso 4). No iniciar la fase 11 sin petición. |
 | Beta publicada | https://360connectpe-sys.github.io/juegos/brothers-royale/beta/ — GitHub Pages sirve la rama `brothers-royale-beta-pages` (= `main` + `brothers-royale/beta/`, copia de `jugar/`). |

@@ -613,3 +613,11 @@ BR_BENCH_LOADOUT solo se permite con NODE_ENV=test y --br-bench-loadout.
 Techos sólidos, partida de 15 min con 5 fases de tormenta y barrera visual, Ajustes para todos (z-index del HUD en
 móvil), seis diseños de edificio con muebles, avión de transporte con caída libre/paracaídas y reaparición en avión,
 zombis autoritativos (servidor y offline). Protocolo v9. Informe completo: PHASE-12-REPORT.md.
+
+## Fase 13 — PWA iPhone (2026-11-28)
+
+Sobre fase 12 `5def706`, sin cambios de mecánicas. Manifest standalone, iconos originales PNG,
+carga de marca, SW versionado y actualización voluntaria fuera de partida (también entre ventanas).
+Conserva HUD, preferencias y servidor Render v9. Publicación solo en `brothers-royale/beta/`.
+Comprobaciones limitadas por petición: tipos, compilación, rutas/manifest/iconos y SW; sin pruebas
+de jugabilidad, suites completas ni benchmarks. Instalación en iPhone a cargo del usuario. Ver PHASE-13.md.

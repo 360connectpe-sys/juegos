@@ -22,6 +22,7 @@ import { OnlinePanel } from './components/OnlinePanel';
 import { loadSavedName, readOnlineParams } from '@/net/config';
 import { LoadingScreen } from './components/LoadingScreen';
 import { TouchControls } from './components/TouchControls';
+import { PwaUpdate } from './components/PwaUpdate';
 
 declare global {
   interface Window {
@@ -144,6 +145,11 @@ export function App() {
 
   return (
     <main className="app">
+      <PwaUpdate server={onlineParams.server} isBusy={() => {
+        const live = game?.getFrontendState();
+        return !ready || editingHud || settingsOpen || live?.net === 'connecting' || live?.net === 'reconnecting'
+          || live?.battle?.phase === 'countdown' || live?.battle?.phase === 'running' || (playing && !result);
+      }} />
       <canvas ref={canvasRef} className="app__canvas" aria-label="Escena del juego" onClick={onCanvasClick} onContextMenu={(e) => e.preventDefault()} />
       <div ref={overlayRef} className="app__combat" />
       {ready && game && !editingHud && playing && (

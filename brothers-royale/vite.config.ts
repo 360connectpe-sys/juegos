@@ -2,12 +2,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
+import { pwa } from './build/pwa';
 
 // base relativa: el build funciona en GitHub Pages bajo /juegos/brothers-royale/
 // y en cualquier otro hosting estático sin reconfigurar.
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [react(), pwa(fileURLToPath(new URL('.', import.meta.url)))],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

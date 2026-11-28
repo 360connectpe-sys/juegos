@@ -52,6 +52,11 @@ export function createServer(config: ServerConfig = readServerConfig()) {
     },
     express: (app) => {
       app.get('/health', (_req: IncomingMessage, res: ServerResponse) => {
+        const origin = _req.headers.origin;
+        if (origin && isOriginAllowed(origin, config)) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+          res.setHeader('Vary', 'Origin');
+        }
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(healthStatus()));
       });
