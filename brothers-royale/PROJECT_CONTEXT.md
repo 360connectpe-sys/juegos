@@ -2,7 +2,62 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 28 de noviembre de 2026: fase 14 autorizada para desarrollo y beta; despliegue público pendiente de verificación externa.
+Estado a 28 de noviembre de 2026: fase 15 publicada; fase 15.1 preparada en rama independiente, sin desplegar.
+
+
+## Fase 15.1 — preparada, pendiente de ventana sin partidas (2026-11-28)
+
+Base sincronizada **`498abb9`**, código publicado de fase 15 **`f900c76`**, beta **`00ab6a7`**.
+Desarrollo aislado en `codex/brothers-royale-phase15-1`; entrega remota prevista:
+`brothers-royale-phase-15.1-ready`. No se recuperan los cambios antiguos pendientes de `/workspace/juegos`.
+
+- Mapa: cartografía del terreno/agua a la misma cota que el escenario, caminos hacia las puertas,
+  huellas reales giradas de edificios, árboles, rocas y sectores. Un raster de 768 px compartido por
+  escenario (canvas del minimapa de 320 px; ampliado de 768 px); muestreo de relieve a ~0,63 m. Zoom 1–6× por pellizco/rueda, botones +/− en mapa ampliado,
+  arrastre y restablecimiento. Los gestos/cancelaciones no crean destinos. Conserva tres destinos
+  personales y su borrado. Estado propio, orientación y zonas a 10 Hz. **No entrega ni dibuja enemigos,
+  muñecos, nombres o aviones ajenos en el mapa**. No hay marcadores de comunicación.
+- Cabeza: la geometría del pelo atravesaba el volumen de la cabeza en la coronilla. Se sustituye
+  la pieza achatada por una cubierta facetada, mismos colores/materiales compartidos.
+- Agachado: de 6 a 10 huesos (rodillas y tobillos), una sola SkinnedMesh. Dos segmentos por pierna,
+  flexión de cadera/rodilla, suelas compensadas y transición usando `PLAYER.crouchDrop` existente
+  (0,55 m); antes la vista bajaba 0,42 m. Brazos de armas acercados al cuerpo. No cambia hitbox,
+  cápsula, cámara, entradas, reconciliación ni balance de movimiento del protocolo v11.
+- Rampas: el planificador solo ofrecía la casilla siguiente. Ahora prueba la propia si la siguiente
+  está bloqueada y cabe realmente. Se reemplazan cajas infladas de exclusión por cápsulas físicas;
+  se permite contacto de bordes auténticos sin ignorar paneles interiores. Suelos conectados a rampas
+  priorizan superficie a ras (se evitó un escalón de 18 cm). Servidor y vista previa comparten validación.
+  Se siguen rechazando intersecciones con jugadores, sólidos, colocaciones sin soporte y duplicados.
+- Giro: botón pequeño independiente, visible durante selección/vista previa, movible/escalable/transparente
+  en el editor. T en PC; LB+Y en mando. Recalcula vista previa sin reiniciar flancos de ataque/colocación.
+  Los paneles a medida de puertas/ventanas conservan su orientación y tamaño determinados por el mapa.
+- Resistencia: cuatro barras DOM reutilizadas, HP real de snapshots, duran 3 s; no aparecen al cargar
+  la escena ni a través de obstáculos (consulta a 10 Hz). Desaparecen al destruir la pieza.
+- Deterioro: cuatro niveles (intacto / ≤75 / ≤50 / ≤25%), grietas como tiras ligeras en geometrías
+  compartidas. Misma malla/material de estructuras; sin fragmentos, nuevas físicas ni colisiones antes
+  de la destrucción. El buffer solo se reconstruye al cambiar piezas/transformación/nivel de daño;
+  antes también se reconstruía por madera, árboles y cada cambio mínimo de HP.
+- Armas: seis siluetas low poly renovadas, cañones de seis lados, rarezas y x2/x4 conservadas; arma de
+  primera persona algo más baja y pequeña. El fogonazo ya existía: se ajustó su visibilidad y la boca
+  de cada modelo; efectos ahora reutilizan pools de 48 trazadoras + 48 chispas, sin luces ni sombras.
+- Auditoría focal: se liberan explícitamente los nodos de audio al terminar o salir; se conserva la
+  recuperación iOS. Carga de snapshots rechaza IDs repetidos y reconstruye colisionadores si cambian
+  metadatos de un panel. Revisados LOD aéreo, sombras desactivadas, resolución adaptativa, botiquines,
+  limpieza de beta/caché y recursos compartidos; no se repite la auditoría extensa de Claude.
+- **69 comprobaciones focalizadas aprobadas** (10 archivos); tipos y builds cliente/servidor correctos.
+  Sin suite completa, benchmarks, partidas prolongadas ni pruebas físicas. No se declaran mejoras de FPS.
+  Una prueba gráfica anterior se adapta a los diez huesos; se conservan las demás pruebas existentes.
+- Protocolo **v11 conservado**, sin nuevas dependencias ni cambios de infraestructura. Mantener Render
+  gratuito existente con `MAX_ROOMS=2`, ocho jugadores, tres vidas, cinco fases, 900 s y mapa 120×120 m.
+- Render: `buildFilter.paths: brothers-royale/**` incluye los Markdown y explica el reinicio documental.
+  Se puede proponer `buildFilter.ignoredPaths` para `brothers-royale/*.md` y `brothers-royale/**/*.md`.
+  **No se modificó render.yaml ni configuración externa**. Su aplicación requiere autorización y
+  verificación en el servicio existente; la documentación web de Render fue inaccesible (CONNECT 403).
+- Bundle preparado: **`7cb2eb0a3b9646cc`**, v11. Preparar beta con `scripts/sync-beta.mjs` sobre `00ab6a7`,
+  conservando WSS y generaciones actual/anterior. Solo subir las ramas de preparación hasta recibir
+  una **nueva confirmación de ventana sin partidas activas**. Tras ella: un único push final a desarrollo,
+  esperar Render `/health` v11, publicar beta y comprobar build. Sin commits documentales posteriores
+  que provoquen otro reinicio. Pruebas físicas de tacto, aspecto, escalada y rendimiento: usuario/iPhone.
 
 
 ## Checkpoint fase 15 (optimización, rediseño, construcción y estabilidad) — actualizar en cada bloque
@@ -78,12 +133,11 @@ muestran el cargador; barrera de tormenta morada con mezcla normal (la aditiva s
 
 **15.8**: suite 460 OK + 2 omitidas; `npm run check` OK; prueba en línea local (2 clientes, protocolo v11): avión,
 aterrizaje, agacharse visto por el otro y vista previa de pared válida. `jugar/` = build `85bd8043d4782e2d` (v11).
-Beta preparada en commit local `00ab6a7` (rama `brothers-royale-beta-pages` de un worktree; sync-beta conservó
-config.js WSS). **Publicar solo tras confirmar que no hay partidas activas**, en este orden (servidor primero):
-1. `git push origin 48ba41d:brothers-royale-phase-3.1` (Render redepliega; esperar `/health` con `protocol: 11`).
-2. Recrear el commit de la beta (`node brothers-royale/scripts/sync-beta.mjs brothers-royale/jugar brothers-royale/beta`
-   sobre `origin/brothers-royale-beta-pages`) y `git push origin HEAD:brothers-royale-beta-pages`.
-Los clientes v10 abiertos verán «versión distinta» hasta actualizar la PWA.
+Publicación histórica de fase 15: código **`f900c76`** a desarrollo; **`498abb9`** es la revisión documental
+posterior y **`00ab6a7`** la beta publicada (WSS preservada). El hash `48ba41d` correspondía únicamente al
+bundle anterior al checkpoint final, no al commit de publicación: se corrige aquí la instrucción de 15.8.
+No repetir los pushes de fase 15; la siguiente publicación es 15.1 y requiere confirmar una nueva ventana.
+Los clientes v10 abiertos debían actualizar la PWA para entrar al servidor v11.
 
 Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
 izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.

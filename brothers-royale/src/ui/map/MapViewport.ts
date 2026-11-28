@@ -15,6 +15,7 @@ export class MapViewport {
     const next=Math.max(1,Math.min(6,this.zoom*factor)),k=next/this.zoom;
     this.x=(u-.5)-(u-.5-this.x)*k;this.y=(v-.5)-(v-.5-this.y)*k;this.zoom=next;this.clamp();
   }
+  hasPointer(id:number):boolean {return this.points.has(id);}
   down(id:number,x:number,y:number):void {
     if(!this.points.size)this.gesture=false;
     this.points.set(id,{x,y,startX:x,startY:y});if(this.points.size>1)this.gesture=true;
