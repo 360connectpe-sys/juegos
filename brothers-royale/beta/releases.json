@@ -1,18 +1,11 @@
 [
  {
-  "build": "legacy",
+  "build": "85bd8043d4782e2d",
+  "protocol": 11,
   "files": [
-   "assets/OnlineSession-Bdt2jAzN.js",
-   "assets/OnlineSession-C_2j5iHO.js",
-   "assets/OnlineSession-DqXr018H.js",
-   "assets/OnlineSession-eKqs_J8h.js",
-   "assets/index-0IFM1sZH.js",
-   "assets/index-8HPU5eWl.js",
-   "assets/index-B2RLoZ-O.js",
-   "assets/index-B_nbdcG4.css",
-   "assets/index-C_0qhxBs.css",
-   "assets/index-D8YjFaV-.css",
-   "assets/index-hs6qWvGW.js",
+   "assets/OnlineSession-BfIZ26PD.js",
+   "assets/index-ChmhdskN.js",
+   "assets/index-D13dxaT5.css",
    "assets/net-l_Ctl5Lz.js",
    "assets/rapier-BVOi10Q1.js",
    "assets/react-AMYRZFjK.js",
@@ -21,12 +14,12 @@
   ]
  },
  {
-  "build": "85bd8043d4782e2d",
+  "build": "7cb2eb0a3b9646cc",
   "protocol": 11,
   "files": [
-   "assets/OnlineSession-BfIZ26PD.js",
-   "assets/index-ChmhdskN.js",
-   "assets/index-D13dxaT5.css",
+   "assets/OnlineSession-Dg5ygB0c.js",
+   "assets/index-3ZmcEggd.css",
+   "assets/index-cy0n0uNa.js",
    "assets/net-l_Ctl5Lz.js",
    "assets/rapier-BVOi10Q1.js",
    "assets/react-AMYRZFjK.js",
