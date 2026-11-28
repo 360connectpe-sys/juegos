@@ -8,6 +8,9 @@ import type { LobbySnapshot } from '@shared/lobby/LobbyState';
 import type { RoundSnapshot } from '@shared/battle/BattleRound';
 import { PROTOCOL_VERSION,ROOM_NAME,type WelcomeMessage } from '@shared/protocol';
 import { Buttons,emptyInput } from '@shared/types';
+import { BattleRound } from '@shared/battle/BattleRound';
+// Estas pruebas cubren sistemas ajenos al avión (fase 12): la ronda empieza en tierra como antes.
+BattleRound.defaultTransport = false;
 const port=36000+Math.floor(Math.random()*1000);
 let server:ReturnType<typeof createServer>;
 const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms));

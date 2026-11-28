@@ -1,7 +1,9 @@
 import { NameTags } from './entities/NameTags';
 import type { Profile } from '@shared/lobby/profile';
 import { loadProfile } from './profile';
+import type { RoundSnapshot } from '@shared/battle/BattleRound';
 import { StormView } from './world/StormView';
+import { AirView } from './world/AirView';
 import { contains } from '@shared/battle/zone';
 import { BuildingWorld } from '@/physics/BuildingWorld';
 import { BuildingView } from './world/BuildingView';
@@ -134,6 +136,8 @@ export class Game {
   private buildingWorld: BuildingWorld | null = null;
   private buildingView: BuildingView | null = null;
   private stormView: StormView | null = null;
+  private airView: AirView | null = null;
+  private readonly airFocus = new Vector3();
   private spectatedId: string | null = null;
   private buildOpen = false;
   private buildKind: BuildKind = 'wall';
@@ -325,6 +329,7 @@ export class Game {
     const trees: Group = createTrees(layout.trees, layout.seed, this.quality.shadows);
     scene.add(trees);
     this.stormView = new StormView(layout.terrain); scene.add(this.stormView.mesh);
+    this.airView = new AirView(this.quality.shadows); scene.add(this.airView.planes, this.airView.chutes);
     this.buildingView = new BuildingView(layout.trees, trees);
     scene.add(this.buildingView.root);
     this.buildingView.setShadows(this.quality.shadows);
@@ -361,7 +366,7 @@ export class Game {
     // cambia de pieza (incluido el techo) en vez de cambiar de arma.
     const piece = this.input.keyboard.buildRequest;
     this.input.keyboard.buildRequest = null;
-    if (piece && !this.inputSuspended) this.configureBuild(piece);
+    if (piece && !this.inputSuspended && !this.inAir()) this.configureBuild(piece);
     if (this.buildOpen && this.buildHold === null && this.input.gamepad.nextSlotPressed) {
       this.input.gamepad.nextSlotPressed = false;
       this.buildKind = BUILD_KINDS[(BUILD_KINDS.indexOf(this.buildKind) + 1) % BUILD_KINDS.length]!;
@@ -714,7 +719,22 @@ export class Game {
     else if (!this.spectatedId || !targets.includes(this.spectatedId)) this.spectatedId = targets[0] ?? null;
     const watched = this.spectatedId ? this.remotes.get(this.spectatedId) : null;
     const followed = watched ?? avatar;
-    const p = followed.position;
+    let p = followed.position;
+    // Fase 12: avión y paracaídas (vista; la autoridad decide embarque, salto y aterrizaje).
+    const air = this.airView;
+    air?.update(battle, dt);
+    const running = battle?.phase === 'running';
+    const me = running ? this.airPlayer(battle, this.session?.localPlayerId) : undefined;
+    const myAir = me?.air ?? 0;
+    if (air && !spectator && myAir === 1) {
+      const pose = air.planePose(me?.plane);
+      if (pose) {
+        // Isométrica: centrada en el terreno bajo el avión (para elegir dónde saltar);
+        // 3ª/1ª persona: desde el propio avión.
+        const iso = !cameras || cameras.mode === 'isometric';
+        p = this.airFocus.set(pose.x, iso && this.layout ? terrainHeight(pose.x, pose.z, this.layout.terrain) : pose.y - 5, pose.z);
+      }
+    }
     this.stormView?.update(battle?.phase === 'running' ? battle.zone.current : null, dt, !!battle && battle.phase === 'running' && !contains(battle.zone.current, p));
     const zoom = this.input.consumeZoom();
     if (cameras) {
@@ -724,6 +744,18 @@ export class Game {
       avatar.root.visible = !spectator && !cameras.hideAvatar;
       for (const [id, remote] of this.remotes) remote.root.visible = !(spectator && id === this.spectatedId && cameras.mode === 'first');
       this.lighting.follow(cameras.focus);
+    }
+    if (air) {
+      // Dentro del avión no se ve al jugador; con el paracaídas abierto, la cúpula encima.
+      air.beginChutes();
+      if (myAir === 1) avatar.root.visible = false;
+      else if (myAir === 3) air.addChute(avatar.position.x, avatar.position.y, avatar.position.z, 0);
+      if (running) for (const [id, remote] of this.remotes) {
+        const a = this.airPlayer(battle, id)?.air ?? 0;
+        if (a === 1) remote.root.visible = false;
+        else if (a === 3) air.addChute(remote.position.x, remote.position.y, remote.position.z, 0);
+      }
+      air.endChutes();
     }
     if(this.presentation){
       this.lobbyCamera.aspect=this.engine.aspect??1;this.lobbyCamera.updateProjectionMatrix();
@@ -821,6 +853,19 @@ export class Game {
     if (v) this.input.touch.reset();
   }
 
+  /** En el avión, cayendo o con paracaídas (sin construir ni combatir; lo impone la autoridad). */
+  private inAir(): boolean {
+    const b = this.session?.battle;
+    return b?.phase === 'running' && (this.airPlayer(b, this.session?.localPlayerId)?.air ?? 0) !== 0;
+  }
+
+  /** Estado aéreo de un jugador en la ronda (sin crear objetos). */
+  private airPlayer(battle: RoundSnapshot | null | undefined, id: string | undefined): RoundSnapshot['players'][number] | undefined {
+    if (!battle || !id) return undefined;
+    for (const p of battle.players) if (p.id === id) return p;
+    return undefined;
+  }
+
   /** Posiciones para el minimapa (se consulta pocas veces por segundo). */
   minimapState(): {
     size: number;
@@ -828,6 +873,8 @@ export class Game {
     others: { x: number; z: number }[];
     chests: { x: number; z: number; opened: boolean }[];
     zone?: import('@shared/battle/zone').ZoneState;
+    /** Fase 12: rutas de los aviones en vuelo y su posición actual. */
+    planes?: { ax: number; az: number; bx: number; bz: number; x: number; z: number; mine: boolean }[];
   } {
     const local = this.session?.localPlayer();
     const m = this.session?.match;
@@ -837,6 +884,11 @@ export class Game {
       local: local ? { x: local.position.x, z: local.position.z, yaw: local.yaw } : null,
       others: [...this.remotes.values()].map((r) => ({ x: r.position.x, z: r.position.z })),
       chests: (m?.chests ?? []).map((c) => ({ x: c.x, z: c.z, opened: m?.opened[c.id] ?? false })),
+      planes: this.session?.battle?.phase === 'running' ? this.session.battle.planes.map((r) => {
+        const pose = this.airView?.planePose(r.id);
+        const mine = this.airPlayer(this.session?.battle, this.session?.localPlayerId)?.plane === r.id;
+        return { ax: r.ax, az: r.az, bx: r.bx, bz: r.bz, x: pose?.x ?? r.ax, z: pose?.z ?? r.az, mine };
+      }) : [],
     };
   }
 
@@ -854,11 +906,14 @@ export class Game {
     const player = round?.players.find(p => p.id === this.session?.localPlayerId);
     const viewpoint = this.spectatedId ? this.remotes.get(this.spectatedId)?.position : local?.position;
     return { round, offline: this.session?.kind === 'offline', protection: player?.protection ?? 0,
+      air: round?.phase === 'running' ? player?.air ?? 0 : 0,
       descending: player?.descending ?? false, spectator: (this.vitals.lives ?? 3) === 0,
       target: this.spectatedId ? this.session?.identity(this.spectatedId).name : null,
       outside: !!round && round.phase === 'running' && !!viewpoint && !contains(round.zone.current, viewpoint) };
   }
   startRound(): void { this.session?.startRound?.(); }
+  /** Botón «Saltar» del avión / abrir paracaídas (mismo bit que el salto: lo decide la autoridad). */
+  jumpFromPlane(): void { if (!this.inputSuspended) this.input.pulse(Buttons.JUMP); }
   spectateNext(direction = 1): void {
     const ids = this.session?.battle?.players.filter(p => p.id !== this.session?.localPlayerId && p.lives > 0).map(p => p.id) ?? [];
     const index = ids.indexOf(this.spectatedId ?? '');
@@ -1182,6 +1237,7 @@ export class Game {
     this.nameTags?.dispose();
     this.sound.dispose();
     this.stormView?.dispose();
+    this.airView?.dispose();
     this.buildingView?.dispose();
     this.engine.dispose();
     this.input.dispose();

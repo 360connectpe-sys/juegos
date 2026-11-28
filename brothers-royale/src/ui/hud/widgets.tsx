@@ -311,6 +311,13 @@ export function Minimap({ game }: { game: Game | null }) {
         }
         c.setLineDash([]);
       }
+      // Fase 12: ruta del avión (discontinua) y su posición; el propio, más visible.
+      for (const pl of st.planes ?? []) {
+        c.beginPath(); c.setLineDash([4, 3]); c.lineWidth = pl.mine ? 2 : 1; c.strokeStyle = pl.mine ? '#ffd34d' : '#ffffffaa';
+        c.moveTo(u(pl.ax), u(pl.az)); c.lineTo(u(pl.bx), u(pl.bz)); c.stroke(); c.setLineDash([]);
+        c.fillStyle = pl.mine ? '#ffd34d' : '#ffffff';
+        c.beginPath(); c.arc(u(pl.x), u(pl.z), pl.mine ? 4 : 3, 0, Math.PI * 2); c.fill();
+      }
       // Cofres aún cerrados (dorados).
       c.fillStyle = '#ffd34d';
       c.strokeStyle = '#5e3b1c';

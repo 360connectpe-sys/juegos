@@ -1483,3 +1483,7 @@ kbd {
 @keyframes storm-pulse { 0%, 100% { background: #4a2fa51a; box-shadow: inset 0 0 60px #5123957a; } 50% { background: #6a35c933; box-shadow: inset 0 0 110px #6b2fd0b0; } }
 .battle-zone--warn { color: #ffd36b; }
 @media (prefers-reduced-motion: reduce) { .storm-tint { animation: none; } }
+/* Fase 12: avión de transporte. El botón Saltar es grande y fácil de pulsar con el pulgar. */
+.battle-status .air-jump { pointer-events: auto; font-size: 18px; font-weight: 800; padding: 12px 28px; border-radius: 12px; background: #ffb000; color: #231f5c; border: 2px solid #fff; box-shadow: 0 4px 14px #0007; }
+.battle-status .air-jump:active { transform: scale(.96); }
+.battle-status .air-status { color: #ffe9a8; }

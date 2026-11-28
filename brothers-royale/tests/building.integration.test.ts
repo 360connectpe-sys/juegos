@@ -8,6 +8,9 @@ import { PROTOCOL_VERSION, ROOM_NAME } from '@shared/protocol';
 import { Buttons, emptyInput } from '@shared/types';
 import { terrainHeight } from '@shared/world/terrain';
 import type { WebSocketClient } from '@colyseus/ws-transport';
+import { BattleRound } from '@shared/battle/BattleRound';
+// Estas pruebas cubren sistemas ajenos al avión (fase 12): la ronda empieza en tierra como antes.
+BattleRound.defaultTransport = false;
 const port = 33000 + Math.floor(Math.random() * 1000);
 let server: ReturnType<typeof createServer>;
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));

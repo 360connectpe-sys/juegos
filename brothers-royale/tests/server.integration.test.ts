@@ -7,6 +7,9 @@ import { unpackPlayers } from '@shared/netcodec';
 import { CloseCodes, PROTOCOL_VERSION, ROOM_NAME, type CorrectionMessage, type RosterEntry, type SnapshotMessage, type WelcomeMessage } from '@shared/protocol';
 import { screenToWorld } from '@shared/movement';
 import { Buttons, emptyInput } from '@shared/types';
+import { BattleRound } from '@shared/battle/BattleRound';
+// Prueba de red y reconciliación en tierra (el avión de la fase 12 se prueba aparte).
+BattleRound.defaultTransport = false;
 
 const PORT = 25670 + Math.floor(Math.random() * 1000);
 let server: ReturnType<typeof createServer>;

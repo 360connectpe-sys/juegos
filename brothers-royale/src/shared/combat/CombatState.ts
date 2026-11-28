@@ -255,6 +255,11 @@ export class CombatState {
       if (f.respawnIn <= 1e-9) this.respawn(f);
     }
   }
+  /** Fase 12: embarca en el avión / cae: sin daño ni ataques hasta aterrizar. */
+  beginDescent(id: string): void {
+    const f = this.fighters.get(id);
+    if (f && !f.dead && !f.dummy) { f.descending = true; f.protection = 0; f.reload = f.heal = null; this.pushVitals(f); }
+  }
   landed(id: string): void {
     const f = this.fighters.get(id);
     if (f && f.descending && !f.dead) { f.descending = false; f.protection = 3; this.pushVitals(f); }
@@ -322,6 +327,7 @@ export class CombatState {
       }
     }
     inv = this.finishTimers(f, inv);
+    if (f.descending) { f.fireHeld = hasButton(input.buttons, Buttons.FIRE); f.aiming = false; return; } // sin combate en el aire
 
     const item = inv.slots[inv.selected] ?? null;
     const fire = hasButton(input.buttons, Buttons.FIRE);
@@ -520,6 +526,8 @@ export class CombatState {
   private applyDamage(victim: string, by: string, weapon: AttackKind, amount: number, at: Vec3, distance: number, tick: number): void {
     const v = this.fighters.get(victim);
     if (!v || v.dead || !this.active || v.protection > 0 || !(amount > 0) || !Number.isFinite(amount)) return;
+    // En el avión, cayendo o con paracaídas no se recibe daño (salvo caer fuera del mapa).
+    if (v.descending && weapon !== 'fall') return;
     const before=v.hp;
     v.hp = roundDamage(Math.max(0, v.hp - amount));
     const actual=roundDamage(before-v.hp);

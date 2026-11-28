@@ -10,6 +10,9 @@ import type { Vitals } from '@shared/combat/CombatState';
 import { PROTOCOL_VERSION, ROOM_NAME, type WelcomeMessage } from '@shared/protocol';
 import { Buttons, emptyInput } from '@shared/types';
 import { terrainHeight } from '@shared/world/terrain';
+import { BattleRound } from '@shared/battle/BattleRound';
+// Estas pruebas cubren sistemas ajenos al avión (fase 12): la ronda empieza en tierra como antes.
+BattleRound.defaultTransport = false;
 
 const port = 35000 + Math.floor(Math.random()*1000);
 let server: ReturnType<typeof createServer>;
@@ -44,6 +47,7 @@ it('ocho clientes conservan vidas al reconectar; una sesión nueva observa; todo
     expect(w.players.get(id)?.connected).toBe(true);
     for(let death=0;death<2;death++){
       for(let t=0;t<151;t++)w.step();
+      w.combat.landed(id);for(let t=0;t<95;t++)w.step(); // fase 12: sin daño en el aire ni con protección
       w.combat.environmentalDamage(id,100,p.body.state.position,w.tick);
     }
     await wait(100);expect(c.vitals?.lives).toBe(0);expect(w.combat.isDead(id)).toBe(true);

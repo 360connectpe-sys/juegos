@@ -1,6 +1,8 @@
 import type { CombatState, FighterStats } from '../combat/CombatState';
 import type { Vec3 } from '../types';
-import { contains, ROUND_SECONDS, zoneAt, zonePlan, type Circle, type ZoneState } from './zone';
+import { constrain, contains, ROUND_SECONDS, zoneAt, zonePlan, type Circle, type ZoneState } from './zone';
+import { FLIGHT, mapCircle, planeAt, respawnRoute, startRoute, type AirMode, type PlaneRoute, type PlanePose } from './flight';
+import { PLAYER } from '../constants';
 
 export type RoundPhase = 'waiting' | 'countdown' | 'running' | 'finished';
 export interface RoundActor { id: string; name: string; feet: Vec3; grounded: boolean; connected: boolean }
@@ -8,19 +10,34 @@ export interface RoundScore extends FighterStats { id: string; name: string; liv
 export interface RoundResult { round: number; elapsed: number; reason: 'survivor' | 'limit' | 'draw'; winners: string[]; scores: RoundScore[] }
 export interface RoundSnapshot {
   round: number; phase: RoundPhase; elapsed: number; countdown: number; zone: ZoneState;
-  players: { id: string; lives: number; descending: boolean; protection: number }[];
+  players: { id: string; lives: number; descending: boolean; protection: number; air: AirMode; plane?: number }[];
   result: RoundResult | null;
+  /** Fase 12: aviones en vuelo (ruta completa; la posición se calcula con `elapsed`). */
+  planes: PlaneRoute[];
 }
 export interface RoundHooks {
   actors(): readonly RoundActor[];
   reset(ids: readonly string[]): void;
-  spawn(id: string, zone: Circle, index: number): void;
+  /** Coloca el cuerpo en el avión o en el punto de salto (teletransporte autoritativo). */
+  spawn(id: string, at: Vec3): void;
+  /** Altura del suelo en (x, z): decide cuándo se abre el paracaídas. */
+  ground?(x: number, z: number): number | null;
+  /** ¿Viaja en avión? (los muñecos de práctica no: reaparecen cayendo como antes). */
+  flies?(id: string): boolean;
 }
+interface AirState { mode: AirMode; plane: number; bound: 'map' | 'zone'; jumpY: number }
 const zeroStats = (): FighterStats => ({ shots: 0, hits: 0, damageDealt: 0, damageTaken: 0, kills: 0, eliminations: 0, deaths: 0, healed: 0 });
 
 /** Ciclo de partida puro; la sala solo transporta datos. No acepta mensajes de jugadores. */
 export class BattleRound {
+  /** Valor inicial de `transport` (las pruebas de sistemas ajenos al avión lo desactivan). */
+  static defaultTransport = true;
   managed = false;
+  /**
+   * Fase 12: inicio y reapariciones en avión. false = comportamiento anterior (inicio en tierra y
+   * reaparición cayendo del cielo); lo usan las pruebas de sistemas que no dependen del transporte.
+   */
+  transport = BattleRound.defaultTransport;
   holdResults = false;
   phase: RoundPhase = 'waiting';
   round = 0;
@@ -33,6 +50,10 @@ export class BattleRound {
   private wallNow: number | null = null;
   private wallStart: number | null = null;
   private result: RoundResult | null = null;
+  private readonly air = new Map<string, AirState>();
+  private planes: PlaneRoute[] = [];
+  private planeSerial = 0;
+  private readonly pose: PlanePose = { x: 0, y: 0, z: 0, yaw: 0, progress: 0 };
   constructor(readonly combat: CombatState, readonly size: number, readonly seed: number, private readonly hooks: RoundHooks, readonly autoStart = true) {
     this.plan = zonePlan(size, seed);
     combat.externalLifeClock = true;
@@ -50,6 +71,7 @@ export class BattleRound {
   departed(id: string): void {
     const p = this.participants.get(id);
     if (p && this.phase === 'running') { p.forfeited = true; p.eliminatedAt=this.elapsed; p.saved = this.score(id, p); }
+    this.air.delete(id);
   }
   start(): boolean {
     const actors = this.hooks.actors().filter(a => a.connected);
@@ -60,6 +82,11 @@ export class BattleRound {
     for (const a of actors) this.participants.set(a.id, { name: a.name, forfeited: false });
     this.hooks.reset(actors.map(a => a.id));
     this.phase = 'running'; this.countdown = 0;
+    // Fase 12: todos empiezan dentro del avión inicial (ruta aleatoria con la semilla de la ronda).
+    this.air.clear(); this.planeSerial = 0;
+    const route = startRoute(this.size, (this.seed + this.round) >>> 0, 0);
+    this.planes = [route];
+    if (this.transport) for (const a of actors) if (this.hooks.flies?.(a.id) ?? true) this.board(a.id, route, 'map');
     return true;
   }
   requestCountdown(): boolean {
@@ -69,7 +96,7 @@ export class BattleRound {
   cancelCountdown(): void { if (this.phase==='countdown') { this.phase='waiting';this.countdown=0; } }
   returnToLobby(force=false): boolean {
     if(!force&&this.phase!=='finished')return false;
-    this.phase='waiting';this.elapsed=0;this.countdown=0;this.participants.clear();this.result=null;
+    this.phase='waiting';this.elapsed=0;this.countdown=0;this.participants.clear();this.result=null;this.clearAir();
     this.plan=zonePlan(this.size,this.seed+this.round+1);
     this.hooks.reset(this.hooks.actors().filter(a=>a.connected).map(a=>a.id));return true;
   }
@@ -78,7 +105,7 @@ export class BattleRound {
       if (this.managed || this.holdResults) return;
       this.countdown = Math.max(0, this.countdown - dt);
       if (this.countdown <= 1e-9) {
-        this.phase = 'waiting'; this.elapsed = 0; this.participants.clear(); this.result = null;
+        this.phase = 'waiting'; this.elapsed = 0; this.participants.clear(); this.result = null; this.clearAir();
         this.plan = zonePlan(this.size, this.seed + this.round + 1);
         this.hooks.reset(this.hooks.actors().filter(a => a.connected).map(a => a.id));
       }
@@ -95,11 +122,22 @@ export class BattleRound {
       this.elapsed = Math.min(ROUND_SECONDS, this.elapsed + dt);
       if (this.wallStart !== null && this.wallNow !== null) this.elapsed = Math.min(ROUND_SECONDS, Math.max(this.elapsed, this.wallNow - this.wallStart));
       if (this.elapsed >= ROUND_SECONDS - 1e-9) { this.elapsed = ROUND_SECONDS; this.finish('limit'); return; }
+      this.flyPlanes();
     }
     this.combat.tickLives(dt);
   }
   after(dt: number, tick: number): void {
-    for (const a of this.hooks.actors()) if (a.grounded) this.combat.landed(a.id);
+    for (const a of this.hooks.actors()) {
+      const air = this.air.get(a.id);
+      if (!air) { if (a.grounded) this.combat.landed(a.id); continue; }
+      if (air.mode === 1) continue;
+      if (a.grounded) { this.air.delete(a.id); this.combat.landed(a.id); continue; }
+      // Caída libre → paracaídas automático cerca del suelo.
+      if (air.mode === 2 && air.jumpY - a.feet.y >= FLIGHT.minFallBeforeChute) {
+        const ground = this.hooks.ground?.(a.feet.x, a.feet.z);
+        if (ground !== null && ground !== undefined && a.feet.y - ground <= FLIGHT.chuteHeight) air.mode = 3;
+      }
+    }
     if (!this.active) return;
     this.stormClock += dt;
     if (this.stormClock >= 1 - 1e-9) {
@@ -138,12 +176,73 @@ export class BattleRound {
     for(const s of scores)s.position=1+scores.filter(other=>compare(other,s)<0).length;
     this.result = { round: this.round, elapsed: this.elapsed, reason: winners.length === 1 ? reason : 'draw', winners, scores };
     this.history.push(structuredClone(this.result)); if (this.history.length > 10) this.history.shift();
-    this.phase = 'finished'; this.countdown = 10; this.combat.active = false;
+    this.phase = 'finished'; this.countdown = 10; this.combat.active = false; this.clearAir();
   }
   /** Teletransporte físico lo ejecuta el adaptador y limpia el historial de poses. */
-  respawn(id: string): void { this.hooks.spawn(id, this.zone.current, [...this.participants.keys()].indexOf(id)); }
+  respawn(id: string): void {
+    if (!this.transport || !(this.hooks.flies?.(id) ?? true)) {
+      // Muñecos de práctica: caen del cielo dentro de la zona (comportamiento de la fase 8).
+      const zone = this.zone.current, index = Math.max(0, [...this.participants.keys()].indexOf(id));
+      const angle = index * 2.399963, d = Math.min(12, zone.radius * .4);
+      const x = zone.x + Math.sin(angle) * d, z = zone.z + Math.cos(angle) * d;
+      this.hooks.spawn(id, { x, y: (this.hooks.ground?.(x, z) ?? 0) + 30, z });
+      return;
+    }
+    // Fase 12: avión propio cuya ruta termina dentro de la zona segura actual. No altera
+    // los aviones de los demás.
+    const route = respawnRoute(this.zone.current, this.size, (this.seed + this.round) >>> 0, ++this.planeSerial, this.elapsed);
+    this.planes.push(route);
+    this.board(id, route, 'zone');
+  }
+  /** 0 en tierra, 1 avión, 2 caída libre, 3 paracaídas. */
+  airMode(id: string): AirMode { return this.air.get(id)?.mode ?? 0; }
+  /** Límite horizontal del descenso (mapa en el salto inicial, zona segura al reaparecer). */
+  airBound(id: string): Circle | null {
+    const a = this.air.get(id);
+    return !a ? null : a.bound === 'map' ? mapCircle(this.size) : this.zone.current;
+  }
+  /** Construir, interactuar y atacar: solo en tierra. */
+  canFight(id: string): boolean { return this.canAct(id) && !this.air.has(id); }
+  /** El jugador salta del avión (o el servidor lo hace al final de la ruta). */
+  jump(id: string): boolean {
+    const a = this.air.get(id);
+    const route = a && a.mode === 1 ? this.planes.find(r => r.id === a.plane) : undefined;
+    if (!a || !route) return false;
+    const pose = planeAt(route, this.elapsed, this.pose);
+    const at = constrain(this.airBound(id)!, pose, PLAYER.radius + 0.5);
+    a.mode = 2; a.jumpY = pose.y - 2;
+    this.hooks.spawn(id, { x: at.x, y: a.jumpY, z: at.z });
+    return true;
+  }
+  /** Abrir el paracaídas antes de tiempo (tras caer un mínimo). */
+  openChute(id: string, feetY: number): boolean {
+    const a = this.air.get(id);
+    if (!a || a.mode !== 2 || a.jumpY - feetY < FLIGHT.minFallBeforeChute) return false;
+    a.mode = 3; return true;
+  }
+  private board(id: string, route: PlaneRoute, bound: AirState['bound']): void {
+    this.air.set(id, { mode: 1, plane: route.id, bound, jumpY: route.y });
+    this.combat.beginDescent(id);
+    const pose = planeAt(route, this.elapsed, this.pose);
+    this.hooks.spawn(id, { x: pose.x, y: pose.y, z: pose.z });
+  }
+  /** Mueve a los pasajeros con su avión y los hace saltar al final de la ruta. */
+  private flyPlanes(): void {
+    for (const [id, a] of this.air) {
+      if (a.mode !== 1) continue;
+      const route = this.planes.find(r => r.id === a.plane);
+      if (!route) { this.air.delete(id); continue; }
+      const pose = planeAt(route, this.elapsed, this.pose);
+      if (pose.progress >= 1) this.jump(id);
+      else this.hooks.spawn(id, { x: pose.x, y: pose.y, z: pose.z });
+    }
+    // Un avión sin pasajeros desaparece al terminar su ruta.
+    this.planes = this.planes.filter(r => this.elapsed < r.start + r.duration + 2 || [...this.air.values()].some(a => a.mode === 1 && a.plane === r.id));
+  }
+  private clearAir(): void { this.air.clear(); this.planes = []; }
   snapshot(): RoundSnapshot {
     return { round: this.round, phase: this.phase, elapsed: this.elapsed, countdown: Math.max(0, this.countdown), zone: this.zone,
-      players: this.hooks.actors().map(a => ({ id: a.id, lives: this.combat.lives(a.id), descending: this.combat.vitals(a.id)?.descending ?? false, protection: this.combat.vitals(a.id)?.protection ?? 0 })), result: this.result };
+      players: this.hooks.actors().map(a => ({ id: a.id, lives: this.combat.lives(a.id), descending: this.combat.vitals(a.id)?.descending ?? false, protection: this.combat.vitals(a.id)?.protection ?? 0, air: this.airMode(a.id), ...(this.air.get(a.id)?.mode === 1 ? { plane: this.air.get(a.id)!.plane } : {}) })), result: this.result,
+      planes: this.planes.map(r => ({ ...r })) };
   }
 }

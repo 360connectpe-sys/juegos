@@ -37,7 +37,13 @@ export function DeathScreen({ game }: { game: Game }) {
             : round.zone.changesIn > 0 && round.elapsed < ROUND_SECONDS && <span className="battle-zone">Próximo cierre en {clock(round.zone.changesIn)}</span>}
         {ui?.outside && <strong>Fuera de la zona · {round.zone.damage} HP/s</strong>}
       </>}
-      {ui?.descending && <span>Descendiendo · dirige el aterrizaje con el movimiento</span>}
+      {ui?.air === 1 && <>
+        <strong className="air-status">En el avión · elige dónde saltar (o saltarás al final de la ruta)</strong>
+        <button type="button" className="air-jump" onClick={() => game.jumpFromPlane()}>Saltar</button>
+      </>}
+      {ui?.air === 2 && <span className="air-status">Caída libre · muévete para elegir dónde caer · correr = picado · saltar = abrir paracaídas</span>}
+      {ui?.air === 3 && <span className="air-status">Paracaídas · dirige el aterrizaje · correr = bajar más rápido</span>}
+      {ui?.descending && !ui.air && <span>Descendiendo · dirige el aterrizaje con el movimiento</span>}
       {(ui?.protection ?? 0) > 0 && <span>Protección {Math.ceil(ui!.protection)} s · atacar la cancela</span>}
       {result && <><strong>{result.winners.length === 1 ? `Ganador: ${winners}` : 'Empate'}</strong><span>Nueva partida en {Math.ceil(round!.countdown)} s</span></>}
     </div>

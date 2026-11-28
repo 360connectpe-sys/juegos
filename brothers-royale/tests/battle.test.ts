@@ -6,6 +6,8 @@ import { CombatState } from '@shared/combat/CombatState';
 import { MatchState } from '@shared/match/MatchState';
 import { Buttons, emptyInput } from '@shared/types';
 import { addItem } from '@shared/inventory';
+// Estas pruebas cubren sistemas ajenos al avión (fase 12): la ronda empieza en tierra como antes.
+BattleRound.defaultTransport = false;
 
 function setup(count = 2) {
   const match = new MatchState([], 1), combat = new CombatState(match, 1);
@@ -16,8 +18,10 @@ function setup(count = 2) {
   });
   for (const a of actors) { match.addPlayer(a.id); combat.addFighter(a.id); }
   combat.onRespawn = id => round.respawn(id);
+  /** Aterrizan los que están en el aire y se agota la protección (fase 12: en el aire no hay daño). */
+  const land = () => { for (const a of actors) if (a.feet.y > 0) { a.feet.y = 0; a.grounded = true; } round.after(0, 0); for (let n = 0; n < 95; n++) { round.before(1/30); round.after(1/30, n); } };
   const step = (seconds: number) => { for (let n = 0; n < Math.round(seconds * 30); n++) { round.before(1/30); round.after(1/30, n); } };
-  return { match, combat, actors, round, step };
+  return { match, combat, actors, round, step, land };
 }
 
 describe('tres vidas y ciclo autoritativo', () => {
@@ -35,6 +39,7 @@ describe('tres vidas y ciclo autoritativo', () => {
         expect(w.actors[0]!.feet.y).toBe(30);
         expect(w.combat.vitals('p0')?.descending).toBe(true);
         expect(w.match.inventory('p0')).toBe(inv);
+        w.land();
       }
     }
     w.step(10);
@@ -101,7 +106,7 @@ describe('tres vidas y ciclo autoritativo', () => {
   });
   it('muertes simultáneas no declaran un ganador por orden de procesamiento', () => {
     const w = setup(); w.round.start();
-    for (let n = 0; n < 3; n++) { for (const a of w.actors) w.combat.environmentalDamage(a.id, 100, a.feet, 0); if (n < 2) w.step(5); }
+    for (let n = 0; n < 3; n++) { for (const a of w.actors) w.combat.environmentalDamage(a.id, 100, a.feet, 0); if (n < 2) { w.step(5); w.land(); } }
     w.round.after(0, 1); expect(w.round.snapshot().result?.winners).toEqual([]); expect(w.round.snapshot().result?.reason).toBe('draw');
   });
   it('el daño de tormenta no crea atacantes ficticios ni eliminaciones gratuitas', () => {
@@ -174,7 +179,7 @@ it('ciclo acelerado completo de quince minutos con ocho competidores y reinicio'
 
 it('las bajas de vida y las eliminaciones definitivas se registran por separado', () => {
   const w=setup();w.round.start();
-  for(let i=0;i<2;i++){w.combat.environmentalDamage('p1',100,w.actors[1]!.feet,0);w.step(5);}
+  for(let i=0;i<2;i++){w.combat.environmentalDamage('p1',100,w.actors[1]!.feet,0);w.step(5);w.land();}
   w.actors[1]!.feet={x:0,y:0,z:5};w.combat.setHp('p1',1);
   const inv=addItem(w.match.inventory('p0')!,{kind:'rifle',qty:1,rarity:'rare'}).inventory;
   w.match.setInventory('p0',inv);w.match.selectSlot('p0',1);

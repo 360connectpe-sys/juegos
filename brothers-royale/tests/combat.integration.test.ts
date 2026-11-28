@@ -14,6 +14,9 @@ import { Buttons, emptyInput, type PlayerInput } from '@shared/types';
 import { worldColliders } from '@shared/world/colliders';
 import { generateWorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
+import { BattleRound } from '@shared/battle/BattleRound';
+// Estas pruebas cubren sistemas ajenos al avión (fase 12): la ronda empieza en tierra como antes.
+BattleRound.defaultTransport = false;
 
 const PORT = 32070 + Math.floor(Math.random() * 300);
 const URL = `ws://127.0.0.1:${PORT}`;

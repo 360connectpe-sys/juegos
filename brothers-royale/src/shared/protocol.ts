@@ -19,8 +19,9 @@ import type { PlayerInput } from './types';
  * v6 (fase 7): materiales, árboles destructibles y construcciones autoritativas.
  * v7 (fase 8): vidas finitas, descenso, protección, tormenta y resultados de ronda.
  * v8 (fase 9): perfiles cosméticos, permisos del lobby y estadísticas finales.
+ * v9 (fase 12): avión de transporte (planes/air en la ronda), modificadores aéreos, zombis.
  */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 /** Nombre de la sala registrada en el servidor. */
 export const ROOM_NAME = 'brothers';

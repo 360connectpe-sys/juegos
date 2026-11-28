@@ -1,6 +1,5 @@
 import { BattleRound } from '@shared/battle/BattleRound';
 import { DEFAULT_MODIFIERS } from '@shared/movement';
-import type { Circle } from '@shared/battle/zone';
 /**
  * Mundo autoritativo del servidor. No depende de Colyseus ni del DOM: se
  * prueba en Node directamente y la sala (BrothersRoom) solo lo conecta a la red.
@@ -47,6 +46,8 @@ export interface ServerPlayer {
   connected: boolean;
   /** Botón de interacción pulsado en la entrada anterior (detección de flanco). */
   interactHeld: boolean;
+  /** Salto pulsado en la entrada anterior (abrir el paracaídas = flanco). */
+  jumpHeld: boolean;
 }
 
 /** Entrada neutra que se simula mientras el jugador está eliminado (consume su secuencia). */
@@ -92,7 +93,8 @@ export class ServerWorld {
     this.round = new BattleRound(this.combat, layout.terrain.size, matchSeed, {
       actors: () => [...this.players.values()].map(p => ({ id: p.id, name: p.name, feet: p.body.state.position, grounded: p.body.state.grounded, connected: p.connected })),
       reset: ids => this.resetRound(ids),
-      spawn: (id, zone, index) => { const p = this.players.get(id); if (p) this.spawnSky(p, zone, index); },
+      spawn: (id, at) => { const p = this.players.get(id); if (p) this.place(p, at); },
+      ground: (x, z) => this.physics.groundHeightAt(x, z, 120),
     });
     this.building.state.onHarvest=(id,n)=>this.round.harvest(id,n);
     this.building.state.onBuild=id=>this.round.built(id);
@@ -180,6 +182,7 @@ export class ServerWorld {
       correctionDirty: true,
       connected: true,
       interactHeld: false,
+      jumpHeld: false,
     };
     this.players.set(id, player);
     this.match.addPlayer(id);
@@ -230,9 +233,11 @@ export class ServerWorld {
   step(dt: number = SIMULATION.fixedDt): void {
     this.round.before(dt);
     for (const p of this.players.values()) {
-      const vitals = this.combat.vitals(p.id);
-      p.body.modifiers = { ...DEFAULT_MODIFIERS, frozen: !this.round.canAct(p.id),
-        ...(vitals?.descending ? { descent: this.round.zone.current, canSprint: false, canJump: false } : {}) };
+      // Fase 12: en el avión el cuerpo va congelado (lo lleva la ronda); cayendo o con
+      // paracaídas, el motor aéreo dentro del límite del descenso.
+      const air = this.round.airMode(p.id);
+      p.body.modifiers = { ...DEFAULT_MODIFIERS, frozen: !this.round.canAct(p.id) || air === 1,
+        ...(air >= 2 ? { descent: this.round.airBound(p.id)!, air: air as 2 | 3, canJump: false } : this.combat.vitals(p.id)?.descending ? { descent: this.round.zone.current, canSprint: false, canJump: false } : {}) };
       p.credits = Math.min(p.credits + 1, NET.maxInputsPerTick);
       let processed = 0;
       while (p.credits > 0 && p.queue.length > 0) {
@@ -241,11 +246,15 @@ export class ServerWorld {
         const dead = !this.round.canAct(p.id);
         const input = dead ? deadInput(raw) : raw;
         p.body.step(input, dt);
-        if (p.body.state.grounded) this.combat.landed(p.id);
-        // Interacción (abrir cofre / recoger): solo en el flanco de pulsación y
+        // Saltar del avión (cualquier pulsación) o abrir el paracaídas (flanco).
+        const jump = hasButton(input.buttons, Buttons.JUMP);
+        if (!dead && air === 1 && jump) this.round.jump(p.id);
+        else if (!dead && air === 2 && jump && !p.jumpHeld) this.round.openChute(p.id, p.body.state.position.y);
+        p.jumpHeld = jump;
+        // Interacción (abrir cofre / recoger): solo en el flanco de pulsación, en tierra y
         // con la posición AUTORITATIVA tras ese mismo paso.
         const interact = hasButton(input.buttons, Buttons.INTERACT);
-        if (interact && !p.interactHeld) this.match.interact(p.id, p.body.state.position, this.los);
+        if (interact && !p.interactHeld && this.round.canFight(p.id)) this.match.interact(p.id, p.body.state.position, this.los);
         p.interactHeld = interact;
         // Combate con la misma posición autoritativa (y el tick visto, rebobinado).
         if (!dead) this.combat.step(p.id, raw, this.attackContext(p, dt));
@@ -272,24 +281,22 @@ export class ServerWorld {
   }
 
   canAct(id: string): boolean { return this.round.canAct(id); }
+  /** Construir: solo en tierra (no en el avión, cayendo ni con paracaídas). */
+  canBuild(id: string): boolean { return this.round.canFight(id); }
   private resetRound(ids: readonly string[]): void {
     this.match.reset(ids); this.building.reset(); this.combat.reset(ids);
     for (const p of this.players.values()) {
       if (!ids.includes(p.id)) { this.match.addPlayer(p.id); this.combat.addFighter(p.id); this.combat.exclude(p.id); }
       this.building.state.addPlayer(p.id);
-      p.queue.length = 0; p.credits = 0; p.interactHeld = false;
+      p.queue.length = 0; p.credits = 0; p.interactHeld = false; p.jumpHeld = false;
       p.body.modifiers = { ...DEFAULT_MODIFIERS };
       this.respawnAt(p, p.netId); this.history.forget(p.id);
     }
     this.resetRevision++;
   }
-  private spawnSky(p: ServerPlayer, zone: Circle, index: number): void {
-    // Lejos del borde y de otros puntos de reaparición; solo coordenadas del servidor.
-    const angle = Math.max(0, index) * 2.399963;
-    const distance = Math.min(12, zone.radius * .4);
-    const x = zone.x + Math.sin(angle) * distance, z = zone.z + Math.cos(angle) * distance;
-    const y = (this.physics.groundHeightAt(x, z) ?? terrainHeight(x, z, this.layout.terrain)) + 30;
-    p.body.teleport({ x, y, z }); p.correctionDirty = true;
+  /** Teletransporte autoritativo pedido por la ronda (avión o punto de salto). */
+  private place(p: ServerPlayer, at: { x: number; y: number; z: number }): void {
+    p.body.teleport(at); p.correctionDirty = true;
     this.history.forget(p.id); this.history.record(this.tick, p.id, p.body.state.position);
   }
 

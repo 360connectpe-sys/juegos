@@ -125,7 +125,7 @@ export class BrothersRoom extends Room {
     this.onMessage('ready', (client) => this.handleReady(client));
     this.onMessage('input', (client, message) => this.handleInput(client, message));
     this.onMessage('build', (client, message: unknown) => {
-      if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready || !this.world.canAct(client.sessionId)) return;
+      if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready || !this.world.canBuild(client.sessionId)) return;
       const p = this.world.players.get(client.sessionId);
       if (p) this.world.building.state.place(p.id, message, p.body.state.position);
     });

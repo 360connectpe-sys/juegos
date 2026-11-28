@@ -123,7 +123,8 @@ export class PhysicsWorld {
   /** Lanza un rayo hacia abajo y devuelve la altura del primer impacto. */
   groundHeightAt(x: number, z: number, fromY = 50): number | null {
     const ray = new this.R.Ray({ x, y: fromY, z }, { x: 0, y: -1, z: 0 });
-    const hit = this.world.castRay(ray, fromY * 2, true);
+    // Solo lo estático: un jugador (p. ej. el propio cuerpo al caer) no es suelo.
+    const hit = this.world.castRay(ray, fromY * 2, true, undefined, CAMERA_QUERY_GROUPS);
     return hit ? fromY - hit.timeOfImpact : null;
   }
 

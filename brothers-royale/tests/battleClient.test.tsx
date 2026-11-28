@@ -14,7 +14,7 @@ import type { RoundSnapshot } from '@shared/battle/BattleRound';
 afterEach(cleanup);
 function fixture(lives=3) {
   const calls:string[]=[];
-  const round:RoundSnapshot={round:1,phase:'running',elapsed:210,countdown:0,players:[{id:'a',lives,descending:false,protection:0}],zone:zoneAt(zonePlan(120,1),210),result:null};
+  const round:RoundSnapshot={round:1,phase:'running',elapsed:210,countdown:0,players:[{id:'a',lives,descending:false,protection:0,air:0}],zone:zoneAt(zonePlan(120,1),210),result:null,planes:[]};
   const game={currentVitals:{...fullVitals(),lives,dead:lives===0},events:new EventBus<GameEvents>(),battleUi:{round,offline:false,spectator:lives===0,target:'Ana',outside:true,protection:0,descending:false},spectateNext:(d?:number)=>calls.push(String(d??1)),startRound:()=>calls.push('start')} as unknown as Game;
   return {game,calls,round};
 }

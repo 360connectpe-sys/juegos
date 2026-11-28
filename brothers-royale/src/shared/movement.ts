@@ -1,5 +1,6 @@
 import { PLAYER, SIMULATION } from './constants';
 import type { Circle } from './battle/zone';
+import { FLIGHT } from './battle/flight';
 import { rotateTowards } from './math';
 import { Buttons, hasButton, type Locomotion, type PlayerInput, type Vec2 } from './types';
 
@@ -33,7 +34,10 @@ export function screenToWorld(screenX: number, screenY: number): Vec2 {
  */
 export interface MotorModifiers {
   frozen?: boolean;
+  /** Límite horizontal mientras se desciende (zona segura o el mapa). */
   descent?: Circle;
+  /** Fase 12: 2 = caída libre, 3 = paracaídas (lo decide la autoridad). */
+  air?: 2 | 3;
   speedMultiplier: number;
   canSprint: boolean;
   canJump: boolean;
@@ -118,6 +122,23 @@ export function motorIntent(
   dt: number,
   mods: MotorModifiers = DEFAULT_MODIFIERS,
 ): { jumped: boolean } {
+  if (mods.air) {
+    // Caída libre o paracaídas: dirección con el movimiento, velocidad vertical fija
+    // (correr = picado / descenso rápido). Sin salto ni gravedad.
+    const ctrl = mods.air === 2 ? FLIGHT.fallControl : FLIGHT.chuteControl;
+    const len = Math.hypot(input.moveX, input.moveZ);
+    const k = len > 1e-4 ? (Math.min(len, 1) * ctrl) / len : 0;
+    const a = approach2(s.vx, s.vz, input.moveX * k, input.moveZ * k, FLIGHT.airAccel * dt);
+    s.vx = a.x;
+    s.vz = a.y;
+    const fast = hasButton(input.buttons, Buttons.SPRINT);
+    s.vy = mods.air === 2 ? -(fast ? FLIGHT.diveSpeed : FLIGHT.fallSpeed) : -(fast ? FLIGHT.chuteFastSpeed : FLIGHT.chuteSpeed);
+    s.jumpBuffer = 0;
+    s.jumpHeld = hasButton(input.buttons, Buttons.JUMP);
+    s.coyote = 0;
+    if (k > 0) s.yaw = stepYaw(s.yaw, input.moveX, input.moveZ, dt);
+    return { jumped: false };
+  }
   // Horizontal con aceleración (control total en suelo, reducido en el aire).
   const target = desiredHorizontalVelocity(input, mods);
   const moving = target.x !== 0 || target.y !== 0;

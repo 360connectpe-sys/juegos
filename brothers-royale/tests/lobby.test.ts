@@ -10,6 +10,8 @@ import { CombatState } from '@shared/combat/CombatState';
 import { MatchState } from '@shared/match/MatchState';
 import { BuildingState } from '@shared/building/BuildingState';
 import { paletteColors } from '@/game/entities/PlayerAvatar';
+// Estas pruebas cubren sistemas ajenos al avión (fase 12): la ronda empieza en tierra como antes.
+BattleRound.defaultTransport = false;
 
 describe('perfiles y permisos de lobby',()=>{
  it('doce polos solo cambian el color de camisa y rechazan índices malformados',()=>{

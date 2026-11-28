@@ -8,6 +8,9 @@ import { PhysicsWorld, loadRapier } from '@/physics/PhysicsWorld';
 import { contains } from '@shared/battle/zone';
 import { Buttons, emptyInput } from '@shared/types';
 import { addItem } from '@shared/inventory';
+import { BattleRound } from '@shared/battle/BattleRound';
+// Estas pruebas cubren sistemas ajenos al avión (fase 12): la ronda empieza en tierra como antes.
+BattleRound.defaultTransport = false;
 
 const step = (w: ServerWorld, ticks: number) => { for (let t = 0; t < ticks; t++) w.step(); };
 describe('integración física del ciclo', () => {
@@ -89,11 +92,13 @@ describe('integración física del ciclo', () => {
     const session = new OfflineSession(physics,{x:0,y:0,z:0},'A',[],1,[{x:8,y:0,z:0}]);
     try {
       expect(session.startRound()).toBe(true);
+      let seq=0;
       for(let i=0;i<3;i++){
         session.fight.environmentalDamage('local',100,session.local.state.position,0);
-        if(i<2)for(let t=0;t<150;t++)session.tick(emptyInput(i*150+t+1),1/30);
+        // Fase 12: en el aire no hay daño; se aterriza y se agota la protección de 3 s.
+        if(i<2){for(let t=0;t<150;t++)session.tick(emptyInput(++seq),1/30);session.fight.landed('local');for(let t=0;t<95;t++)session.tick(emptyInput(++seq),1/30);}
       }
-      session.tick(emptyInput(301),1/30);
+      session.tick(emptyInput(++seq),1/30);
       expect(session.combat.vitals.lives).toBe(0);expect(session.battle.result?.winners).toEqual(['dummy-1']);
     } finally { session.dispose();physics.dispose(); }
   });

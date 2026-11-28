@@ -181,6 +181,8 @@ export class CharacterBody {
     this.motor = initialMotorState(this.motor.yaw);
     this.setFeet(p);
     this.state.velocity = { x: 0, y: 0, z: 0 };
+    // Tras un teletransporte no se está apoyado hasta el siguiente paso (no "aterrizar" en el aire).
+    this.state.grounded = false;
   }
 
   private setFeet(p: Vec3): void {

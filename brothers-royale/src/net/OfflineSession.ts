@@ -39,6 +39,7 @@ export class OfflineSession implements GameSession {
   onMatchEvent: ((e: ClientMatchEvent) => void) | null = null;
   onCombatEvent: ((e: ClientCombatEvent) => void) | null = null;
   private interactHeld = false;
+  private jumpHeld = false;
   private tickCount = 0;
   private readonly ctx: AttackContext;
 
@@ -85,16 +86,16 @@ export class OfflineSession implements GameSession {
         this.local.modifiers = { ...DEFAULT_MODIFIERS }; this.local.teleport(this.spawn);
         this.onMatchEvent?.({ type: 'reset' });
       },
-      spawn: (id, zone, index) => {
-        const angle = Math.max(0, index) * 2.399963, d = Math.min(12, zone.radius * .4);
-        const x = zone.x + Math.sin(angle) * d, z = zone.z + Math.cos(angle) * d;
-        const y = (physics.groundHeightAt(x, z) ?? spawn.y) + 30;
-        if (id === this.localPlayerId) this.local.teleport({ x, y, z });
+      spawn: (id, at) => {
+        if (id === this.localPlayerId) this.local.teleport(at);
         else {
           const dummy = this.dummies.get(id);
-          if (dummy) { dummy.state.position = { x, y, z }; dummy.state.grounded = false; dummy.state.locomotion = 'fall'; }
+          if (dummy) { dummy.state.position = { ...at }; dummy.state.grounded = false; dummy.state.locomotion = 'fall'; }
         }
       },
+      ground: (x, z) => physics.groundHeightAt(x, z, 120),
+      // Los muñecos de práctica no suben al avión.
+      flies: id => !this.dummies.has(id),
     }, false);
     this.round.holdResults=true;
     if(building){building.state.onHarvest=(id,n)=>this.round.harvest(id,n);building.state.onBuild=id=>this.round.built(id);}
@@ -154,7 +155,7 @@ export class OfflineSession implements GameSession {
   }
 
   requestBuild(request: BuildRequest): boolean {
-    return this.round.canAct(this.localPlayerId) && (this.building?.state.place(this.localPlayerId, request, this.local.state.position) ?? false);
+    return this.round.canFight(this.localPlayerId) && (this.building?.state.place(this.localPlayerId, request, this.local.state.position) ?? false);
   }
 
   resetPractice():void{this.invalidate();this.round.returnToLobby(true);this.invalidate();}
@@ -189,16 +190,20 @@ export class OfflineSession implements GameSession {
 
   private tickInner(input: PlayerInput, dt: number): void {
     this.round.before(dt);
-    const v = this.fight.vitals(this.localPlayerId);
-    this.local.modifiers = { ...DEFAULT_MODIFIERS, frozen: !this.round.canAct(this.localPlayerId),
-      ...(v?.descending ? { descent: this.round.zone.current, canJump: false, canSprint: false } : {}) };
+    // Mismas reglas que el servidor (fase 12): avión = congelado; caída/paracaídas = motor aéreo.
+    const air = this.round.airMode(this.localPlayerId);
+    this.local.modifiers = { ...DEFAULT_MODIFIERS, frozen: !this.round.canAct(this.localPlayerId) || air === 1,
+      ...(air >= 2 ? { descent: this.round.airBound(this.localPlayerId)!, air: air as 2 | 3, canJump: false } : this.fight.vitals(this.localPlayerId)?.descending ? { descent: this.round.zone.current, canSprint: false, canJump: false } : {}) };
     const dead = !this.round.canAct(this.localPlayerId);
     const move = dead ? { seq: input.seq, moveX: 0, moveZ: 0, buttons: 0, aimYaw: input.aimYaw } : input;
     const s = this.local.step(move, dt);
-    if (s.grounded) this.fight.landed(this.localPlayerId);
+    const jump = hasButton(move.buttons, Buttons.JUMP);
+    if (!dead && air === 1 && jump) this.round.jump(this.localPlayerId);
+    else if (!dead && air === 2 && jump && !this.jumpHeld) this.round.openChute(this.localPlayerId, s.position.y);
+    this.jumpHeld = jump;
     // Mismas reglas que el servidor: flanco de interacción con la posición tras el paso.
     const interact = hasButton(move.buttons, Buttons.INTERACT);
-    if (interact && !this.interactHeld) this.state.interact(this.localPlayerId, s.position, (a, b) => this.physics.lineOfSight(a, b));
+    if (interact && !this.interactHeld && this.round.canFight(this.localPlayerId)) this.state.interact(this.localPlayerId, s.position, (a, b) => this.physics.lineOfSight(a, b));
     this.interactHeld = interact;
     if (dead) this.fight.idle(this.localPlayerId, dt);
     else {
