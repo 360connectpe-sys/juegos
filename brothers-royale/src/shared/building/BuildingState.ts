@@ -1,7 +1,7 @@
 import type { Vec3 } from '../types';
 import type { PrefabDef, BoxPart, PlacedPrefab } from '../world/prefab';
 
-export const BUILD = { size: 3, cost: 10, hp: 150, treeHp: 90, woodPerHit: 5, woodCap: 999, maxPieces: 128, perPlayer: 32, range: 6, height: 15 } as const;
+export const BUILD = { size: 3, cost: 10, hp: 150, treeHp: 90, woodPerHit: 5, woodPerTree: 30, woodCap: 999, maxPieces: 128, perPlayer: 32, range: 6, height: 15 } as const;
 export const BUILD_KINDS = ['wall', 'floor', 'ramp', 'roof'] as const;
 export type BuildKind = typeof BUILD_KINDS[number];
 export interface BuildRequest {
@@ -352,7 +352,11 @@ export class BuildingState {
     const actual = Math.min(this.trees[index]!, damage);
     this.trees[index] = Math.max(0, this.trees[index]! - damage);
     if (axe) {
-      const before=this.wood.get(id)!;const after=Math.min(BUILD.woodCap,before+Math.floor(actual/15*BUILD.woodPerHit));
+      // Fase 16: un árbol talado entero da exactamente BUILD.woodPerTree (30, lo que ya daba con golpes
+      // de 15) en total, repartido por golpes sin perder decimales.
+      const hpAfter=this.trees[index]!, hpBefore=hpAfter+actual;
+      const gained=Math.floor((BUILD.treeHp-hpAfter)/BUILD.treeHp*BUILD.woodPerTree+1e-9)-Math.floor((BUILD.treeHp-hpBefore)/BUILD.treeHp*BUILD.woodPerTree+1e-9);
+      const before=this.wood.get(id)!;const after=Math.min(BUILD.woodCap,before+gained);
       this.wood.set(id,after);if(after>before)this.onHarvest?.(id,after-before);
     }
     this.touch(); return true;

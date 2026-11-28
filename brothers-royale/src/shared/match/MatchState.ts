@@ -165,6 +165,9 @@ export class MatchState {
     return t;
   }
 
+  /** Fase 16: avisa a la autoridad (madera del cofre: la gestiona BuildingState). */
+  onChestOpened: ((chestId: number, by: string) => void) | null = null;
+
   private openChest(by: string, chestId: number): void {
     if (this.opened[chestId]) {
       this.events.push({ type: 'notice', playerId: by, code: 'opened' });
@@ -172,6 +175,7 @@ export class MatchState {
     }
     this.opened[chestId] = true;
     this.events.push({ type: 'chestOpened', chestId, by });
+    this.onChestOpened?.(chestId, by);
     const c = this.chests[chestId]!;
     // El botín sale delante del cofre, en abanico.
     const fx = Math.sin(c.yaw);

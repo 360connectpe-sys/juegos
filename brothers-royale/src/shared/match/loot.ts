@@ -7,9 +7,10 @@ import { ITEMS, WEAPONS, type AmmoKind, type ItemStack, type Rarity } from '../i
 import { createRng, hash2 } from '../random';
 
 const AMMO_RANGE: Record<AmmoKind, [number, number]> = {
-  ammo_light: [30, 60],
-  ammo_medium: [20, 40],
-  ammo_shells: [6, 12],
+  // Fase 16: +50 % (antes 30-60 / 20-40 / 6-12).
+  ammo_light: [45, 90],
+  ammo_medium: [30, 60],
+  ammo_shells: [9, 18],
 };
 
 const int = (rng: () => number, [a, b]: [number, number]) => a + Math.floor(rng() * (b - a + 1));
@@ -42,4 +43,10 @@ export function rollChestLoot(matchSeed: number, chestId: number): ItemStack[] {
     loot.push({ kind: extra, qty: int(rng, AMMO_RANGE[extra]) });
   }
   return loot;
+}
+
+/** Fase 16: madera de un cofre normal (10-20), determinista por (partida, cofre). */
+export function chestWood(matchSeed: number, chestId: number): number {
+  const rng = createRng((chestSeed(matchSeed, chestId) ^ 0x3d00d) >>> 0);
+  return 10 + Math.floor(rng() * 11);
 }

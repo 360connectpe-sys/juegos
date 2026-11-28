@@ -19,6 +19,7 @@ import { MatchState, type LineOfSight, type MatchEvent } from '@shared/match/Mat
 import { CombatState, type AttackContext, type CombatEvent, type TargetPose } from '@shared/combat/CombatState';
 import { PoseHistory } from '@shared/combat/lagcomp';
 import { addItem } from '@shared/inventory';
+import { chestWood } from '@shared/match/loot';
 import { ITEMS } from '@shared/items';
 import { Buttons, hasButton, type PlayerInput } from '@shared/types';
 import { worldColliders } from '@shared/world/colliders';
@@ -100,6 +101,8 @@ export class ServerWorld {
       ground: (x, z) => this.physics.groundHeightAt(x, z, 120),
     });
     this.building.state.onHarvest=(id,n)=>this.round.harvest(id,n);
+    // Fase 16: cada cofre normal da además 10-20 de madera a quien lo abre.
+    this.match.onChestOpened=(chest,by)=>{this.building.state.giveWood(by,chestWood(matchSeed,chest));};
     this.building.state.onBuild=id=>this.round.built(id);
     this.combat.onRespawn = id => this.round.respawn(id);
     this.zombies = new ZombieDirector({

@@ -1,3 +1,4 @@
+import { chestWood } from '@shared/match/loot';
 import { unpackZombies, ZombieDirector, type PublicZombie } from '@/physics/ZombieDirector';
 import { BattleRound } from '@shared/battle/BattleRound';
 import { DEFAULT_MODIFIERS } from '@shared/movement';
@@ -107,7 +108,7 @@ export class OfflineSession implements GameSession {
       drop: (item, at) => this.state.dropLoot(item, at),
       giveWood: (id, n) => { building.state.giveWood(id, n); },
     }, matchSeed) : null;
-    if(building){building.state.onHarvest=(id,n)=>this.round.harvest(id,n);building.state.onBuild=id=>this.round.built(id);}
+    if(building){this.state.onChestOpened=(chest,by)=>{building.state.giveWood(by,chestWood(matchSeed,chest));};building.state.onHarvest=(id,n)=>this.round.harvest(id,n);building.state.onBuild=id=>this.round.built(id);}
     this.fight.onRespawn = id => this.round.respawn(id);
     this.fight.drain();
     this.ctx = {

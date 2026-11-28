@@ -145,5 +145,6 @@ export function nextWaypoint(buildings: readonly PlacedPrefab[], from: Vec3, tar
 /** Exactamente una recompensa por muerte. No acepta objetos elegidos por el cliente. */
 export function zombieLoot(rng: () => number): ItemStack {
   return rng()<0.5 ? {kind:'medkit',qty:1}
-    : {kind:rng()<0.5?'ammo_light':'ammo_medium',qty:15+Math.floor(rng()*16)};
+    // Fase 16: +50 % de munición (23-45, antes 15-30); misma probabilidad munición/curación.
+    : {kind:rng()<0.5?'ammo_light':'ammo_medium',qty:23+Math.floor(rng()*23)};
 }
