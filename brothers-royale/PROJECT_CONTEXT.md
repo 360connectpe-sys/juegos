@@ -2,8 +2,29 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 28 de noviembre de 2026: fase 15.1 publicada (037ad49 / bc538f9); fase 15.2 preparada en ramas independientes, sin publicar.
+Estado: fase 15.2 publicada (fe82cfe / 7692bb7, v12); fase 16 preparada en ramas independientes, sin publicar (v13).
 
+
+## Fase 16 — suministros aéreos y recursos (preparada, SIN publicar)
+
+Base `fe82cfe` (15.2 publicada). Ramas: `brothers-royale-phase-16-ready` y `brothers-royale-phase-16-beta-ready`.
+**Protocolo v13** (`RoundSnapshot.drops`, `PlaneRoute.supply`).
+- Suministros (`shared/battle/supply.ts`, gobernado por `BattleRound`; servidor y offline): avión de carga cada
+  120 s (id ≥ 1000, más alto, tono verde), caja sobre punto válido de la zona (`supplySpotFor`: sin agua, edificios,
+  árboles, rocas, tejados ni construcciones), máx. 3 contando las que caen, paracaídas 4 m/s (altura deducida del
+  instante de suelta: sin sincronizar por tick), la tormenta las elimina, reinicio por ronda. Abrir = INTERACT a
+  ≤ 2,3 m con la caja en el suelo; la primera petición gana (sin duplicados): madera a quien abre y botín al suelo.
+  Contenido: 30-50 madera, 40-60 munición común, especial pequeña (6-10 cartuchos o 10-15 de la otra común),
+  botiquín al 50 %. Cliente: `SupplyView` (1 InstancedMesh + paracaídas de AirView), aviso «Abrir Suministro»,
+  icono en minimapa/mapa (sin jugadores).
+- Recursos: munición de cofres +50 % (45-90 / 30-60 / 9-18) y de zombis +50 % (23-45, misma probabilidad
+  munición/curación); cofres normales +10-20 madera (`chestWood`, a quien abre). Árboles: **ya daban 30** (no 10);
+  se mantiene 30 por árbol entero con reparto exacto (`BUILD.woodPerTree`) para no reducir la madera.
+- Optimizaciones nuevas (acotadas): IA de zombis lejanos 3× menos frecuente; minimapa pequeño a 5 Hz;
+  diagnóstico con personajes animados y zombis visibles. Reutilizadas: instancing de árboles/rocas/zombis/aviones,
+  LOD aéreo, animación omitida > 45 m y fuera de cámara, sin sombras, calidad efectiva 15.2, precompilación.
+  No se implementó chunking/occlusion culling: con < 15 draw calls y fusión actual no se demostró beneficio neto.
+- Validación: 488 pruebas OK (+ `tests/phase16.test.ts`), captura de avión/caja/aterrizaje offline.
 
 ## Fase 15.2 — correcciones de la auditoría (preparada, SIN publicar)
 
