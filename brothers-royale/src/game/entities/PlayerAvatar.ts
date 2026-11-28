@@ -3,6 +3,8 @@ import {
   Bone,
   type BufferGeometry,
   CircleGeometry,
+  CylinderGeometry,
+  IcosahedronGeometry,
   Float32BufferAttribute,
   Group,
   InstancedMesh,
@@ -19,7 +21,7 @@ import { PLAYER } from '@shared/constants';
 import { damp, wrapAngle } from '@shared/math';
 import type { Locomotion, PlayerState } from '@shared/types';
 import { unpackGear, type Gear } from '@shared/combat/gear';
-import { box, merge } from '../world/geometry';
+import { box, merge, paint, transform } from '../world/geometry';
 
 export interface AvatarColors {
   shirt: string;
@@ -96,24 +98,45 @@ export function avatarGeometry(colors: AvatarColors): BufferGeometry {
   const key = `${colors.shirt}|${colors.pants}|${colors.skin}|${colors.hair}`;
   const cached = geometryCache.get(key);
   if (cached) return cached;
-  const torsoY = 0.8; // cadera
+  // Fase 15: personaje low poly propio menos cuadrado (cilindros de 7 lados y cabeza
+  // facetada) con las MISMAS alturas, huesos y anchura: hitbox, armas y animaciones intactas.
+  const cyl = (rt: number, rb: number, h: number, color: string, x: number, y: number, z = 0, sz = 1) => {
+    const g = paint(new CylinderGeometry(rt, rb, h, 7), color);
+    if (sz !== 1) g.scale(1, 1, sz);
+    return transform(g, x, y, z);
+  };
+  const ball = (r: number, color: string, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => {
+    const g = paint(new IcosahedronGeometry(r, 1), color);
+    g.scale(sx, sy, sz);
+    return transform(g, x, y, z);
+  };
   const parts = [
-    // Torso, cabeza, pelo, ojos y mochila → hueso "body"
-    bind(box(0.62, 0.7, 0.36, colors.shirt, 0, torsoY + 0.35, 0), BONE.body),
-    bind(box(0.5, 0.48, 0.46, colors.skin, 0, torsoY + 0.96, 0), BONE.body),
-    bind(box(0.54, 0.16, 0.5, colors.hair, 0, torsoY + 1.24, -0.02), BONE.body),
-    bind(box(0.54, 0.3, 0.12, colors.hair, 0, torsoY + 1.06, -0.21), BONE.body),
-    bind(box(0.08, 0.08, 0.02, '#1d1d1d', -0.12, torsoY + 1.0, 0.235), BONE.body),
-    bind(box(0.08, 0.08, 0.02, '#1d1d1d', 0.12, torsoY + 1.0, 0.235), BONE.body),
-    bind(box(0.46, 0.5, 0.2, '#4c8c4a', 0, torsoY + 0.35, -0.27), BONE.body),
+    // Cadera, torso (más ancho en los hombros), hombros, cuello, cabeza, pelo, rostro y mochila → "body"
+    bind(cyl(0.2, 0.21, 0.2, colors.pants, 0, 0.84, 0, 0.75), BONE.body),
+    bind(cyl(0.29, 0.22, 0.62, colors.shirt, 0, 1.14, 0, 0.66), BONE.body),
+    bind(ball(0.11, colors.shirt, -0.3, 1.4, 0, 1, 0.8, 1), BONE.body),
+    bind(ball(0.11, colors.shirt, 0.3, 1.4, 0, 1, 0.8, 1), BONE.body),
+    bind(cyl(0.075, 0.085, 0.14, colors.skin, 0, 1.5, 0), BONE.body),
+    bind(ball(0.24, colors.skin, 0, 1.73, 0.01, 0.95, 1.05, 0.95), BONE.body),
+    bind(ball(0.25, colors.hair, 0, 1.82, -0.03, 1, 0.62, 1), BONE.body),
+    bind(box(0.4, 0.22, 0.08, colors.hair, 0, 1.73, -0.19), BONE.body),
+    bind(box(0.07, 0.07, 0.02, '#1d1d1d', -0.09, 1.75, 0.225), BONE.body),
+    bind(box(0.07, 0.07, 0.02, '#1d1d1d', 0.09, 1.75, 0.225), BONE.body),
+    bind(box(0.05, 0.07, 0.05, colors.skin, 0, 1.69, 0.235), BONE.body),
+    bind(box(0.12, 0.025, 0.02, '#8a4b3a', 0, 1.62, 0.22), BONE.body),
+    bind(box(0.4, 0.46, 0.18, '#4c8c4a', 0, 1.16, -0.24), BONE.body),
+    bind(box(0.42, 0.08, 0.2, '#3a6f39', 0, 1.4, -0.24), BONE.body),
   ];
-  // Brazos (hombro en y = 1,45) y piernas (cadera en y = 0,8)
+  // Brazos (hombro en y = 1,45): brazo, antebrazo y mano. Piernas (cadera en y = 0,8): muslo, pierna y calzado.
   for (const [sx, bone] of [[-1, BONE.armL], [1, BONE.armR]] as const) {
-    parts.push(bind(box(0.18, 0.55, 0.2, colors.shirt, sx * 0.41, 1.45 - 0.27, 0), bone));
-    parts.push(bind(box(0.16, 0.16, 0.18, colors.skin, sx * 0.41, 1.45 - 0.62, 0), bone));
+    parts.push(bind(cyl(0.08, 0.07, 0.32, colors.shirt, sx * 0.39, 1.45 - 0.17), bone));
+    parts.push(bind(cyl(0.065, 0.058, 0.26, colors.skin, sx * 0.41, 1.45 - 0.45), bone));
+    parts.push(bind(ball(0.07, colors.skin, sx * 0.41, 1.45 - 0.62, 0.01, 0.9, 1, 1.1), bone));
   }
   for (const [sx, bone] of [[-1, BONE.legL], [1, BONE.legR]] as const) {
-    parts.push(bind(box(0.24, 0.8, 0.28, colors.pants, sx * 0.15, 0.4, 0), bone));
+    parts.push(bind(cyl(0.11, 0.09, 0.42, colors.pants, sx * 0.13, 0.58), bone));
+    parts.push(bind(cyl(0.09, 0.075, 0.38, colors.pants, sx * 0.13, 0.2), bone));
+    parts.push(bind(box(0.15, 0.09, 0.27, '#2a2a33', sx * 0.13, 0.045, 0.04), bone));
   }
   const geo = merge(parts);
   geometryCache.set(key, geo);

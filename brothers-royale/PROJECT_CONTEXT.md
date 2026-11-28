@@ -19,7 +19,7 @@ y seguir por el primer bloque PENDIENTE.
 | 15.2 H1/H7/H16/H17 | HECHO (ver abajo) |
 | 15.3 Construcción | HECHO (protocolo v11) |
 | 15.4 Terreno/zonas/vegetación | HECHO |
-| 15.5 Personajes/armas/paracaídas | PENDIENTE |
+| 15.5 Personajes/armas/paracaídas | HECHO (armas: solo cámara de apuntado) |
 | 15.6 Animaciones/agacharse | PENDIENTE |
 | 15.7 Botín/HUD/tormenta | PENDIENTE |
 | 15.8 Integración y preparación de publicación | PENDIENTE |
@@ -55,6 +55,13 @@ Pendiente menor: botón táctil de giro (no añadido para no saturar el HUD).
 2,3 m y copas elevadas, 24 rocas de cobertura con colisión (cliente = servidor; zombis y aparición las evitan),
 48 arbustos visuales, caminos de tierra del pueblo a cada casa y tinte/variación por cara del terreno (solo color).
 Aparición despejada. Pruebas en `tests/phase15.test.ts`.
+
+**15.5** (`PlayerAvatar.ts`, `CameraController.ts`, `AirView.ts`, `Game.ts`): personaje low poly propio menos cuadrado
+(cilindros de 7 lados, cabeza facetada, cuello, hombros, manos y calzado) con las mismas alturas, huesos y
+anchura (hitbox, armas en mano y animaciones intactas; 1 SkinnedMesh, material compartido). 3ª persona: al apuntar
+la cámara se aparta más del hombro (×2,4). Paracaídas propio más pequeño y alto (iso 0,45, 3ª 0,7, 1ª oculto) y
+cámara isométrica centrada en el suelo durante la caída. Velocidades y reglas de la fase 14 sin cambios.
+Armas: no se rediseñaron modelos (pendiente; se priorizó estabilidad).
 
 Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
 izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.

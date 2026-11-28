@@ -832,6 +832,11 @@ export class Game {
         p = this.airFocus.set(pose.x, iso && this.layout ? terrainHeight(pose.x, pose.z, this.layout.terrain) : pose.y - 5, pose.z);
       }
     }
+    // Fase 15: cayendo o con paracaídas en isométrica, la cámara se centra en el suelo bajo el
+    // jugador (se ve dónde se va a aterrizar en lugar del cielo).
+    if (!spectator && (myAir === 2 || myAir === 3) && (!cameras || cameras.mode === 'isometric') && this.layout) {
+      p = this.airFocus.set(p.x, Math.max(terrainHeight(p.x, p.z, this.layout.terrain), p.y - 6), p.z);
+    }
     this.stormView?.update(battle?.phase === 'running' ? battle.zone.current : null, dt, !!battle && battle.phase === 'running' && !contains(battle.zone.current, p));
     const opticalItem = this.session?.match.inventory?.slots[this.session.match.inventory.selected];
     const optic: 1|2|4 = opticalItem?.kind === 'sniper' ? 4 : opticalItem?.scope === 'x2' ? 2 : 1;
@@ -869,7 +874,8 @@ export class Game {
       // Dentro del avión no se ve al jugador; con el paracaídas abierto, la cúpula encima.
       air.beginChutes();
       if (myAir === 1) avatar.root.visible = false;
-      else if (myAir === 3) air.addChute(avatar.position.x, avatar.position.y, avatar.position.z, 0);
+      // Propio: 1ª persona sin cúpula (la cámara estaría dentro); 3ª más pequeña; isométrica mínima.
+      else if (myAir === 3) air.addChute(avatar.position.x, avatar.position.y, avatar.position.z, 0, !cameras || cameras.mode === 'isometric' ? 0.45 : cameras.mode === 'third' ? 0.7 : 0);
       if (running) for (const [id, remote] of this.remotes) {
         const a = this.airPlayer(battle, id)?.air ?? 0;
         if (a === 1) remote.root.visible = false;

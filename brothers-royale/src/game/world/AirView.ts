@@ -49,6 +49,7 @@ export class AirView {
   private readonly q = new Quaternion();
   private readonly v = new Vector3();
   private readonly s = new Vector3(1, 1, 1);
+  private readonly s2 = new Vector3(1, 1, 1);
   private readonly up = new Vector3(0, 1, 0);
   private chuteCount = 0;
   private spin = 0;
@@ -95,11 +96,13 @@ export class AirView {
 
   beginChutes(): void { this.chuteCount = 0; }
   /** Un paracaídas abierto sobre el jugador en (x, y, z) (pies). */
-  addChute(x: number, y: number, z: number, yaw: number): void {
-    if (this.chuteCount >= MAX_CHUTES) return;
+  addChute(x: number, y: number, z: number, yaw: number, scale = 1): void {
+    if (this.chuteCount >= MAX_CHUTES || scale <= 0) return;
     this.q.setFromAxisAngle(this.up, yaw);
-    this.v.set(x, y + 4.2, z);
-    this.m.compose(this.v, this.q, this.s);
+    // Fase 15: el propio, más pequeño y más alto (no tapa el terreno ni la elección de aterrizaje).
+    this.v.set(x, y + 4.2 + (1 - scale) * 2.5, z);
+    this.s2.setScalar(scale);
+    this.m.compose(this.v, this.q, this.s2);
     this.chutes.setMatrixAt(this.chuteCount++, this.m);
   }
   endChutes(): void {

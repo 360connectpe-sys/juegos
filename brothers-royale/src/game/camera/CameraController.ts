@@ -139,7 +139,8 @@ export class CameraController {
     // 3ª persona: sobre el hombro derecho, detrás y elevada según la inclinación.
     const f = forwardFromYaw(this.look.yaw);
     // Al apuntar, la cámara se separa más del hombro para no tapar la mira con el personaje.
-    const offset = CAMERA_RIG.shoulderOffset * (1 + Math.min(1, (1 - this.zoomK) / (1 - CAMERA_RIG.aimZoom)) * 0.7);
+    // Fase 15: al apuntar la cámara se aparta más del hombro (×2,4): el personaje no tapa el objetivo.
+    const offset = CAMERA_RIG.shoulderOffset * (1 + Math.min(1, (1 - this.zoomK) / (1 - CAMERA_RIG.aimZoom)) * 1.4);
     const shoulder = { x: head.x - f.y * offset, y: head.y, z: head.z + f.x * offset };
     const d = thirdPersonDirection(this.look.yaw, this.look.pitch);
     const target = this.tmp.set(shoulder.x + d.x * this.desiredDistance, shoulder.y + d.y * this.desiredDistance, shoulder.z + d.z * this.desiredDistance);
