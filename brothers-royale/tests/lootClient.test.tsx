@@ -120,7 +120,8 @@ describe('HUD de inventario y botón Abrir/Recoger', () => {
     expect(screen.getByRole('button', { name: 'Hueco 1: Hacha' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: 'Hueco 2: Escopeta épica' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Hueco 3: Botiquín ×2' }).textContent).toContain('2');
-    expect(screen.getByLabelText('Munición').textContent).toContain('Cartuchos 12');
+    // Fase 14: la munición se muestra por casilla (cargador / reserva).
+    expect(screen.getByLabelText(/^Munición \d+ \/ 12$/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Hueco 4: vacío' }));
     expect(onSelect).toHaveBeenCalledWith(3);
   });

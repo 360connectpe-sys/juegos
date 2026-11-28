@@ -16,7 +16,7 @@ import { Engine } from '@/engine/Engine';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
 import { Lighting } from '@/engine/Lighting';
 import type { ContextStatus } from '@/engine/ContextLossMonitor';
-import { buildQuality, saveQuality, type QualitySettings, type QualityTier } from '@/engine/quality';
+import { buildQuality, loadSavedQuality, saveQuality, type QualitySettings, type QualityTier } from '@/engine/quality';
 import type { GameSession } from '@/net/GameSession';
 import { OfflineSession } from '@/net/OfflineSession';
 // Solo tipos: el SDK de Colyseus se descarga cuando el jugador pide jugar en línea.
@@ -141,6 +141,7 @@ export class Game {
   private stormView: StormView | null = null;
   private airView: AirView | null = null;
   private zombieView: ZombieView | null = null;
+  private wasAloft = false;
   private zombieSeen: readonly PublicZombie[] | null = null;
   private readonly zombieAnim = new Map<number, number>();
   /** Zombi al que se apunta (número) para la barra de salud. */
@@ -220,6 +221,9 @@ export class Game {
     private readonly isTouch = initialDevice === 'touch',
   ) {
     this.engine = new Engine(canvas, quality);
+    // Fase 15: si Normal no rinde ni con la resolución mínima, pasa a Baja (solo si el
+    // jugador no eligió calidad a mano; podrá volver a Normal en Ajustes).
+    this.engine.onSlowDevice = () => { if (loadSavedQuality() === null) this.setQuality('low'); };
     this.engine.onContextChange = (s) => this.events.emit('graphics', s);
     this.blobs.visible = quality.blobShadows;
     this.engine.scene.add(this.blobs.mesh);
@@ -347,6 +351,24 @@ export class Game {
     scene.add(this.chestView.body, this.chestView.lid);
     for (const m of Object.values(this.pickupView.meshes)) scene.add(m);
     this.shadowCasters.push(...trees.children);
+    this.precompileShaders();
+  }
+
+  /**
+   * Fase 15: compila de antemano los programas de lo que aún está oculto (avión, paracaídas,
+   * zombis, tormenta, objetos) para evitar tirones la primera vez que aparecen.
+   */
+  private precompileShaders(): void {
+    const r = this.engine.renderer as unknown as { compileAsync?: (s: unknown, c: unknown) => Promise<unknown>; compile: (s: unknown, c: unknown) => unknown };
+    const hidden = [this.airView?.planes, this.airView?.chutes, this.zombieView?.mesh, this.stormView?.mesh, ...Object.values(this.pickupView.meshes)]
+      .filter((m): m is NonNullable<typeof m> => !!m && !m.visible);
+    for (const m of hidden) m.visible = true;
+    const restore = () => { for (const m of hidden) m.visible = false; };
+    try {
+      const p = r.compileAsync ? r.compileAsync(this.engine.scene, this.engine.activeCamera) : (r.compile(this.engine.scene, this.engine.activeCamera), null);
+      restore();
+      void p?.catch(() => undefined);
+    } catch { restore(); }
   }
 
   private step(dt: number): void {
@@ -754,10 +776,13 @@ export class Game {
     const cam = cameras ? cameras.camera : this.engine.iso.camera;
     this.projScreen.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projScreen);
+    // Fase 15: además, los lejanos (> 45 m) no recalculan la animación (solo se mueven).
+    const me0 = avatar.position;
     for (const r of this.remotes.values()) {
       this.cullSphere.set(r.position, 1.5);
       this.cullSphere.center.y += 1;
-      r.render(alpha, dt, this.frustum.intersectsSphere(this.cullSphere));
+      const far = (r.position.x - me0.x) ** 2 + (r.position.z - me0.z) ** 2 > 45 * 45;
+      r.render(alpha, dt, !far && this.frustum.intersectsSphere(this.cullSphere));
     }
     if (this.quality.blobShadows) this.blobs.update(this.allAvatars());
     const battle = this.session?.battle;
@@ -837,9 +862,14 @@ export class Game {
     }
     // El "corte" de techos y paredes es propio de la vista isométrica.
     const cutaway = !cameras || cameras.mode === 'isometric';
-    for (const s of this.structures) s.update(p.x, p.y, p.z, dt, cutaway);
-    this.chestView?.update(dt);
-    this.pickupView.animate(dt);
+    // Fase 15 (LOD desde el aire): en el avión o descendiendo no se ven cofres ni objetos del
+    // suelo (2-4 draw calls menos) ni se recalcula el corte de techos e interiores.
+    const aloft = myAir !== 0 && !spectator;
+    if (!aloft || this.wasAloft !== aloft) for (const s of this.structures) s.update(p.x, p.y, p.z, dt, cutaway && !aloft);
+    this.wasAloft = aloft;
+    if (this.chestView) { this.chestView.body.visible = this.chestView.lid.visible = !aloft; if (!aloft) this.chestView.update(dt); }
+    for (const m of Object.values(this.pickupView.meshes)) m.visible = !aloft && m.count > 0;
+    if (!aloft) this.pickupView.animate(dt);
     this.placeHeldItems(dt);
     this.fx.update(dt);
 

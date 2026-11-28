@@ -213,7 +213,8 @@ describe('fase 12: límite de quince minutos y desempate', () => {
   });
   it('las reapariciones no alargan la partida: termina a los 15 min aunque alguien esté esperando', () => {
     const w = setup(2); w.round.start();
-    w.step(ROUND_SECONDS - 2);
+    // Los dos siguen al centro de la zona (sin morir por la tormenta antes del límite).
+    for (let t = 0; t < ROUND_SECONDS - 2; t++) { const c = w.round.zone.current; for (const a of w.actors) { a.feet.x = c.x; a.feet.z = c.z; } w.step(1); }
     w.combat.environmentalDamage('p0', 100, w.actors[0]!.feet, 1);
     w.step(3);
     expect(w.round.phase).toBe('finished'); expect(w.round.snapshot().result!.elapsed).toBe(ROUND_SECONDS);

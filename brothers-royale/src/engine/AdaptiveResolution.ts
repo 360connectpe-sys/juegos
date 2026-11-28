@@ -56,12 +56,14 @@ export class AdaptiveResolution {
   private windowsSinceChange = 0;
   private fastestFrame = Infinity;
   lastFps = 0;
+  /** Ventanas de medida completadas (para observar el rendimiento real). */
+  windows = 0;
   lastP90Ms = 0;
   refreshHz = 60;
 
   constructor(private opts: AdaptiveOptions) {
     this.current = opts.max;
-    this.step = opts.step ?? 0.1;
+    this.step = opts.step ?? 0.08;
     this.window = opts.window ?? 1.5;
   }
 
@@ -110,6 +112,7 @@ export class AdaptiveResolution {
     this.refreshHz = estimateRefreshHz(this.fastestFrame);
     this.lastFps = this.samples.length / this.elapsed;
     this.lastP90Ms = p90 * 1000;
+    this.windows++;
     this.samples = [];
     this.elapsed = 0;
 
@@ -127,7 +130,8 @@ export class AdaptiveResolution {
         next = this.probeFrom;
       } else {
         this.badStreak++;
-        const k = Math.min(1 + (this.badStreak - 1) * 0.5, 2.5);
+        // Fase 15: pasos más suaves (máx. ×2) para evitar cambios bruscos de nitidez.
+        const k = Math.min(1 + (this.badStreak - 1) * 0.5, 2);
         next = this.current - this.step * k;
       }
     } else {

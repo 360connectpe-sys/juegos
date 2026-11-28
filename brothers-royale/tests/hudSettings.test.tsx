@@ -153,7 +153,8 @@ describe('editor visual del HUD', () => {
     safe.getBoundingClientRect = () => rect as DOMRect;
     const grab = screen.getByRole('button', { name: 'Mover Minimapa' });
     fireEvent.pointerDown(grab, { pointerId: 1, clientX: 500, clientY: 250 });
-    fireEvent.pointerMove(safe, { pointerId: 1, clientX: 400, clientY: 300 });
+    // Fase 14: el minimapa está arriba a la izquierda; se arrastra hacia dentro (+x, +y).
+    fireEvent.pointerMove(safe, { pointerId: 1, clientX: 600, clientY: 300 });
     fireEvent.pointerUp(safe, { pointerId: 1 });
     fireEvent.change(screen.getByLabelText(/Tamaño/), { target: { value: '1.4' } });
     fireEvent.change(screen.getByLabelText(/Opacidad/), { target: { value: '0.5' } });
@@ -161,7 +162,7 @@ describe('editor visual del HUD', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     const saved = onSave.mock.calls[0]![0];
     const def = defaultHudLayout().minimap;
-    expect(saved.minimap.x).toBeCloseTo(def.x - 0.1);
+    expect(saved.minimap.x).toBeCloseTo(def.x + 0.1);
     expect(saved.minimap.y).toBeCloseTo(def.y + 0.1);
     expect(saved.minimap.scale).toBe(1.4);
     expect(saved.minimap.opacity).toBe(0.5);

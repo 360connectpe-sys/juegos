@@ -16,7 +16,7 @@ import {
 import { AdaptiveResolution } from './AdaptiveResolution';
 import { ContextLossMonitor, type ContextStatus } from './ContextLossMonitor';
 import { IsometricCamera } from './IsometricCamera';
-import type { QualitySettings } from './quality';
+import { PerformanceGovernor, type QualitySettings } from './quality';
 
 export interface FrameInfo {
   fps: number;
@@ -46,6 +46,9 @@ export class Engine {
   readonly iso: IsometricCamera;
   private readonly timer = new Timer();
   private readonly adaptive: AdaptiveResolution;
+  private readonly governor = new PerformanceGovernor();
+  /** Fase 15: el dispositivo no alcanza el objetivo en Normal ni con la resolución mínima. */
+  onSlowDevice: (() => void) | null = null;
   private readonly contextMonitor: ContextLossMonitor;
   private rafId = 0;
   private running = false;
@@ -160,11 +163,13 @@ export class Engine {
     // La simulación sigue aunque no haya contexto (la partida en línea no se corta).
     this.onFrame?.(dt);
     if (!this.contextMonitor.lost) {
+      const windows = this.adaptive.windows;
       const newRatio = this.adaptive.update(dt);
       if (newRatio !== null) {
         this.renderer.setPixelRatio(newRatio);
         this.resize();
       }
+      if (this.adaptive.windows !== windows && this.governor.feed(this.quality.tier, this.adaptive.lastP90Ms, this.adaptive.targetFps, this.renderer.getPixelRatio(), this.quality.minPixelRatio)) this.onSlowDevice?.();
       if (this.quality.shadows && this.frameCount % this.quality.shadowUpdateInterval === 0) {
         this.renderer.shadowMap.needsUpdate = true;
       }

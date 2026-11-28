@@ -56,7 +56,7 @@ describe('mapa ampliado', () => {
 describe('objetos e inventario', () => {
   it('sin escudos; armas, munición, botiquines y el hacha', () => {
     expect(ITEM_KINDS.some((k) => k.includes('shield') || k.includes('escudo'))).toBe(false);
-    expect(new Set(ITEM_KINDS.map((k) => ITEMS[k].category))).toEqual(new Set(['tool', 'weapon', 'ammo', 'heal']));
+    expect(new Set(ITEM_KINDS.map((k) => ITEMS[k].category))).toEqual(new Set(['tool', 'weapon', 'ammo', 'heal', 'attachment'])); // fase 14: mira x2
     expect(itemName({ kind: 'shotgun', qty: 1, rarity: 'epic' })).toBe('Escopeta épica');
   });
   it('5 huecos con el hacha permanente en el primero', () => {
@@ -102,7 +102,7 @@ describe('botín', () => {
       const weapon = loot[0]!;
       expect(ITEMS[weapon.kind].category).toBe('weapon');
       expect(loot[1]!.kind).toBe(ITEMS[weapon.kind].ammo);
-      for (const it of loot) expect(['weapon', 'ammo', 'heal']).toContain(ITEMS[it.kind].category);
+      for (const it of loot) expect(['weapon', 'ammo', 'heal', 'attachment']).toContain(ITEMS[it.kind].category);
     }
   });
 });

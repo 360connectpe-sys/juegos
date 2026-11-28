@@ -54,24 +54,26 @@ export function buildQuality(tier: QualityTier | LegacyQualityTier, devicePixelR
     return {
       tier: 'low',
       pixelRatio: Math.min(dpr, 1),
-      minPixelRatio: 0.5,
+      // Fase 15: suelo más alto (0,6) para limitar la pixelación al bajar resolución.
+      minPixelRatio: 0.6,
       antialias: false,
+      // Fase 15: sin sombras en ninguna calidad (ni mapa de sombras ni manchas).
       shadows: false,
       shadowMapSize: 0,
       shadowUpdateInterval: 1,
-      blobShadows: true,
+      blobShadows: false,
     };
   }
   return {
     tier: 'normal',
     // En móvil 1,5 basta para pantallas de 3x; en escritorio hasta 2 (sin MSAA).
     pixelRatio: Math.min(dpr, isTouch ? 1.5 : 2),
-    minPixelRatio: 0.7,
+    minPixelRatio: 0.75,
     antialias: false,
-    shadows: true,
-    shadowMapSize: 1024,
-    // En móvil las sombras se re-dibujan cada 2 frames (casi imperceptible, mitad de coste).
-    shadowUpdateInterval: isTouch ? 2 : 1,
+    // Fase 15: Normal tampoco dibuja sombras (rendimiento, batería y calor).
+    shadows: false,
+    shadowMapSize: 0,
+    shadowUpdateInterval: 1,
     blobShadows: false,
   };
 }
@@ -117,4 +119,26 @@ export function saveQuality(t: QualityTier): void {
   } catch {
     /* sin almacenamiento: se usa la detección automática */
   }
+}
+
+/**
+ * Fase 15: capacidad por rendimiento REAL (no solo núcleos). Recibe cada ventana de la
+ * resolución adaptativa; si en Normal la resolución ya está en su mínimo y aun así el
+ * percentil 90 queda muy lejos del objetivo durante varias ventanas seguidas, propone
+ * bajar a Baja (una sola vez). Nunca sube sola: igualdad competitiva y sin oscilaciones.
+ */
+export class PerformanceGovernor {
+  private bad = 0;
+  private decided = false;
+  constructor(private readonly windowsNeeded = 4) {}
+  /** Devuelve true cuando conviene pasar a Baja. */
+  feed(tier: QualityTier, p90Ms: number, targetFps: number, pixelRatio: number, minPixelRatio: number): boolean {
+    if (this.decided || tier !== 'normal' || !(p90Ms > 0)) return false;
+    const atMin = pixelRatio <= minPixelRatio + 1e-6;
+    const slow = p90Ms > (1000 / targetFps) * 1.45;
+    this.bad = atMin && slow ? this.bad + 1 : 0;
+    if (this.bad >= this.windowsNeeded) { this.decided = true; return true; }
+    return false;
+  }
+  reset(): void { this.bad = 0; }
 }

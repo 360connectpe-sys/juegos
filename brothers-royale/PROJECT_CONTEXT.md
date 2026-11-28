@@ -5,6 +5,34 @@ Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora deta
 Estado a 28 de noviembre de 2026: fase 14 autorizada para desarrollo y beta; despliegue público pendiente de verificación externa.
 
 
+## Checkpoint fase 15 (optimización, rediseño, construcción y estabilidad) — actualizar en cada bloque
+
+Base: `ce5c450` (fases 13 y 14 de Codex, protocolo v10). Checkpoints en `claude/brothers-royale-setup-x3gvn0`;
+`brothers-royale-phase-3.1` (Render auto-deploy) y `brothers-royale-beta-pages` SOLO tras confirmar con el usuario que
+no hay partidas activas. Reanudación programada 2026-11-28 08:15 UTC (3:15 a. m. Perú). Manual:
+`git fetch origin claude/brothers-royale-setup-x3gvn0 && git merge --ff-only FETCH_HEAD && cd brothers-royale && npm ci && npm run check`
+y seguir por el primer bloque PENDIENTE.
+
+| Bloque | Estado |
+|---|---|
+| 15.1 Optimización | HECHO (ver abajo) |
+| 15.2 H1/H7/H16/H17 | PENDIENTE |
+| 15.3 Construcción | PENDIENTE |
+| 15.4 Terreno/zonas/vegetación | PENDIENTE |
+| 15.5 Personajes/armas/paracaídas | PENDIENTE |
+| 15.6 Animaciones/agacharse | PENDIENTE |
+| 15.7 Botín/HUD/tormenta | PENDIENTE |
+| 15.8 Integración y preparación de publicación | PENDIENTE |
+
+**15.1** (`quality.ts`, `AdaptiveResolution.ts`, `Engine.ts`, `Game.ts`): sin sombras ni manchas en Baja y Normal;
+resolución adaptativa con pasos más suaves (0,08, máx. ×2) y suelos 0,6/0,75; `PerformanceGovernor`: si Normal no
+llega al objetivo con la resolución mínima 4 ventanas seguidas pasa a Baja (solo sin elección manual); LOD aéreo
+(sin cofres/objetos ni recorte de techos en avión/caída/paracaídas); remotos a > 45 m sin recalcular animación;
+precompilación de shaders de lo oculto (avión, paracaídas, zombis, tormenta, objetos). Medido (Chromium swiftshader,
+práctica offline 1280×720, NO dispositivo): Normal 20 → 12 draw calls, 33 k → 21 k triángulos; Baja 13 → 12.
+Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
+izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.
+
 ## Fase 14 — publicación autorizada (2026-11-28)
 
 Base de desarrollo sincronizada: `2882118` (PWA fase 13). Trabajo aislado de los cambios

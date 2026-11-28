@@ -39,8 +39,11 @@ describe('calidades Baja y Normal', () => {
     expect(buildQuality('low', 0, true).pixelRatio).toBe(1);
     expect(detectQuality({ devicePixelRatio: 2, isTouch: true, shortSide: 390, hardwareConcurrency: 8 }).antialias).toBe(false);
     expect(buildQuality('low', 2).shadows).toBe(false);
-    expect(buildQuality('low', 2).blobShadows).toBe(true);
-    expect(buildQuality('normal', 2, true).shadowUpdateInterval).toBe(2);
+    // Fase 15: sin sombras de ningún tipo en ninguna calidad.
+    for (const t of ['low', 'normal'] as const) for (const touch of [true, false]) {
+      const q = buildQuality(t, 2, touch);
+      expect([q.shadows, q.blobShadows, q.shadowMapSize]).toEqual([false, false, 0]);
+    }
   });
 });
 
