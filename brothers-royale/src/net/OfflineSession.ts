@@ -1,3 +1,4 @@
+import { unpackZombies, ZombieDirector, type PublicZombie } from '@/physics/ZombieDirector';
 import { BattleRound } from '@shared/battle/BattleRound';
 import { DEFAULT_MODIFIERS } from '@shared/movement';
 import { WORLD } from '@shared/constants';
@@ -83,6 +84,7 @@ export class OfflineSession implements GameSession {
         for (const [i, dummy] of [...this.dummies.values()].entries()) {
           dummy.state.position = { ...dummies[i]! }; dummy.state.velocity = { x: 0, y: 0, z: 0 }; dummy.state.grounded = true; dummy.state.gear = 0;
         }
+        this.zombieDirector?.reset();
         this.local.modifiers = { ...DEFAULT_MODIFIERS }; this.local.teleport(this.spawn);
         this.onMatchEvent?.({ type: 'reset' });
       },
@@ -98,6 +100,13 @@ export class OfflineSession implements GameSession {
       flies: id => !this.dummies.has(id),
     }, false);
     this.round.holdResults=true;
+    // Fase 12: zombis también sin conexión (misma autoridad que el servidor).
+    this.zombieDirector = building ? new ZombieDirector({
+      physics, layout: building.layout, combat: this.fight, round: this.round,
+      players: () => [{ id: this.localPlayerId, feet: this.local.state.position }],
+      drop: (item, at) => this.state.dropLoot(item, at),
+      giveWood: (id, n) => { building.state.giveWood(id, n); },
+    }, matchSeed) : null;
     if(building){building.state.onHarvest=(id,n)=>this.round.harvest(id,n);building.state.onBuild=id=>this.round.built(id);}
     this.fight.onRespawn = id => this.round.respawn(id);
     this.fight.drain();
@@ -177,6 +186,20 @@ export class OfflineSession implements GameSession {
   private *targets(): Generator<TargetPose> {
     yield { id: this.localPlayerId, feet: this.local.state.position };
     for (const [id, d] of this.dummies) yield { id, feet: d.state.position };
+    if (this.zombieDirector) yield* this.zombieDirector.poses();
+  }
+
+  private readonly zombieDirector: ZombieDirector | null;
+  private zombieCache: { tick: number; list: readonly PublicZombie[] } = { tick: -1, list: [] };
+  zombies(): readonly PublicZombie[] {
+    const d = this.zombieDirector;
+    if (!d || !d.zombies.size) return [];
+    if (this.zombieCache.tick !== this.tickCount) {
+      const packed: number[] = [];
+      d.pack(packed);
+      this.zombieCache = { tick: this.tickCount, list: unpackZombies(packed) };
+    }
+    return this.zombieCache.list;
   }
 
   tick(input: PlayerInput, dt: number): void {
@@ -225,6 +248,7 @@ export class OfflineSession implements GameSession {
       d.state.gear = this.fight.gear(id);
     }
     this.local.state.gear = this.fight.gear(this.localPlayerId);
+    this.zombieDirector?.step(dt, this.tickCount);
     this.round.after(dt, this.tickCount);
     this.tickCount++;
     this.flush();
@@ -262,6 +286,7 @@ export class OfflineSession implements GameSession {
   }
 
   dispose(): void {
+    this.zombieDirector?.reset();
     this.local.dispose();
   }
 }

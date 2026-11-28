@@ -1,3 +1,4 @@
+import type { PublicZombie } from '@/physics/ZombieDirector';
 import type { Profile } from '@shared/lobby/profile';
 import type { LobbySnapshot } from '@shared/lobby/LobbyState';
 import type { RoundSnapshot } from '@shared/battle/BattleRound';
@@ -52,5 +53,7 @@ export interface GameSession {
   readonly combat: CombatView;
   /** Disparos, daño, bajas y salud (para FX, sonido y HUD). */
   onCombatEvent: ((e: ClientCombatEvent) => void) | null;
+  /** Fase 12: zombis visibles (lo decide la autoridad). */
+  zombies?(): readonly PublicZombie[];
   dispose(): void;
 }

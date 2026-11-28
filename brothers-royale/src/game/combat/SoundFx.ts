@@ -7,7 +7,7 @@
  */
 import type { WeaponKind } from '@shared/items';
 
-export type SoundName = WeaponKind | 'axe' | 'hit' | 'kill' | 'hurt' | 'reload' | 'empty' | 'heal' | 'impact';
+export type SoundName = WeaponKind | 'axe' | 'hit' | 'kill' | 'hurt' | 'reload' | 'empty' | 'heal' | 'impact' | 'zombie';
 
 interface Voice {
   end: number;
@@ -27,6 +27,8 @@ const PRESETS: Record<SoundName, { noise: number; tone: number; freq: number; fi
   reload: { noise: 0.4, tone: 0.5, freq: 520, filter: 3000, decay: 0.05, gain: 0.25 },
   empty: { noise: 0, tone: 1, freq: 900, filter: 0, decay: 0.03, gain: 0.2 },
   heal: { noise: 0, tone: 1, freq: 520, filter: 0, decay: 0.4, gain: 0.25 },
+  /** Fase 12: gruñido grave y corto del zombi (ataque o caída). */
+  zombie: { noise: 0.45, tone: 0.75, freq: 68, filter: 520, decay: 0.42, gain: 0.32 },
 };
 
 export class SoundFx {

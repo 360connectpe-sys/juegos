@@ -1487,3 +1487,6 @@ kbd {
 .battle-status .air-jump { pointer-events: auto; font-size: 18px; font-weight: 800; padding: 12px 28px; border-radius: 12px; background: #ffb000; color: #231f5c; border: 2px solid #fff; box-shadow: 0 4px 14px #0007; }
 .battle-status .air-jump:active { transform: scale(.96); }
 .battle-status .air-status { color: #ffe9a8; }
+/* Fase 12: barra de salud del zombi apuntado (DOM, sin draw calls). */
+.zbar { position: absolute; left: 0; top: 0; width: 46px; height: 6px; border-radius: 3px; background: #1d1b2bcc; border: 1px solid #000a; pointer-events: none; overflow: hidden; }
+.zbar__fill { height: 100%; width: 100%; background: linear-gradient(#9be15d, #4caf50); transition: width .12s linear; }

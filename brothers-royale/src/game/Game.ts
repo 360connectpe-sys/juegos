@@ -4,6 +4,9 @@ import { loadProfile } from './profile';
 import type { RoundSnapshot } from '@shared/battle/BattleRound';
 import { StormView } from './world/StormView';
 import { AirView } from './world/AirView';
+import { ZombieView } from './world/ZombieView';
+import { ZOMBIE_PREFIX, type PublicZombie } from '@/physics/ZombieDirector';
+import { ZOMBIE } from '@shared/zombies/zombieAi';
 import { contains } from '@shared/battle/zone';
 import { BuildingWorld } from '@/physics/BuildingWorld';
 import { BuildingView } from './world/BuildingView';
@@ -137,6 +140,11 @@ export class Game {
   private buildingView: BuildingView | null = null;
   private stormView: StormView | null = null;
   private airView: AirView | null = null;
+  private zombieView: ZombieView | null = null;
+  private zombieSeen: readonly PublicZombie[] | null = null;
+  private readonly zombieAnim = new Map<number, number>();
+  /** Zombi al que se apunta (número) para la barra de salud. */
+  private aimZombie: number | null = null;
   private readonly airFocus = new Vector3();
   private spectatedId: string | null = null;
   private buildOpen = false;
@@ -330,6 +338,7 @@ export class Game {
     scene.add(trees);
     this.stormView = new StormView(layout.terrain); scene.add(this.stormView.mesh);
     this.airView = new AirView(this.quality.shadows); scene.add(this.airView.planes, this.airView.chutes);
+    this.zombieView = new ZombieView(this.quality.shadows); scene.add(this.zombieView.mesh);
     this.buildingView = new BuildingView(layout.trees, trees);
     scene.add(this.buildingView.root);
     this.buildingView.setShadows(this.quality.shadows);
@@ -490,6 +499,11 @@ export class Game {
         const h = rayHitbox(origin, dir, st.position, t);
         if (h !== null) t = h;
       }
+      for (const z of session.zombies?.() ?? []) {
+        if (z.anim === 5) continue;
+        const h = rayHitbox(origin, dir, z, t);
+        if (h !== null) t = h;
+      }
       let dx = o.x + f.x * t - ex;
       let dy = o.y + f.y * t - ey;
       let dz = o.z + f.z * t - ez;
@@ -500,6 +514,7 @@ export class Game {
       }
       input.aimYaw = wrapAngle(Math.atan2(dx, dz));
       input.aimPitch = Math.max(-AIM_PITCH_LIMIT, Math.min(AIM_PITCH_LIMIT, Math.atan2(dy, Math.hypot(dx, dz))));
+      this.findAimedZombie(session, ex, ey, ez, input);
       return;
     }
     // Isométrica: sin apuntar se dispara hacia donde mira el personaje.
@@ -518,7 +533,34 @@ export class Game {
       best = off;
       pitch = Math.atan2(st.position.y + 1.0 - ey, dist);
     }
+    for (const z of session.zombies?.() ?? []) {
+      if (z.anim === 5) continue;
+      const dx = z.x - ex, dz = z.z - ez, dist = Math.hypot(dx, dz);
+      if (dist < 0.5 || dist > 50) continue;
+      const off = Math.abs(wrapAngle(Math.atan2(dx, dz) - input.aimYaw));
+      if (off >= best) continue;
+      best = off;
+      pitch = Math.atan2(z.y + 1.0 - ey, dist);
+    }
     input.aimPitch = Math.max(-AIM_PITCH_LIMIT, Math.min(AIM_PITCH_LIMIT, pitch));
+    this.findAimedZombie(session, ex, ey, ez, input);
+  }
+
+  /** Zombi en la línea de tiro (para mostrar su barra de salud); nunca decide impactos. */
+  private findAimedZombie(session: GameSession, ex: number, ey: number, ez: number, input: PlayerInput): void {
+    this.aimZombie = null;
+    const list = session.zombies?.() ?? [];
+    if (!list.length || this.vitals.dead) return;
+    const cp = Math.cos(input.aimPitch ?? 0);
+    const o = { x: ex, y: ey, z: ez }, d = { x: Math.sin(input.aimYaw) * cp, y: Math.sin(input.aimPitch ?? 0), z: Math.cos(input.aimYaw) * cp };
+    const wall = this.physics?.castStatic(o, d, 45) ?? 45;
+    let best = wall;
+    for (const z of list) {
+      if (z.anim === 5) continue;
+      // Hitbox algo más generosa en isométrica (apuntado asistido).
+      const h = rayHitbox(o, d, z, best) ?? rayHitbox({ x: o.x, y: z.y + 1.0, z: o.z }, { x: d.x / cp || d.x, y: 0, z: d.z / cp || d.z }, z, best);
+      if (h !== null && h < best) { best = h; this.aimZombie = z.num; }
+    }
   }
 
   /** Efectos inmediatos del ataque propio (predicción visual: el servidor decide si acierta). */
@@ -617,7 +659,9 @@ export class Game {
         }
         break;
       case 'death': {
-        const killer = e.weapon === 'storm' ? 'Tormenta' : e.weapon === 'fall' ? 'Caída' : e.killer === me ? 'Tú' : session.identity(e.killer).name;
+        // Fase 12: los zombis no salen en el registro de bajas (solo su sonido).
+        if (e.victim.startsWith(ZOMBIE_PREFIX)) { this.playAt('zombie', e.at); break; }
+        const killer = e.weapon === 'storm' ? 'Tormenta' : e.weapon === 'fall' ? 'Caída' : e.weapon === 'zombie' || e.killer.startsWith(ZOMBIE_PREFIX) ? 'Un zombi' : e.killer === me ? 'Tú' : session.identity(e.killer).name;
         const victim = e.victim === me ? 'ti' : session.identity(e.victim).name;
         this.events.emit('killfeed', { killer, victim, weapon: e.weapon, mine: e.killer === me, me: e.victim === me });
         if (e.victim === me) this.events.emit('eliminated', { by: e.killer === me ? 'ti mismo' : killer });
@@ -744,6 +788,24 @@ export class Game {
       avatar.root.visible = !spectator && !cameras.hideAvatar;
       for (const [id, remote] of this.remotes) remote.root.visible = !(spectator && id === this.spectatedId && cameras.mode === 'first');
       this.lighting.follow(cameras.focus);
+    }
+    const zv = this.zombieView;
+    if (zv) {
+      const list = this.session?.zombies?.() ?? [];
+      if (list !== this.zombieSeen) {
+        this.zombieSeen = list;
+        zv.sync(list);
+        // Gruñido al atacar o caer (con distancia y panorámica).
+        for (const z of list) {
+          const prev = this.zombieAnim.get(z.num);
+          if (prev !== z.anim && (z.anim === 3 || z.anim === 5)) this.playAt('zombie', z);
+          this.zombieAnim.set(z.num, z.anim);
+        }
+        if (this.zombieAnim.size > list.length) for (const num of [...this.zombieAnim.keys()]) if (!list.some(z => z.num === num)) this.zombieAnim.delete(num);
+      }
+      zv.update(dt);
+      const aimed = this.aimZombie !== null ? zv.list.get(this.aimZombie) : undefined;
+      this.overlay?.aimTarget(aimed && aimed.anim !== 5 ? aimed.pos : null, (aimed?.hp ?? 0) / ZOMBIE.hp);
     }
     if (air) {
       // Dentro del avión no se ve al jugador; con el paracaídas abierto, la cúpula encima.
@@ -1238,6 +1300,7 @@ export class Game {
     this.sound.dispose();
     this.stormView?.dispose();
     this.airView?.dispose();
+    this.zombieView?.dispose();
     this.buildingView?.dispose();
     this.engine.dispose();
     this.input.dispose();

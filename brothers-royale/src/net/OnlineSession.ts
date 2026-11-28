@@ -1,3 +1,4 @@
+import { unpackZombies, type PublicZombie } from '@/physics/ZombieDirector';
 import { validLobby, type LobbySnapshot } from '@shared/lobby/LobbyState';
 import { validProfile, type Profile } from '@shared/lobby/profile';
 import { newRoomCode } from '@/game/profile';
@@ -385,8 +386,12 @@ export class OnlineSession implements GameSession {
     if (typeof m?.tick !== 'number') return;
     const players = unpackPlayers(m.p).filter((p) => p.netId !== this.netId);
     this.interp.push(m.tick, players);
+    this.zombieList = m.z === undefined ? [] : unpackZombies(m.z);
     this.ticksSinceSnapshot = 0;
   }
+
+  private zombieList: readonly PublicZombie[] = [];
+  zombies(): readonly PublicZombie[] { return this.zombieList; }
 
   private onCorrection(m: CorrectionMessage): void {
     if (!m?.state || !Number.isSafeInteger(m.tick) || m.tick <= this.lastCorrectionTick || typeof m.state.lastProcessedSeq !== 'number') return;

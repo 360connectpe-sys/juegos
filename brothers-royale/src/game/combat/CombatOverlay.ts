@@ -27,6 +27,11 @@ export class CombatOverlay {
   private hitT = 0;
   private hurtT = 0;
   private readonly v = new Vector3();
+  /** Fase 12: barra de salud del zombi al que se apunta. */
+  private readonly bar: HTMLDivElement;
+  private readonly barFill: HTMLDivElement;
+  private readonly barAt = new Vector3();
+  private barOn = false;
 
   constructor(doc: Document = document) {
     this.root = doc.createElement('div');
@@ -43,7 +48,13 @@ export class CombatOverlay {
     }
     this.hitmarker = doc.createElement('div');
     this.hitmarker.className = 'hitmarker';
-    this.root.append(this.hurt, this.crosshair, this.hitmarker);
+    this.bar = doc.createElement('div');
+    this.bar.className = 'zbar';
+    this.bar.style.display = 'none';
+    this.barFill = doc.createElement('div');
+    this.barFill.className = 'zbar__fill';
+    this.bar.append(this.barFill);
+    this.root.append(this.hurt, this.crosshair, this.hitmarker, this.bar);
     for (let i = 0; i < CombatOverlay.MAX_MARKERS; i++) {
       const el = doc.createElement('span');
       el.className = 'dmg';
@@ -74,6 +85,14 @@ export class CombatOverlay {
     this.hitmarker.classList.toggle('hitmarker--kill', kill);
   }
 
+  /** Zombi apuntado (o null): barra de vida sobre su cabeza. */
+  aimTarget(at: Vec3 | null, fraction: number): void {
+    this.barOn = at !== null;
+    if (!at) { this.bar.style.display = 'none'; return; }
+    this.barAt.set(at.x, at.y + 2.15, at.z);
+    this.barFill.style.width = `${Math.round(Math.max(0, Math.min(1, fraction)) * 100)}%`;
+  }
+
   hurtFlash(): void {
     this.hurtT = 0.45;
   }
@@ -88,6 +107,12 @@ export class CombatOverlay {
     this.hitmarker.style.opacity = this.hitT > 0 ? String(Math.min(1, this.hitT * 8)) : '0';
     this.hurtT = Math.max(0, this.hurtT - dt);
     this.hurt.style.opacity = this.hurtT > 0 ? String(this.hurtT * 1.4) : '0';
+    if (this.barOn) {
+      this.v.copy(this.barAt).project(camera);
+      const show = this.v.z <= 1 && this.v.z >= -1;
+      this.bar.style.display = show ? '' : 'none';
+      if (show) this.bar.style.transform = `translate(${(((this.v.x + 1) / 2) * width).toFixed(1)}px, ${(((1 - this.v.y) / 2) * height).toFixed(1)}px) translate(-50%, -50%)`;
+    }
     for (const m of this.markers) {
       if (!m.live) continue;
       m.t += dt;
