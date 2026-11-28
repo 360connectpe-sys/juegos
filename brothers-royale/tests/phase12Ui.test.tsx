@@ -43,7 +43,7 @@ describe('fase 12: vistas ligeras (avión, paracaídas, zombis, barra de salud)'
   it('avión y paracaídas: como mucho 2 draw calls, posición según la ruta y el reloj de la ronda', () => {
     const a = new AirView(false);
     const route = startRoute(120, 4);
-    const snap = { round: 1, phase: 'running', elapsed: 2, countdown: 0, zone: zoneAt(zonePlan(120, 1), 2), players: [], result: null, planes: [route] } as RoundSnapshot;
+    const snap = { round: 1, phase: 'running', elapsed: 2, countdown: 0, zone: zoneAt(zonePlan(120, 1), 2), players: [], result: null, planes: [route], drops: [] } as RoundSnapshot;
     a.update(snap, 1 / 60);
     expect(a.planes.count).toBe(1);
     const p = a.planePose(0)!;

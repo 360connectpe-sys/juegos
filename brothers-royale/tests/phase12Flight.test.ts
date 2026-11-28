@@ -178,6 +178,7 @@ describe('fase 12: transporte autoritativo con 8 jugadores', () => {
       expect(w.round.airMode('p1')).toBe(1);
       expect(w.round.airMode('p0')).toBe(0);
       const snap = w.round.snapshot();
+      snap.planes = snap.planes.filter((q) => !q.supply); // fase 16: sin contar aviones de carga
       expect(snap.planes).toHaveLength(1);
       expect(validRound(snap)).toBe(true);
       const zone = w.round.zone.current;
@@ -185,7 +186,7 @@ describe('fase 12: transporte autoritativo con 8 jugadores', () => {
       // Un segundo jugador muere: avión distinto, el primero no se reinicia.
       w.combat.environmentalDamage('p2', 100, w.players.get('p2')!.body.state.position, w.tick);
       for (let t = 0; t < 151; t++) tick();
-      const two = w.round.snapshot().planes;
+      const two = w.round.snapshot().planes.filter((q) => !q.supply);
       expect(two).toHaveLength(2); expect(two[0]).toEqual(snap.planes[0]);
       // Ninguno pulsa: salto automático y aterrizaje DENTRO de la zona, sin daño mientras siguen dentro de su avión.
       w.combat.environmentalDamage('p1', 30, w.players.get('p1')!.body.state.position, w.tick);

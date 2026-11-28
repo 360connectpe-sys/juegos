@@ -25,6 +25,8 @@ export function Minimap({game,expanded=false,onOpen}:{game:Game|null;expanded?:b
       }
       // Solo el avión propio: los de reaparición rivales también revelarían su ubicación.
       for(const pl of st.planes??[]){if(!pl.mine)continue;const a=point(pl.ax,pl.az),b=point(pl.bx,pl.bz),p=point(pl.x,pl.z);ctx.strokeStyle='#ffe08b';ctx.lineWidth=px;ctx.setLineDash([10,9]);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ffdf67';ctx.beginPath();ctx.arc(p.x,p.y,px*2,0,Math.PI*2);ctx.fill();}
+      // Fase 16: cajas de suministros (icono azul con banda naranja; parpadea mientras cae).
+      for(const d of st.drops??[]){if(!d.landed&&(Date.now()>>8)%2)continue;const p=point(d.x,d.z),k=px*2.6;ctx.fillStyle='#2f5f9e';ctx.strokeStyle='#ff9a1f';ctx.lineWidth=px*.8;ctx.fillRect(p.x-k,p.y-k,k*2,k*2);ctx.strokeRect(p.x-k,p.y-k,k*2,k*2);ctx.beginPath();ctx.moveTo(p.x-k,p.y);ctx.lineTo(p.x+k,p.y);ctx.stroke();}
       ctx.fillStyle='#ffd34d';for(const chest of st.chests){if(chest.opened)continue;const p=point(chest.x,chest.z);ctx.fillRect(p.x-px,p.y-px,px*2,px*2);}
       for(const mark of st.markers){const p=point(mark.x,mark.z);ctx.fillStyle='#ffdf67';ctx.strokeStyle='#3c234f';ctx.lineWidth=px;ctx.beginPath();ctx.arc(p.x,p.y,px*2,0,Math.PI*2);ctx.fill();ctx.stroke();}
       if(st.local){const p=point(st.local.x,st.local.z);ctx.save();ctx.translate(p.x,p.y);ctx.rotate(-st.local.yaw);ctx.fillStyle='white';ctx.strokeStyle='#231f5c';ctx.lineWidth=px;ctx.beginPath();ctx.moveTo(0,px*4);ctx.lineTo(px*2.7,-px*2.7);ctx.lineTo(-px*2.7,-px*2.7);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();}

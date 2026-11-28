@@ -43,6 +43,8 @@ export interface PlaneRoute {
   /** Segundo de ronda en que despega y duración hasta el salto automático. */
   start: number;
   duration: number;
+  /** Fase 16: avión de carga de suministros (sin pasajeros). */
+  supply?: boolean;
 }
 
 export interface PlanePose { x: number; y: number; z: number; yaw: number; progress: number }

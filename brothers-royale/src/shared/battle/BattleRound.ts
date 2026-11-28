@@ -3,6 +3,7 @@ import type { Vec3 } from '../types';
 import { constrain, contains, ROUND_SECONDS, zoneAt, zonePlan, type Circle, type ZoneState } from './zone';
 import { FLIGHT, mapCircle, planeAt, respawnRoute, startRoute, type AirMode, type PlaneRoute, type PlanePose } from './flight';
 import { PLAYER } from '../constants';
+import { SupplyDrops, type SupplyDrop, type SupplySpot } from './supply';
 
 export type RoundPhase = 'waiting' | 'countdown' | 'running' | 'finished';
 export interface RoundActor { id: string; name: string; feet: Vec3; grounded: boolean; connected: boolean }
@@ -14,6 +15,8 @@ export interface RoundSnapshot {
   result: RoundResult | null;
   /** Fase 12: aviones en vuelo (ruta completa; la posición se calcula con `elapsed`). */
   planes: PlaneRoute[];
+  /** Fase 16: cajas de suministros (descendiendo o en el suelo). */
+  drops: SupplyDrop[];
 }
 export interface RoundHooks {
   actors(): readonly RoundActor[];
@@ -24,6 +27,8 @@ export interface RoundHooks {
   ground?(x: number, z: number): number | null;
   /** ¿Viaja en avión? (los muñecos de práctica no: reaparecen cayendo como antes). */
   flies?(id: string): boolean;
+  /** Fase 16: altura del suelo si (x, z) es un aterrizaje válido para una caja; null si no. */
+  supplySpot?: SupplySpot;
 }
 interface AirState { mode: AirMode; plane: number; bound: 'map' | 'zone'; jumpY: number }
 const zeroStats = (): FighterStats => ({ shots: 0, hits: 0, damageDealt: 0, damageTaken: 0, kills: 0, eliminations: 0, deaths: 0, healed: 0 });
@@ -53,9 +58,12 @@ export class BattleRound {
   private readonly air = new Map<string, AirState>();
   private planes: PlaneRoute[] = [];
   private planeSerial = 0;
+  /** Fase 16: suministros aéreos (autoridad de la ronda). */
+  readonly supplies: SupplyDrops;
   private readonly pose: PlanePose = { x: 0, y: 0, z: 0, yaw: 0, progress: 0 };
   constructor(readonly combat: CombatState, readonly size: number, readonly seed: number, private readonly hooks: RoundHooks, readonly autoStart = true) {
     this.plan = zonePlan(size, seed);
+    this.supplies = new SupplyDrops(seed, size);
     combat.externalLifeClock = true;
   }
   syncWallTime(now: number): void { if (Number.isFinite(now)) this.wallNow = now; }
@@ -84,6 +92,7 @@ export class BattleRound {
     this.phase = 'running'; this.countdown = 0;
     // Fase 12: todos empiezan dentro del avión inicial (ruta aleatoria con la semilla de la ronda).
     this.air.clear(); this.planeSerial = 0;
+    this.supplies.reset((this.seed + this.round) >>> 0);
     const route = startRoute(this.size, (this.seed + this.round) >>> 0, 0);
     this.planes = [route];
     if (this.transport) for (const a of actors) if (this.hooks.flies?.(a.id) ?? true) this.board(a.id, route, 'map');
@@ -123,6 +132,7 @@ export class BattleRound {
       if (this.wallStart !== null && this.wallNow !== null) this.elapsed = Math.min(ROUND_SECONDS, Math.max(this.elapsed, this.wallNow - this.wallStart));
       if (this.elapsed >= ROUND_SECONDS - 1e-9) { this.elapsed = ROUND_SECONDS; this.finish('limit'); return; }
       this.flyPlanes();
+      if (this.hooks.supplySpot) this.supplies.step(this.elapsed, this.zone.current, this.hooks.supplySpot);
     }
     this.combat.tickLives(dt);
   }
@@ -241,10 +251,12 @@ export class BattleRound {
     // Un avión sin pasajeros desaparece al terminar su ruta.
     this.planes = this.planes.filter(r => this.elapsed < r.start + r.duration + 2 || [...this.air.values()].some(a => a.mode === 1 && a.plane === r.id));
   }
-  private clearAir(): void { this.air.clear(); this.planes = []; }
+  private clearAir(): void { this.air.clear(); this.planes = []; this.supplies.reset((this.seed + this.round) >>> 0); }
+  /** Fase 16: abrir la caja aterrizada más cercana (en tierra, vivo). Primera petición gana. */
+  openSupply(id: string, feet: Vec3) { return this.active && this.canFight(id) ? this.supplies.open(feet, this.elapsed) : null; }
   snapshot(): RoundSnapshot {
     return { round: this.round, phase: this.phase, elapsed: this.elapsed, countdown: Math.max(0, this.countdown), zone: this.zone,
       players: this.hooks.actors().map(a => ({ id: a.id, lives: this.combat.lives(a.id), descending: this.combat.vitals(a.id)?.descending ?? false, protection: this.combat.vitals(a.id)?.protection ?? 0, air: this.airMode(a.id), ...(this.air.get(a.id)?.mode === 1 ? { plane: this.air.get(a.id)!.plane } : {}) })), result: this.result,
-      planes: this.planes.map(r => ({ ...r })) };
+      planes: [...this.planes, ...this.supplies.planes].map(r => ({ ...r })), drops: this.supplies.drops.map(d => ({ ...d })) };
   }
 }

@@ -20,10 +20,11 @@ import { CombatState, type AttackContext, type CombatEvent, type TargetPose } fr
 import { PoseHistory } from '@shared/combat/lagcomp';
 import { addItem } from '@shared/inventory';
 import { chestWood } from '@shared/match/loot';
+import { grantSupply, supplySpotFor } from '@shared/battle/supply';
 import { ITEMS } from '@shared/items';
 import { Buttons, hasButton, type PlayerInput } from '@shared/types';
 import { worldColliders } from '@shared/world/colliders';
-import { generateWorldLayout, spawnPoint, type WorldLayout } from '@shared/world/layout';
+import { generateWorldLayout, isClearSpawn, spawnPoint, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
 
 export const AVATAR_COLORS = 12;
@@ -99,6 +100,7 @@ export class ServerWorld {
       reset: ids => this.resetRound(ids),
       spawn: (id, at) => { const p = this.players.get(id); if (p) this.place(p, at); },
       ground: (x, z) => this.physics.groundHeightAt(x, z, 120),
+      supplySpot: supplySpotFor((x, z) => terrainHeight(x, z, layout.terrain), (x, z) => isClearSpawn(layout, x, z), (x, z) => physics.groundHeightAt(x, z, 120)),
     });
     this.building.state.onHarvest=(id,n)=>this.round.harvest(id,n);
     // Fase 16: cada cofre normal da además 10-20 de madera a quien lo abre.
@@ -280,7 +282,12 @@ export class ServerWorld {
         // Interacción (abrir cofre / recoger): solo en el flanco de pulsación, en tierra y
         // con la posición AUTORITATIVA tras ese mismo paso.
         const interact = hasButton(input.buttons, Buttons.INTERACT);
-        if (interact && !p.interactHeld && this.round.canFight(p.id)) this.match.interact(p.id, p.body.state.position, this.los);
+        if (interact && !p.interactHeld && this.round.canFight(p.id)) {
+          // Fase 16: primero una caja de suministros al alcance (la primera petición la abre).
+          const supply = this.round.openSupply(p.id, p.body.state.position);
+          if (supply) grantSupply(p.id, supply, (id, n) => { this.building.state.giveWood(id, n); }, (item, at) => this.match.dropLoot(item, at));
+          else this.match.interact(p.id, p.body.state.position, this.los);
+        }
         p.interactHeld = interact;
         // Combate con la misma posición autoritativa (y el tick visto, rebobinado).
         if (!dead) this.combat.step(p.id, raw, this.attackContext(p, dt));

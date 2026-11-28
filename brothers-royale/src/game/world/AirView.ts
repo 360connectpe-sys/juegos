@@ -1,4 +1,4 @@
-import { DynamicDrawUsage, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3, CylinderGeometry } from 'three';
+import { Color, DynamicDrawUsage, InstancedMesh, Matrix4, MeshLambertMaterial, Quaternion, Vector3, CylinderGeometry } from 'three';
 import { planeAt, type PlaneRoute, type PlanePose } from '@shared/battle/flight';
 import type { RoundSnapshot } from '@shared/battle/BattleRound';
 import { box, merge, paint, transform } from './geometry';
@@ -52,6 +52,8 @@ export class AirView {
   private readonly s2 = new Vector3(1, 1, 1);
   private readonly up = new Vector3(0, 1, 0);
   private chuteCount = 0;
+  private readonly cargo = new Color(0.55, 0.68, 0.45);
+  private readonly white = new Color(1, 1, 1);
   private spin = 0;
 
   constructor(shadows: boolean) {
@@ -82,10 +84,12 @@ export class AirView {
       this.q.setFromAxisAngle(this.up, p.yaw);
       this.v.set(p.x, p.y + Math.sin(this.spin * 1.3 + r.id) * 0.25, p.z);
       this.m.compose(this.v, this.q, this.s);
+      // Fase 16: el avión de carga se distingue por el tono (verde militar) y no lleva pasajeros.
+      this.planes.setColorAt(n, r.supply ? this.cargo : this.white);
       this.planes.setMatrixAt(n++, this.m);
     }
     this.planes.count = n; this.planes.visible = n > 0;
-    if (n) this.planes.instanceMatrix.needsUpdate = true;
+    if (n) { this.planes.instanceMatrix.needsUpdate = true; if (this.planes.instanceColor) this.planes.instanceColor.needsUpdate = true; }
   }
 
   /** Posición del avión `id` según el reloj local (null si no existe). */

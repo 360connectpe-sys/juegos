@@ -4,6 +4,8 @@ import { loadProfile } from './profile';
 import type { RoundSnapshot } from '@shared/battle/BattleRound';
 import { StormView } from './world/StormView';
 import { AirView } from './world/AirView';
+import { SupplyView } from './world/SupplyView';
+import { SUPPLY, supplyHeight } from '@shared/battle/supply';
 import { ZombieView } from './world/ZombieView';
 import { ZOMBIE_PREFIX, type PublicZombie } from '@/physics/ZombieDirector';
 import { ZOMBIE } from '@shared/zombies/zombieAi';
@@ -142,6 +144,7 @@ export class Game {
   private stormView: StormView | null = null;
   private airView: AirView | null = null;
   private zombieView: ZombieView | null = null;
+  private supplyView: SupplyView | null = null;
   private wasAloft = false;
   private lastInvTotal = -1;
   private correctionSerial = 0;
@@ -364,6 +367,7 @@ export class Game {
     this.stormView = new StormView(layout.terrain); scene.add(this.stormView.mesh);
     this.airView = new AirView(this.quality.shadows); scene.add(this.airView.planes, this.airView.chutes);
     this.zombieView = new ZombieView(this.quality.shadows); scene.add(this.zombieView.mesh);
+    this.supplyView = new SupplyView(); scene.add(this.supplyView.mesh);
     this.buildingView = new BuildingView(layout.trees, trees);
     this.buildingView.onDamage=p=>this.overlay?.structures.damage(p);
     this.buildingView.onRemove=id=>this.overlay?.structures.remove(id);
@@ -383,7 +387,7 @@ export class Game {
    */
   private precompileShaders(): void {
     const r = this.engine.renderer as unknown as { compileAsync?: (s: unknown, c: unknown) => Promise<unknown>; compile: (s: unknown, c: unknown) => unknown };
-    const hidden = [this.airView?.planes, this.airView?.chutes, this.zombieView?.mesh, this.stormView?.mesh, ...Object.values(this.pickupView.meshes)]
+    const hidden = [this.airView?.planes, this.airView?.chutes, this.zombieView?.mesh, this.supplyView?.mesh, this.stormView?.mesh, ...Object.values(this.pickupView.meshes)]
       .filter((m): m is NonNullable<typeof m> => !!m && !m.visible);
     for (const m of hidden) m.visible = true;
     const restore = () => { for (const m of hidden) m.visible = false; };
@@ -901,6 +905,8 @@ export class Game {
         if (a === 1) remote.root.visible = false;
         else if (a === 3) air.addChute(remote.position.x, remote.position.y, remote.position.z, 0);
       }
+      // Fase 16: cajas de suministros (su paracaídas comparte la malla de los de jugadores).
+      this.supplyView?.update(running ? battle?.drops : undefined, air.elapsed, air);
       air.endChutes();
     }
     if(this.presentation){
@@ -1034,6 +1040,8 @@ export class Game {
     chests: { x: number; z: number; opened: boolean }[];
     zone?: import('@shared/battle/zone').ZoneState;
     /** Fase 12: rutas de los aviones en vuelo y su posición actual. */
+    /** Fase 16: cajas de suministros (públicas para todos; nunca jugadores). */
+    drops?: { x: number; z: number; landed: boolean }[];
     planes?: { ax: number; az: number; bx: number; bz: number; x: number; z: number; mine: boolean }[];
   } {
     const local = this.session?.localPlayer();
@@ -1044,6 +1052,7 @@ export class Game {
       zone: this.session?.battle?.phase === 'running' ? this.session.battle.zone : undefined,
       local: local ? { x: local.position.x, z: local.position.z, yaw: local.yaw } : null,
       chests: (m?.chests ?? []).map((c) => ({ x: c.x, z: c.z, opened: m?.opened[c.id] ?? false })),
+      drops: this.session?.battle?.phase === 'running' ? this.session.battle.drops.map((d) => ({ x: d.x, z: d.z, landed: supplyHeight(d, this.airView?.elapsed ?? 0).landed })) : [],
       planes: this.session?.battle?.phase === 'running' ? this.session.battle.planes.filter(r=>this.airPlayer(this.session?.battle,this.session?.localPlayerId)?.plane===r.id).map((r) => {
         const pose = this.airView?.planePose(r.id);
         const mine = this.airPlayer(this.session?.battle, this.session?.localPlayerId)?.plane === r.id;
@@ -1164,6 +1173,15 @@ export class Game {
     const physics = this.physics;
     if (!local || !physics) return;
     const m = session.match;
+    // Fase 16: una caja de suministros aterrizada al alcance tiene prioridad (como en la autoridad).
+    const b = session.battle;
+    if (b?.phase === 'running') for (const d of b.drops) {
+      if (supplyHeight(d, this.airView?.elapsed ?? b.elapsed).landed && Math.hypot(d.x - local.position.x, d.z - local.position.z) <= SUPPLY.reach && Math.abs(d.ground - local.position.y) < 1.6) {
+        const key = `supply:${d.id}`;
+        if (key !== this.interactKey) { this.interactKey = key; this.events.emit('interact', { type: 'chest', id: -d.id, action: 'Abrir', label: 'Suministro' }); }
+        return;
+      }
+    }
     const t: InteractTarget | null = findTarget(m.chests, m.opened, m.pickups.values(), local.position, (a, b) => physics.lineOfSight(a, b));
     const key = t ? `${t.type}:${t.id}:${t.type === 'pickup' ? m.pickups.get(t.id)?.item.qty : ''}` : '';
     if (key === this.interactKey) return;
@@ -1426,6 +1444,7 @@ export class Game {
     this.stormView?.dispose();
     this.airView?.dispose();
     this.zombieView?.dispose();
+    this.supplyView?.dispose();
     this.buildingView?.dispose();
     this.engine.dispose();
     this.input.dispose();

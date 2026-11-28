@@ -14,8 +14,10 @@ export function validRound(s: unknown): s is RoundSnapshot {
     Number.isInteger(p.lives) && p.lives >= 0 && p.lives <= 3 && typeof p.descending === 'boolean' && number(p.protection, 0, 3) &&
     [0, 1, 2, 3].includes(p.air) && (p.plane === undefined || (Number.isSafeInteger(p.plane) && p.plane >= 0)))) return false;
   // Fase 12: aviones (1 inicial + uno por reaparición en vuelo; nunca más de 9 a la vez).
-  if (!Array.isArray(r.planes) || r.planes.length > 9 || !r.planes.every(q => q && Number.isSafeInteger(q.id) && q.id >= 0 &&
-    [q.ax, q.az, q.bx, q.bz].every(v => number(v, -1000, 1000)) && number(q.y, 0, 500) && number(q.start, 0, ROUND_SECONDS) && number(q.duration, 0, 120))) return false;
+  if (!Array.isArray(r.planes) || r.planes.length > 12 || !r.planes.every(q => q && Number.isSafeInteger(q.id) && q.id >= 0 &&
+    [q.ax, q.az, q.bx, q.bz].every(v => number(v, -1000, 1000)) && number(q.y, 0, 500) && number(q.start, 0, ROUND_SECONDS) && number(q.duration, 0, 120) && (q.supply === undefined || typeof q.supply === 'boolean'))) return false;
+  // Fase 16: cajas de suministros (máximo 3).
+  if (!Array.isArray(r.drops) || r.drops.length > 3 || !r.drops.every(d => d && Number.isSafeInteger(d.id) && d.id > 0 && number(d.x, -1000, 1000) && number(d.z, -1000, 1000) && number(d.ground, -50, 200) && number(d.dropAt, 0, ROUND_SECONDS))) return false;
   if (new Set(r.players.map(p => p.id)).size !== r.players.length) return false;
   if (r.result !== null) {
     const result = r.result;

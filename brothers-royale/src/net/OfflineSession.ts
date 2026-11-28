@@ -1,3 +1,6 @@
+import { grantSupply, supplySpotFor } from '@shared/battle/supply';
+import { isClearSpawn } from '@shared/world/layout';
+import { terrainHeight } from '@shared/world/terrain';
 import { chestWood } from '@shared/match/loot';
 import { unpackZombies, ZombieDirector, type PublicZombie } from '@/physics/ZombieDirector';
 import { BattleRound } from '@shared/battle/BattleRound';
@@ -97,6 +100,7 @@ export class OfflineSession implements GameSession {
         }
       },
       ground: (x, z) => physics.groundHeightAt(x, z, 120),
+      ...(building ? { supplySpot: supplySpotFor((x, z) => terrainHeight(x, z, building.layout.terrain), (x, z) => isClearSpawn(building.layout, x, z), (x, z) => physics.groundHeightAt(x, z, 120)) } : {}),
       // Los muñecos de práctica no suben al avión.
       flies: id => !this.dummies.has(id),
     }, false);
@@ -234,7 +238,11 @@ export class OfflineSession implements GameSession {
     this.jumpHeld = jump;
     // Mismas reglas que el servidor: flanco de interacción con la posición tras el paso.
     const interact = hasButton(move.buttons, Buttons.INTERACT);
-    if (interact && !this.interactHeld && this.round.canFight(this.localPlayerId)) this.state.interact(this.localPlayerId, s.position, (a, b) => this.physics.lineOfSight(a, b));
+    if (interact && !this.interactHeld && this.round.canFight(this.localPlayerId)) {
+      const supply = this.round.openSupply(this.localPlayerId, s.position);
+      if (supply) grantSupply(this.localPlayerId, supply, (id, n) => { this.building?.state.giveWood(id, n); }, (item, at) => this.state.dropLoot(item, at));
+      else this.state.interact(this.localPlayerId, s.position, (a, b) => this.physics.lineOfSight(a, b));
+    }
     this.interactHeld = interact;
     if (dead) this.fight.idle(this.localPlayerId, dt);
     else {
