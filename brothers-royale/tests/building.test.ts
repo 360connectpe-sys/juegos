@@ -77,7 +77,10 @@ describe('colisiones de construcción reales', () => {
       const r = { kind, x: 0, y: 0, z: 12, rotation: 0 };
       expect(world.state.place('a', r, { x: 0, y: 0, z: 17 })).toBe(true);
       physics.step();
-      expect(world.state.place('a', { ...r, kind: 'wall', rotation: 1 }, { x: 0, y: 0, z: 17 })).toBe(false);
+      // Fase 15: la misma pieza otra vez se rechaza; una pared también desde la casilla vecina
+      // (el borde compartido es una sola pared).
+      expect(world.state.place('a', { ...r }, { x: 0, y: 0, z: 17 })).toBe(false);
+      if (kind === 'wall') expect(world.state.place('a', { ...r, z: 15, rotation: 2 }, { x: 0, y: 0, z: 17 })).toBe(false);
     } finally { world.dispose();physics.dispose(); }
   });
   it('el personaje sube la rampa en las cuatro rotaciones sin atravesarla', async () => {
@@ -107,7 +110,7 @@ describe('colisiones de construcción reales', () => {
     const physics = new PhysicsWorld(await loadRapier());
     const layout = { ...generateWorldLayout(), trees: [], structures: [] };
     physics.addTerrain(layout.terrain);physics.step();
-    const occupants = [{ x: 0, y: 0, z: 12 }];
+    const occupants = [{ x: 0, y: 0, z: 13.5 }]; // fase 15: la pared va en el borde (z = 13,5)
     const world = new BuildingWorld(physics, layout, () => occupants);
     try {
       world.state.addPlayer('a');world.state.wood.set('a', 100);
@@ -176,7 +179,7 @@ describe('colisiones de construcción reales', () => {
       expect(world.building.state.pieces.size).toBe(0);
       expect(world.combat.hp('b')).toBeLessThan(100);
       expect(world.building.state.place('a', { ...wall, z: 12 }, a.body.state.position)).toBe(true);
-      for (let hit = 0; hit < 10; hit++) expect(world.building.damageRay('a', { x: 0, y: 1.4, z: 13 }, { x: 0, y: 0, z: -1 }, 1.9, 15, true)).toBe(true);
+      for (let hit = 0; hit < 10; hit++) expect(world.building.damageRay('a', { x: 0, y: 1.4, z: 14.5 }, { x: 0, y: 0, z: -1 }, 1.9, 15, true)).toBe(true);
       expect(world.building.state.pieces.size).toBe(0);
       expect(world.building.state.wood.get('a')).toBe(10);
     } finally { world.dispose(); }

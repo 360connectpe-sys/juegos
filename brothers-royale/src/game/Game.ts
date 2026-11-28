@@ -25,7 +25,7 @@ import { loadRapier, PhysicsWorld } from '@/physics/PhysicsWorld';
 import { SIMULATION } from '@shared/constants';
 import type { InsideState } from '@shared/world/prefab';
 import { worldColliders } from '@shared/world/colliders';
-import { generateWorldLayout, type WorldLayout } from '@shared/world/layout';
+import { buildSlots, generateWorldLayout, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
 import { PerspectiveCamera, Frustum, Matrix4, Sphere, type Group, type Object3D } from 'three';
 import { BlobShadows, disposeAvatarResources, PlayerAvatar } from './entities/PlayerAvatar';
@@ -161,6 +161,7 @@ export class Game {
   private buildOpen = false;
   private buildKind: BuildKind = 'wall';
   private buildRotation = 0;
+  private buildSlots: ReturnType<typeof buildSlots> | null = null;
   private buildLevel = 0;
   private buildHeld = false;
   /** Pieza mantenida con un botón directo (vista previa hasta soltar) o null. */
@@ -408,6 +409,7 @@ export class Game {
     const piece = this.input.keyboard.buildRequest;
     this.input.keyboard.buildRequest = null;
     if (piece && !this.inputSuspended && !this.inAir()) this.configureBuild(piece);
+    if (this.input.keyboard.buildRotate) { this.input.keyboard.buildRotate = false; if (this.buildOpen && !this.inputSuspended) this.configureBuild(undefined, true); }
     if (this.buildOpen && this.buildHold === null && this.input.gamepad.nextSlotPressed) {
       this.input.gamepad.nextSlotPressed = false;
       this.buildKind = BUILD_KINDS[(BUILD_KINDS.indexOf(this.buildKind) + 1) % BUILD_KINDS.length]!;
@@ -485,11 +487,14 @@ export class Game {
       const id = this.session!.localPlayerId;
       const blocked = this.vitals.dead || this.session?.battle?.phase === 'finished';
       // Casilla, orientación y altura automáticas (cuadrícula de 3 m, dirección de la mirada).
+      // Fase 15: bordes de pared, huecos de puerta y giro previo (`buildRotation`).
+      this.buildSlots ??= buildSlots(world.layout);
       const plan = planBuild(this.buildKind, feet, input.aimYaw, {
         pieces: world.state.pieces.values(),
         ground: (x, z) => terrainHeight(x, z, world.layout.terrain),
         canPlace: (r) => !blocked && world.state.canPlace(id, r, feet),
-      });
+        slots: this.buildSlots,
+      }, this.buildRotation);
       this.buildCandidate = plan.request;
       this.buildValid = plan.valid;
       // Modo construcción con teclado/mando: el ataque coloca en el flanco (no dispara).

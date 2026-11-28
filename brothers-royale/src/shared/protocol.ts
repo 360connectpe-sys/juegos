@@ -21,8 +21,9 @@ import type { PlayerInput } from './types';
  * v8 (fase 9): perfiles cosméticos, permisos del lobby y estadísticas finales.
  * v9 (fase 12): avión de transporte (planes/air en la ronda), modificadores aéreos, zombis.
  * v10 (fase 14): francotirador, scope2, mira equipada en gear bit 10, petición scope.
+ * v11 (fase 15): paredes en el borde de la casilla y paneles de hueco (BuildRequest.slot/yaw/w/h).
  */
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 
 /** Nombre de la sala registrada en el servidor. */
 export const ROOM_NAME = 'brothers';

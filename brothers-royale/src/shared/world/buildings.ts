@@ -161,7 +161,7 @@ function createModern(pal: { wall: string; roof: string; trim: string }): Prefab
   parts.push(...furniture('table', 1.6, 0, -0.4, 'base', false, '#eceff1'));
   parts.push(...furniture('shelf', hw - T - 0.25, 0, 1.2, 'base', true));
   return { id: 'small-modern', parts, clearRadius: Math.hypot(hw + 1.2, hd) + 2,
-    nav: { door: { x: door, z: hd + 1.2 }, inside: { x: door, z: hd - 1.0 }, climbs: [[{ x: sx, y: 0, z: hd + 0.9 }, { x: sx, y: roofTop, z: -hd + landing / 2 }, { x: hw - 0.8, y: roofTop, z: -hd + landing / 2 }]] },
+    nav: { openings: [{ x: door, y: 0, z: hd - T / 2, yaw: 0, w: 1.3, h: 2.2 }], door: { x: door, z: hd + 1.2 }, inside: { x: door, z: hd - 1.0 }, climbs: [[{ x: sx, y: 0, z: hd + 0.9 }, { x: sx, y: roofTop, z: -hd + landing / 2 }, { x: hw - 0.8, y: roofTop, z: -hd + landing / 2 }]] },
     interior: { min: { x: -hw + T - 0.1, y: -0.5, z: -hd + T - 0.1 }, max: { x: hw - T + 0.1, y: H - 0.4, z: hd - T + 0.1 } } };
 }
 
@@ -206,7 +206,7 @@ function createBalcony(pal: { wall: string; roof: string; trim: string }): Prefa
   parts.push(...furniture('bed', 0.2, G, -hd + T + 1.05, 'upper', false, '#d9e4c4'));
   parts.push(...furniture('shelf', hw - T - 0.25, G, 0.9, 'upper', true));
   return { id: 'small-balcony', parts, clearRadius: Math.hypot(hw, hd + bd) + 2,
-    nav: { door: { x: door, z: hd + 1.2 }, inside: { x: door, z: hd - 1.0 }, climbs: [[{ x: x0 + 0.7, y: 0, z: start + 0.3 }, { x: x0 + 0.7, y: G, z: -hd + T + 0.5 }, { x: x1 + 0.6, y: G, z: -hd + T + 0.5 }]] },
+    nav: { openings: [{ x: door, y: 0, z: hd - T / 2, yaw: 0, w: 1.3, h: 2.2 }, { x: 0, y: G, z: hd - T / 2, yaw: 0, w: 1.2, h: 2.1 }], door: { x: door, z: hd + 1.2 }, inside: { x: door, z: hd - 1.0 }, climbs: [[{ x: x0 + 0.7, y: 0, z: start + 0.3 }, { x: x0 + 0.7, y: G, z: -hd + T + 0.5 }, { x: x1 + 0.6, y: G, z: -hd + T + 0.5 }]] },
     interior: { min: { x: -hw + T - 0.1, y: -0.5, z: -hd + T - 0.1 }, max: { x: hw - T + 0.1, y: top - 0.4, z: hd - T + 0.1 }, upperFloorY: G } };
 }
 
@@ -233,7 +233,7 @@ function createGarage(_pal: { wall: string; roof: string; trim: string }): Prefa
   parts.push(...furniture('crate', -hw + T + 0.45, 0.8, 3.2, 'base', false, '#b97a3e'));
   parts.push(...furniture('crate', 2.8, 0, -hd + T + 0.45, 'base'));
   return { id: 'small-garage', parts, clearRadius: Math.hypot(hw, hd) + 2,
-    nav: { door: { x: -0.6, z: hd + 1.2 }, inside: { x: -0.6, z: hd - 1.2 }, climbs: [] },
+    nav: { openings: [{ x: 0, y: 0, z: hd - T / 2, yaw: 0, w: 3.2, h: 2.8 }], door: { x: -0.6, z: hd + 1.2 }, inside: { x: -0.6, z: hd - 1.2 }, climbs: [] },
     interior: { min: { x: -hw + T - 0.1, y: -0.5, z: -hd + T - 0.1 }, max: { x: hw - T + 0.1, y: H - 0.4, z: hd - T + 0.1 } } };
 }
 
@@ -269,7 +269,7 @@ function createRuin(): PrefabDef {
   parts.push(...furniture('rubble', 2.2, 0, -2.2, 'base', true));
   parts.push(...furniture('table', 0, 0, -hd + T + 0.45, 'base', false, '#6b5a45'));
   return { id: 'small-ruin', parts, clearRadius: Math.hypot(hw, hd) + 2,
-    nav: { door: { x: door, z: hd + 1.2 }, inside: { x: door, z: hd - 1.0 }, climbs: [[{ x: 1.2, y: 0, z: 2.3 }, { x: 1.2, y: rise, z: -1.6 }]] },
+    nav: { openings: [{ x: door, y: 0, z: hd - T / 2, yaw: 0, w: 1.3, h: 2.2 }, { x: -hw + T / 2, y: 0, z: 0.3, yaw: Math.PI / 2, w: 1.8, h: H - 0.8 }], door: { x: door, z: hd + 1.2 }, inside: { x: door, z: hd - 1.0 }, climbs: [[{ x: 1.2, y: 0, z: 2.3 }, { x: 1.2, y: rise, z: -1.6 }]] },
     interior: { min: { x: -hw + T - 0.1, y: -0.5, z: -hd + T - 0.1 }, max: { x: hw - T + 0.1, y: H - 0.4, z: hd - T + 0.1 } } };
 }
 

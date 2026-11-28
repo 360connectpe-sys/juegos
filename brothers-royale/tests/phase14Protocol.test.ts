@@ -32,7 +32,7 @@ function shotFixture(pitch=0,wall:number|null=null){
 }
 describe('fase 14 · contrato básico',()=>{
   it('declara v10 y conserva el bit de mira en snapshots',()=>{
-    expect(PROTOCOL_VERSION).toBe(10);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(10); // fase 15: v11 (construcción), conserva lo de v10;
     const gear=packGear({held:'rifle',rarity:'epic',action:'aim',dead:false,scope:'x2'});
     const state:PlayerState={id:'a',name:'A',position:feet,velocity:feet,yaw:0,grounded:true,locomotion:'idle',lastProcessedSeq:1};
     const packed:number[]=[];packPlayer(packed,1,state,gear);

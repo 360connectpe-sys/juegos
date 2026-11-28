@@ -1,10 +1,11 @@
 import { BufferAttribute, BufferGeometry, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial } from 'three';
-import { BUILD, BUILD_KINDS, buildDef, type BuildingSnapshot, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
+import { BUILD, BUILD_KINDS, WALL_EDGE, buildDef, type BuildingSnapshot, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
 import type { TreePlacement } from '@shared/world/layout';
 import { box, merge } from './geometry';
 
 /** Vista previa: marrón oscuro semitransparente si es válida, rojo si no. */
-export const PREVIEW_COLORS = { valid: '#5a3414', invalid: '#e02424' } as const;
+/** Fase 15: verde = se puede colocar; rojo = no (antes marrón/rojo). */
+export const PREVIEW_COLORS = { valid: '#2fbf4a', invalid: '#e02424' } as const;
 
 /**
  * Estructuras de madera: TODAS las piezas en UNA malla dinámica = 1 draw call
@@ -89,8 +90,17 @@ export class BuildingView {
     this.ghost.visible = request !== null;
     if (!request) return;
     this.ghost.geometry = this.geometries.get(request.kind)!;
-    this.ghost.position.set(request.x, request.y, request.z);
-    this.ghost.rotation.y = request.rotation * Math.PI / 2;
+    if (request.slot !== undefined) {
+      // Panel de hueco: la pared estándar (borde +Z) escalada al hueco y centrada en él.
+      const a = request.yaw!, w = request.w!, h = request.h!;
+      this.ghost.rotation.y = a;
+      this.ghost.scale.set(w / BUILD.size, h / 3, 1);
+      this.ghost.position.set(request.x - Math.sin(a) * WALL_EDGE, request.y, request.z - Math.cos(a) * WALL_EDGE);
+    } else {
+      this.ghost.scale.set(1, 1, 1);
+      this.ghost.position.set(request.x, request.y, request.z);
+      this.ghost.rotation.y = request.rotation * Math.PI / 2;
+    }
     (this.ghost.material as MeshBasicMaterial).color.set(valid ? PREVIEW_COLORS.valid : PREVIEW_COLORS.invalid);
   }
   /** Copia las piezas (rotadas, colocadas y tintadas por resistencia) en la malla única. */
@@ -112,13 +122,16 @@ export class BuildingView {
       const n = sp.length / 3;
       if (o + n > capacity) break;
       this.counts[piece.kind]++;
-      const a = piece.rotation * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
+      const slot = piece.slot !== undefined;
+      const a = slot ? piece.yaw! : piece.rotation * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
+      // Panel de hueco: misma geometría de pared, escalada al hueco y sin el desplazamiento al borde.
+      const sx = slot ? piece.w! / BUILD.size : 1, sy = slot ? piece.h! / 3 : 1, oz = slot ? -WALL_EDGE : 0;
       const tint = 0.7 + piece.hp / BUILD.hp * 0.3;
       for (let i = 0; i < n; i++) {
         const k = i * 3, d = (o + i) * 3;
-        const x = sp[k]!, z = sp[k + 2]!;
+        const x = sp[k]! * sx, z = sp[k + 2]! + oz;
         // Rotación Y (misma convención que makeRotationY) + traslación.
-        P[d] = x * c + z * s + piece.x; P[d + 1] = sp[k + 1]! + piece.y; P[d + 2] = -x * s + z * c + piece.z;
+        P[d] = x * c + z * s + piece.x; P[d + 1] = sp[k + 1]! * sy + piece.y; P[d + 2] = -x * s + z * c + piece.z;
         const nx = sn[k]!, nz = sn[k + 2]!;
         N[d] = nx * c + nz * s; N[d + 1] = sn[k + 1]!; N[d + 2] = -nx * s + nz * c;
         C[d] = sc[k]! * tint; C[d + 1] = sc[k + 1]! * tint; C[d + 2] = sc[k + 2]! * tint;

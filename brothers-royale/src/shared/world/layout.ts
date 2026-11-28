@@ -247,3 +247,18 @@ export function spawnPoint(layout: WorldLayout, index: number): { x: number; z: 
   }
   return { ...layout.spawn };
 }
+
+/**
+ * Fase 15: huecos tapables del mapa (puertas y boquetes), en coordenadas de mundo. Orden
+ * estable (estructuras en orden del mapa, huecos en orden del prefab): el índice viaja en
+ * `BuildRequest.slot` y la autoridad lo compara. Panel 4 cm más pequeño que el hueco.
+ */
+export function buildSlots(layout: WorldLayout): { x: number; y: number; z: number; yaw: number; w: number; h: number }[] {
+  const out: { x: number; y: number; z: number; yaw: number; w: number; h: number }[] = [];
+  const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+  for (const s of layout.structures) for (const o of s.def.nav?.openings ?? []) {
+    const p = rotateXZ(o.x, o.z, s.rotationY);
+    out.push({ x: r4(s.x + p.x), y: r4(s.y + o.y + 0.02), z: r4(s.z + p.z), yaw: r4(s.rotationY + o.yaw), w: r4(o.w - 0.04), h: r4(o.h - 0.04) });
+  }
+  return out;
+}

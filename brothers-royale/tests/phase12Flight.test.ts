@@ -53,7 +53,7 @@ describe('fase 12: transporte autoritativo con 8 jugadores', () => {
   it('todos empiezan en el avión: sin daño, sin disparar, construir ni abrir cofres; protocolo v10', async () => {
     const { w, ids, tick } = await world(8);
     try {
-      expect(PROTOCOL_VERSION).toBe(10);
+      expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(10);
       w.round.start();
       tick();
       const snap = w.round.snapshot();

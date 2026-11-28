@@ -111,6 +111,8 @@ export class KeyboardSource implements InputSource {
   slotRequest: number | null = null;
   /** Pieza pedida con Z (pared), X (suelo), C (rampa) o V (techo): abre el modo construcción. */
   buildRequest: 'wall' | 'floor' | 'ramp' | 'roof' | null = null;
+  /** Fase 15: tecla T = girar la pieza 90° antes de colocarla. */
+  buildRotate = false;
 
   constructor(private readonly target: Window) {
     target.addEventListener('keydown', this.onDown);
@@ -153,6 +155,7 @@ export class KeyboardSource implements InputSource {
     if (digit && !e.repeat) this.slotRequest = Number(digit[1]) - 1;
     const piece = BUILD_KEYS[e.code];
     if (piece && !e.repeat) this.buildRequest = piece;
+    if (e.code === 'KeyT' && !e.repeat) this.buildRotate = true;
     const action = KEY_ACTIONS[e.code];
     if (action && !e.repeat) this.actionLatch |= action;
     if (e.code === 'Equal' || e.code === 'NumpadAdd') this.zoomDelta -= 0.1;

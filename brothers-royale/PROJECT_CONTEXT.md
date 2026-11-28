@@ -17,7 +17,7 @@ y seguir por el primer bloque PENDIENTE.
 |---|---|
 | 15.1 Optimización | HECHO (ver abajo) |
 | 15.2 H1/H7/H16/H17 | HECHO (ver abajo) |
-| 15.3 Construcción | PENDIENTE |
+| 15.3 Construcción | HECHO (protocolo v11) |
 | 15.4 Terreno/zonas/vegetación | PENDIENTE |
 | 15.5 Personajes/armas/paracaídas | PENDIENTE |
 | 15.6 Animaciones/agacharse | PENDIENTE |
@@ -37,6 +37,17 @@ segundo plano/`interrupted`; sonidos nuevos `chop` (madera) y `pickup` (recoger/
 real.** H16 corrección del servidor absorbida solo en el dibujo (`PlayerAvatar.absorbCorrection`, ~0,18 s; >2,5 m =
 teletransporte). H17 `scripts/sync-beta.mjs` (publicar conservando build actual + anterior y `config.js`; borra
 los antiguos; `releases.json`) y SW que ya no conserva cachés viejas para siempre. Pruebas: `tests/phase15.test.ts`.
+
+**15.3** (protocolo **v11**; `BuildingState.ts`, `BuildingWorld.ts`, `BuildingView.ts`, `layout.ts` `buildSlots`,
+`prefab.ts` `nav.openings`, `Game.ts`, `sources.ts`). Causas reales: (1) la pared se colocaba en el CENTRO de la
+casilla (pared a mitad de plataforma) y dos paredes en esquina se solapaban (no se podían cerrar habitaciones);
+(2) la cuadrícula de 3 m no coincide con las casas (giradas), así que una pared en la puerta chocaba con sus muros.
+Ahora: pared en el borde (`WALL_EDGE`, `anchorOf`), una sola por borde compartido (`sameWall`), esquinas sin solape
+(comprobación como plano), contacto pared↔suelo/rampa/techo permitido solo en su borde; planificador: borde
+delante en la casilla propia (o la siguiente si está pegado), techo sobre la casilla propia, giro previo (tecla T,
+`configureBuild(_, true)`); paneles a medida para huecos de puerta/boquete (`BuildRequest.slot/yaw/w/h`, la
+autoridad compara con `buildSlots(layout)`); vista previa verde/roja. Pruebas: `tests/phase15Build.test.ts`.
+Pendiente menor: botón táctil de giro (no añadido para no saturar el HUD).
 
 Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
 izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.

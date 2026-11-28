@@ -1,7 +1,7 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
-import { BuildingState, BUILD, validBuildRequest, buildPrefab, type BuildingSnapshot } from '@shared/building/BuildingState';
+import { anchorOf, BuildingState, BUILD, validBuildRequest, buildPrefab, type BuildingSnapshot } from '@shared/building/BuildingState';
 import { prefabColliders, treeCollider } from '@shared/world/colliders';
-import type { WorldLayout } from '@shared/world/layout';
+import { buildSlots, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
 import type { Vec3 } from '@shared/types';
 import { placePart } from '@shared/world/prefab';
@@ -18,15 +18,31 @@ export class BuildingWorld {
   constructor(readonly physics: PhysicsWorld, readonly layout: WorldLayout, players: () => readonly Vec3[]) {
     this.state = new BuildingState(layout.trees.length, layout.terrain.size, {
       ground: (x, z) => terrainHeight(x, z, layout.terrain),
+      slots: buildSlots(layout),
       clear: (r, feet) => {
-        if (!physics.lineOfSight({ ...feet, y: feet.y + 1.4 }, { x: r.x, y: r.y + 1, z: r.z })) return false;
+        // Fase 15: la visibilidad se mide hasta el punto real de la pieza (el borde, en las paredes).
+        const a = anchorOf(r);
+        if (!physics.lineOfSight({ ...feet, y: feet.y + 1.4 }, { x: a.x, y: r.y + 1, z: a.z })) return false;
         const R = physics.R;
         for (const spec of prefabColliders(buildPrefab(r), 'build')) {
           if (spec.kind !== 'box') continue;
           const h = spec.halfExtents;
           // Separación numérica para permitir piezas adyacentes sin solaparlas.
-          const shape = new R.Cuboid(Math.max(0.01, h.x - 0.015), Math.max(0.01, h.y - 0.015), Math.max(0.01, h.z - 0.015));
-          if (physics.world.intersectionWithShape(spec.center, spec.rotation, shape, undefined, CAMERA_QUERY_GROUPS)) return false;
+          // Paredes (fase 15): se comprueban como un plano (−9 cm a lo ancho y en sus extremos)
+          // para que dos paredes se unan en esquina y una pared se apoye en el borde de un suelo.
+          const wall = r.kind === 'wall';
+          const shape = new R.Cuboid(Math.max(0.01, h.x - (wall ? 0.09 : 0.015)), Math.max(0.01, h.y - 0.015), Math.max(0.01, h.z - (wall ? 0.09 : 0.015)));
+          // Fase 15: una pared (siempre en un borde) y un suelo, rampa o techo (siempre centrados en
+          // su casilla) solo pueden tocarse en ese borde: ese contacto no es un solape.
+          let blocked = false;
+          physics.world.intersectionsWithShape(spec.center, spec.rotation, shape, (collider) => {
+            const id = this.handles.get(collider.handle)?.piece;
+            const other = id === undefined ? undefined : this.state.pieces.get(id);
+            if (other && (r.kind === 'wall') !== (other.kind === 'wall')) return true; // seguir buscando
+            blocked = true;
+            return false;
+          }, undefined, CAMERA_QUERY_GROUPS);
+          if (blocked) return false;
         }
         // Cápsulas de todos los jugadores, incluidas las plazas reservadas.
         for (const feet of players()) for (const part of buildPrefab(r).def.parts) {

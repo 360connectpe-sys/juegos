@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILD, buildTop, FLOOR_TOP, groundRange, planBuild, quadrantFromYaw, QUADRANT_DIR, rampRise, rotationForYaw, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
+import { anchorOf, BUILD, buildTop, FLOOR_TOP, groundRange, planBuild, quadrantFromYaw, QUADRANT_DIR, rampRise, rotationForYaw, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
 import { BuildingWorld } from '@/physics/BuildingWorld';
 import { CharacterBody } from '@/physics/CharacterBody';
 import { loadRapier, PhysicsWorld } from '@/physics/PhysicsWorld';
@@ -74,12 +74,20 @@ describe('encaje de piezas con física real', () => {
     const { w, dispose } = await world();
     try {
       const feet = { x: 0, y: ground(0, 0), z: 0 };
-      const wall = build(w, 'wall', feet, 0);
-      // A ras del terreno el suelo choca con la pared: se elige solo la altura de su borde superior.
+      // Fase 15: la pared va en el borde de la casilla propia; el suelo de la casilla siguiente
+      // queda a ras del terreno (antes chocaba con una pared en su centro y subía 3 m).
+      // (el suelo primero: detrás de una pared ya no se puede construir).
       const floor = build(w, 'floor', feet, 0);
-      expect(floor).toMatchObject({ x: wall.x, z: wall.z, y: wall.y + 3 });
+      expect(floor).toMatchObject({ x: 0, z: 3 });
+      const wall = build(w, 'wall', feet, 0);
+      expect(anchorOf(wall)).toEqual({ x: 0, z: 1.5 });
+      expect(floor.y).toBeLessThan(wall.y + 0.5);
+      // De pie sobre la pared (a su altura), el suelo de arriba se apoya en su borde superior
+      // y la pared siguiente se apila encima.
+      const up = build(w, 'floor', { x: 0, y: wall.y + 3, z: 0.4 }, 0);
+      expect(up.y).toBeCloseTo(wall.y + 3, 5);
       const top = build(w, 'wall', { x: 0, y: wall.y + 3, z: 0 }, 0);
-      expect(top.y).toBeCloseTo(buildTop(floor), 5);
+      expect(top.y).toBeCloseTo(buildTop(up), 5); // sobre el suelo de arriba
     } finally { dispose(); }
   });
 

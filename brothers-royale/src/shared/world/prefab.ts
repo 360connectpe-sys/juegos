@@ -69,6 +69,8 @@ export interface PrefabNav {
   inside: { x: number; z: number };
   /** Escaleras o rampas: recorrido del pie a la llegada (y local de cada punto). */
   climbs: Vec3[][];
+  /** Fase 15: huecos tapables con una pared a medida (puertas, boquetes). Locales; yaw local. */
+  openings?: { x: number; y: number; z: number; yaw: number; w: number; h: number }[];
 }
 
 export interface PlacedPrefab {

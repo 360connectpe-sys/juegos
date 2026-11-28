@@ -209,7 +209,7 @@ export function createHouseDef(): PrefabDef {
     id: 'house',
     parts,
     clearRadius: 9,
-    nav: { door: { x: 0, z: hd + 1.2 }, inside: { x: 0, z: hd - 1.4 }, climbs: [[{ x: stairX, y: 0, z: stairStartZ + 0.6 }, { x: stairX, y: G, z: loftZ1 - 0.7 }, { x: stairX + 1.6, y: G, z: loftZ1 - 1.2 }]] },
+    nav: { openings: [{ x: 0, y: 0, z: hd - t / 2, yaw: 0, w: doorWidth, h: doorHeight }], door: { x: 0, z: hd + 1.2 }, inside: { x: 0, z: hd - 1.4 }, climbs: [[{ x: stairX, y: 0, z: stairStartZ + 0.6 }, { x: stairX, y: G, z: loftZ1 - 0.7 }, { x: stairX + 1.6, y: G, z: loftZ1 - 1.2 }]] },
     interior: {
       min: { x: -hw + t - 0.1, y: -0.5, z: -hd + t - 0.1 },
       // Por debajo del tejado: quien está ENCIMA cuenta como fuera (el techo se ve).
@@ -356,7 +356,7 @@ export function createSmallHouseDef(variant: SmallHouseVariant, paletteIndex: nu
   return {
     id: `small-${variant}`,
     parts,
-    nav: { door: { x: doorX, z: hd + 1.2 }, inside: { x: doorX, z: hd - 1.0 }, climbs: [] },
+    nav: { openings: [{ x: doorX, y: 0, z: hd - t / 2, yaw: 0, w: SMALL.doorWidth, h: SMALL.doorHeight }], door: { x: doorX, z: hd + 1.2 }, inside: { x: doorX, z: hd - 1.0 }, climbs: [] },
     clearRadius: Math.hypot(hw, hd) + (variant === 'porch' ? 3 : 2),
     interior: { min: { x: -hw + t - 0.1, y: -0.5, z: -hd + t - 0.1 }, max: { x: hw - t + 0.1, y: H - 0.4, z: hd - t + 0.1 } },
   };
