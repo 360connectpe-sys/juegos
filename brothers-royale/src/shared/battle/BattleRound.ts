@@ -126,12 +126,13 @@ export class BattleRound {
   private finish(reason: RoundResult['reason']): void {
     const scores = [...this.participants].map(([id, p]) => this.score(id, p));
     const eligible = scores.filter(p => !p.forfeited && p.lives > 0);
-    eligible.sort((a, b) => b.lives - a.lives || b.eliminations - a.eliminations || b.hp - a.hp);
+    // Fase 12: desempate por vidas, después salud y después eliminaciones de jugadores.
+    eligible.sort((a, b) => b.lives - a.lives || b.hp - a.hp || b.eliminations - a.eliminations);
     const first = eligible[0];
-    const winners = first ? eligible.filter(p => p.lives === first.lives && p.eliminations === first.eliminations && p.hp === first.hp).map(p => p.id) : [];
+    const winners = first ? eligible.filter(p => p.lives === first.lives && p.hp === first.hp && p.eliminations === first.eliminations).map(p => p.id) : [];
     const compare=(a:RoundScore,b:RoundScore)=>{
       const aliveA=!a.forfeited&&a.lives>0,aliveB=!b.forfeited&&b.lives>0;
-      return Number(aliveB)-Number(aliveA)||(aliveA?b.lives-a.lives||b.eliminations-a.eliminations||b.hp-a.hp:(b.survivalSeconds??0)-(a.survivalSeconds??0));
+      return Number(aliveB)-Number(aliveA)||(aliveA?b.lives-a.lives||b.hp-a.hp||b.eliminations-a.eliminations:(b.survivalSeconds??0)-(a.survivalSeconds??0));
     };
     scores.sort(compare);
     for(const s of scores)s.position=1+scores.filter(other=>compare(other,s)<0).length;

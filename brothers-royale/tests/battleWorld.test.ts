@@ -1,3 +1,4 @@
+import { ROUND_SECONDS } from '@shared/battle/zone';
 import { describe, expect, it } from 'vitest';
 import { ServerWorld } from '../server/ServerWorld';
 import { OfflineSession } from '@/net/OfflineSession';
@@ -58,7 +59,7 @@ describe('integración física del ciclo', () => {
       w.combat.environmentalDamage('a',100,a.body.state.position,0);step(w,150);
       expect(w.match.inventory('a')).toBe(inv);
       w.combat.log.of('a').kills=4;
-      w.round.elapsed=1800;w.step();expect(w.round.phase).toBe('finished');
+      w.round.elapsed=ROUND_SECONDS;w.step();expect(w.round.phase).toBe('finished');
       const revision=w.building.state.revision;step(w,300);
       expect(w.round.phase).toBe('waiting');
       expect(w.match.opened.every(v=>!v)).toBe(true);expect(w.match.pickups.size).toBe(0);

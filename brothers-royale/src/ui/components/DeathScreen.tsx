@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Game } from '@/game/Game';
+import { ROUND_SECONDS, ZONE_PHASES } from '@shared/battle/zone';
+
+/** m:ss */
+const clock = (seconds: number): string => { const s = Math.max(0, Math.ceil(seconds)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 /** Vidas, descenso, espectador y resultado dependen exclusivamente de la autoridad. */
 export function DeathScreen({ game }: { game: Game }) {
@@ -27,8 +31,10 @@ export function DeathScreen({ game }: { game: Game }) {
       {round?.phase === 'waiting' && (ui?.offline ? <button onClick={() => game.startRound()}>Iniciar partida offline</button> : <span>Esperando jugadores · mínimo 2</span>)}
       {round?.phase === 'countdown' && <span>Partida en {Math.ceil(round.countdown)} s</span>}
       {round?.phase === 'running' && <>
-        <span>{Math.floor(round.elapsed / 60)}:{String(Math.floor(round.elapsed % 60)).padStart(2, '0')} / 30:00 · {round.players.filter(p => p.lives > 0).length} supervivientes</span>
-        {round.zone.warning && <strong>La zona se cierra en {Math.ceil(round.zone.changesIn)} s</strong>}
+        <span className="battle-clock">Quedan {clock(ROUND_SECONDS - round.elapsed)} · Fase {round.zone.phase + 1}/{ZONE_PHASES.length} · {round.players.filter(p => p.lives > 0).length} supervivientes</span>
+        {round.zone.closing ? <span className="battle-zone">La zona se está cerrando · {round.zone.damage} HP/s fuera</span>
+          : round.zone.warning ? <strong className="battle-zone battle-zone--warn">La zona se cierra en {Math.ceil(round.zone.changesIn)} s</strong>
+            : round.zone.changesIn > 0 && round.elapsed < ROUND_SECONDS && <span className="battle-zone">Próximo cierre en {clock(round.zone.changesIn)}</span>}
         {ui?.outside && <strong>Fuera de la zona · {round.zone.damage} HP/s</strong>}
       </>}
       {ui?.descending && <span>Descendiendo · dirige el aterrizaje con el movimiento</span>}

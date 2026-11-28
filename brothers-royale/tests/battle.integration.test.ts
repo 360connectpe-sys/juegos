@@ -1,3 +1,4 @@
+import { ROUND_SECONDS } from '@shared/battle/zone';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Client } from '@colyseus/sdk';
 import { matchMaker } from '@colyseus/core';
@@ -53,7 +54,7 @@ it('ocho clientes conservan vidas al reconectar; una sesión nueva observa; todo
     fresh.sdk.send('input',{...emptyInput(1),buttons:Buttons.FIRE|Buttons.INTERACT,moveX:1,lives:3,hp:100});await wait(100);
     expect(w.combat.lives(fresh.sdk.sessionId)).toBe(0);
     const beforeReset=clients.slice(1).map(c=>c.welcomes);
-    w.round.elapsed=1800;w.step();await wait(400);
+    w.round.elapsed=ROUND_SECONDS;w.step();await wait(400);
     expect(clients.slice(1).every(c=>c.battle?.phase==='finished')).toBe(true);
     w.round.returnToLobby();
     for(let t=0;t<300;t++)w.step();await wait(150);
@@ -63,14 +64,14 @@ it('ocho clientes conservan vidas al reconectar; una sesión nueva observa; todo
   }finally{await Promise.all(clients.map(c=>c.sdk.leave(true)));}
 },15000);
 
-it('simula treinta minutos con ocho clientes reales, cierre total y reinicio',async()=>{
+it('simula quince minutos con ocho clientes reales, cierre total y reinicio',async()=>{
   const clients: Awaited<ReturnType<typeof connect>>[]=[];
   try {
     for(let i=0;i<8;i++)clients.push(await connect('FAST8',i));
     const room=matchMaker.getLocalRoomById(clients[0]!.sdk.roomId) as BrothersRoom,w=room.world;
     w.round.start();await wait(80);
     const phases=new Set<number>();let ticks=0,previousPhase=-1;const start=performance.now();
-    while(w.round.phase==='running' && ticks<54001){
+    while(w.round.phase==='running' && ticks<ROUND_SECONDS*30+1){
       const c=w.round.zone.current,y=(w.physics.groundHeightAt(c.x,c.z)??0)+.05;
       // Fixture coloca a los ocho en la zona para ejercer el límite, no una IA de navegación.
       for(const p of w.players.values())p.body.teleport({x:c.x,y,z:c.z});
@@ -80,15 +81,15 @@ it('simula treinta minutos con ocho clientes reales, cierre total y reinicio',as
       if(ticks%300===0){w.drainCombatEvents();w.drainMatchEvents();}
     }
     for(let i=0;i<100 && !clients.every(c=>c.battle?.phase==='finished');i++)await wait(10);
-    expect(w.round.phase).toBe('finished');expect(w.round.snapshot().result?.elapsed).toBe(1800);
-    expect([...phases]).toEqual([0,1,2,3,4,5,6,7]);expect(clients.every(c=>c.battle?.phase==='finished')).toBe(true);
+    expect(w.round.phase).toBe('finished');expect(w.round.snapshot().result?.elapsed).toBe(ROUND_SECONDS);
+    expect([...phases]).toEqual([0,1,2,3,4]);expect(clients.every(c=>c.battle?.phase==='finished')).toBe(true);
     expect(w.round.snapshot().zone.current.radius).toBe(0);
     expect(clients.every(c=>c.battle?.result?.scores.length===8)).toBe(true);
-    expect(clients.every(c=>c.phases.size===8)).toBe(true);
+    expect(clients.every(c=>c.phases.size===5)).toBe(true);
     w.round.returnToLobby();
     for(let t=0;t<300;t++)w.step();await wait(100);
     expect(clients.every(c=>c.vitals?.lives===3)).toBe(true);
-    console.log('PHASE8_ACCELERATED_NET',JSON.stringify({virtualSeconds:1800,manualTicks:ticks,realMs:performance.now()-start,phases:[...phases],clients:8}));
+    console.log('PHASE8_ACCELERATED_NET',JSON.stringify({virtualSeconds:ROUND_SECONDS,manualTicks:ticks,realMs:performance.now()-start,phases:[...phases],clients:8}));
   }finally{await Promise.all(clients.map(c=>c.sdk.leave(true)));}
 },60000);
 

@@ -97,7 +97,7 @@ describe('tres vidas y ciclo autoritativo', () => {
   it('el reloj monotónico impide extender la ronda tras un bloqueo del bucle', () => {
     const w = setup(); w.round.syncWallTime(100); w.round.start();
     w.round.syncWallTime(1900); w.round.before(1/30);
-    expect(w.round.snapshot().result?.elapsed).toBe(1800); expect(w.round.phase).toBe('finished');
+    expect(w.round.snapshot().result?.elapsed).toBe(ROUND_SECONDS); expect(w.round.phase).toBe('finished');
   });
   it('muertes simultáneas no declaran un ganador por orden de procesamiento', () => {
     const w = setup(); w.round.start();
@@ -115,7 +115,7 @@ describe('tres vidas y ciclo autoritativo', () => {
     const w = setup();
     for (let i = 0; i < 12; i++) {
       w.round.start(); w.combat.log.of('p0').kills = i;
-      w.round.elapsed = 1800; w.round.before(1/30); w.step(10);
+      w.round.elapsed = ROUND_SECONDS; w.round.before(1/30); w.step(10);
     }
     expect(w.round.history).toHaveLength(10);
     expect(w.round.history[0]!.scores[0]!.kills).toBe(2);
@@ -125,16 +125,23 @@ describe('tres vidas y ciclo autoritativo', () => {
 });
 
 describe('zona determinista y contrato', () => {
-  it('respeta cronograma, radios objetivos y aviso con exactamente treinta segundos', () => {
-    const plan = zonePlan(120, 17), initial = plan[0]!.radius;
-    for (let phase = 0; phase < 8; phase++) {
-      const [start, fraction, damage] = ZONE_PHASES[phase]!;
-      const z = zoneAt(plan, phase ? start + 60 : 0);
-      expect(z.current.radius).toBeCloseTo(initial * fraction, 8); expect(z.damage).toBe(damage);
+  it('fase 12: cinco fases (85/60/40/20/5→0 m; 1/2/4/7/12 HP/s), aviso de treinta segundos y cierre progresivo', () => {
+    const plan = zonePlan(120, 17);
+    expect(ZONE_PHASES.map(p => [p.start, p.radius, p.damage])).toEqual([[0, 85, 1], [240, 60, 2], [420, 40, 4], [600, 20, 7], [780, 5, 12]]);
+    for (let phase = 0; phase < 5; phase++) {
+      const { start, radius, damage, close } = ZONE_PHASES[phase]!;
+      const z = zoneAt(plan, start + close + 1);
+      expect(z.phase).toBe(phase); expect(z.current.radius).toBeCloseTo(radius, 8); expect(z.damage).toBe(damage); expect(z.closing).toBe(false);
+      if (phase) { const mid = zoneAt(plan, start + close / 2); expect(mid.closing).toBe(true); expect(mid.current.radius).toBeLessThan(ZONE_PHASES[phase - 1]!.radius); expect(mid.current.radius).toBeGreaterThan(radius); }
     }
-    expect(zoneAt(plan,149.99).warning).toBe(false); expect(zoneAt(plan,150).warning).toBe(true);
-    expect(zoneAt(plan,179.99).warning).toBe(true); expect(zoneAt(plan,180).closing).toBe(true);
-    expect(zoneAt(plan,1800).current.radius).toBe(0); expect(contains(zoneAt(plan,1800).current, {x:0,z:0})).toBe(false);
+    expect(zoneAt(plan,209.99).warning).toBe(false); expect(zoneAt(plan,210).warning).toBe(true); expect(zoneAt(plan,210).changesIn).toBe(30);
+    expect(zoneAt(plan,239.99).warning).toBe(true); expect(zoneAt(plan,240).closing).toBe(true);
+    expect(zoneAt(plan,239).next.radius).toBe(60);
+    expect(zoneAt(plan,830).warning).toBe(true); expect(zoneAt(plan,870).current.radius).toBeCloseTo(2.5, 6);
+    expect(zoneAt(plan,ROUND_SECONDS).current.radius).toBe(0); expect(contains(zoneAt(plan,ROUND_SECONDS).current, {x:0,z:0})).toBe(false);
+    expect(ROUND_SECONDS).toBe(900);
+    // Otro tamaño de mapa: radios proporcionales.
+    expect(zonePlan(240, 17)[1]!.radius).toBe(120);
   });
   it('los círculos se desplazan, quedan anidados y usan semilla reproducible', () => {
     const plan = zonePlan(120, 17); expect(plan).toEqual(zonePlan(120, 17)); expect(plan).not.toEqual(zonePlan(120, 18));
@@ -147,22 +154,22 @@ describe('zona determinista y contrato', () => {
   });
 });
 
-it('ciclo acelerado completo de treinta minutos con ocho competidores y reinicio', () => {
+it('ciclo acelerado completo de quince minutos con ocho competidores y reinicio', () => {
   const w=setup(8);w.round.start();
   const phases=new Set<number>();const start=performance.now();let ticks=0;
-  while(w.round.phase==='running' && ticks<54001){
+  while(w.round.phase==='running' && ticks<ROUND_SECONDS*30+1){
     const zone=w.round.zone.current;
     // Fixture mantiene los competidores en zona para alcanzar el límite sin un ganador anterior.
     for(const a of w.actors){a.feet.x=zone.x;a.feet.z=zone.z;}
     w.round.before(1/30);w.round.after(1/30,ticks++);phases.add(w.round.zone.phase);
   }
   const result=w.round.snapshot().result!;
-  expect(ticks).toBe(54000);expect(result.elapsed).toBe(1800);expect(result.reason).toBe('draw');
-  expect(result.winners).toHaveLength(8);expect([...phases]).toEqual([0,1,2,3,4,5,6,7]);
+  expect(ticks).toBe(ROUND_SECONDS*30);expect(result.elapsed).toBe(ROUND_SECONDS);expect(result.reason).toBe('draw');
+  expect(result.winners).toHaveLength(8);expect([...phases]).toEqual([0,1,2,3,4]);
   expect(result.scores.every(p=>p.lives===3)).toBe(true);
   w.step(10);expect(w.round.phase).toBe('waiting');expect(w.round.history).toHaveLength(1);
   expect(w.round.start()).toBe(true);expect(w.round.round).toBe(2);expect(w.round.elapsed).toBe(0);
-  console.log('PHASE8_ACCELERATED',JSON.stringify({ticks,virtualSeconds:1800,realMs:performance.now()-start,phases:[...phases],players:8}));
+  console.log('PHASE8_ACCELERATED',JSON.stringify({ticks,virtualSeconds:ROUND_SECONDS,realMs:performance.now()-start,phases:[...phases],players:8}));
 });
 
 it('las bajas de vida y las eliminaciones definitivas se registran por separado', () => {
@@ -177,4 +184,33 @@ it('las bajas de vida y las eliminaciones definitivas se registran por separado'
   expect(w.combat.lives('p1')).toBe(0);
   expect(w.combat.log.of('p0')).toMatchObject({kills:1,eliminations:1});
   expect(w.combat.log.stats.has('storm')).toBe(false);
+});
+
+describe('fase 12: límite de quince minutos y desempate', () => {
+  it('al llegar a 15:00 gana quien tiene más vidas; con las mismas, más salud; después, eliminaciones', () => {
+    const w = setup(3); w.round.start();
+    w.combat.environmentalDamage('p0', 30, w.actors[0]!.feet, 1); // p0: 3 vidas, 70 HP
+    w.combat.environmentalDamage('p1', 10, w.actors[1]!.feet, 1); // p1: 3 vidas, 90 HP
+    w.combat.environmentalDamage('p2', 100, w.actors[2]!.feet, 1); // p2: 2 vidas
+    w.round.elapsed = ROUND_SECONDS - 1 / 60; w.round.before(1 / 30);
+    const r = w.round.snapshot().result!;
+    expect(r.reason).toBe('limit'); expect(r.elapsed).toBe(900);
+    expect(r.winners).toEqual(['p1']);
+    expect(r.scores.map(s => s.id)).toEqual(['p1', 'p0', 'p2']);
+  });
+  it('misma vida y salud: deciden las eliminaciones; si todo empata, es empate', () => {
+    const w = setup(2); w.round.start();
+    w.combat.log.of('p0').eliminations = 1;
+    w.round.elapsed = ROUND_SECONDS; w.round.before(1 / 30);
+    expect(w.round.snapshot().result!.winners).toEqual(['p0']);
+    const t = setup(2); t.round.start(); t.round.elapsed = ROUND_SECONDS; t.round.before(1 / 30);
+    expect(t.round.snapshot().result!.reason).toBe('draw'); expect(t.round.snapshot().result!.winners).toHaveLength(2);
+  });
+  it('las reapariciones no alargan la partida: termina a los 15 min aunque alguien esté esperando', () => {
+    const w = setup(2); w.round.start();
+    w.step(ROUND_SECONDS - 2);
+    w.combat.environmentalDamage('p0', 100, w.actors[0]!.feet, 1);
+    w.step(3);
+    expect(w.round.phase).toBe('finished'); expect(w.round.snapshot().result!.elapsed).toBe(ROUND_SECONDS);
+  });
 });

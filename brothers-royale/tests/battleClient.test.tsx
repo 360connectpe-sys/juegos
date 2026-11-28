@@ -14,7 +14,7 @@ import type { RoundSnapshot } from '@shared/battle/BattleRound';
 afterEach(cleanup);
 function fixture(lives=3) {
   const calls:string[]=[];
-  const round:RoundSnapshot={round:1,phase:'running',elapsed:150,countdown:0,players:[{id:'a',lives,descending:false,protection:0}],zone:zoneAt(zonePlan(120,1),150),result:null};
+  const round:RoundSnapshot={round:1,phase:'running',elapsed:210,countdown:0,players:[{id:'a',lives,descending:false,protection:0}],zone:zoneAt(zonePlan(120,1),210),result:null};
   const game={currentVitals:{...fullVitals(),lives,dead:lives===0},events:new EventBus<GameEvents>(),battleUi:{round,offline:false,spectator:lives===0,target:'Ana',outside:true,protection:0,descending:false},spectateNext:(d?:number)=>calls.push(String(d??1)),startRound:()=>calls.push('start')} as unknown as Game;
   return {game,calls,round};
 }
@@ -50,16 +50,20 @@ describe('HUD y vistas de la fase 8',()=>{
   it('muestra aviso de treinta segundos, tormenta y resultado de empate',()=>{
     const {game,round}=fixture();render(<DeathScreen game={game}/>);
     expect(screen.getByText('La zona se cierra en 30 s')).toBeTruthy();
+    expect(screen.getByText(/Quedan 11:30 · Fase 1\/5/)).toBeTruthy();
     expect(document.querySelector('.storm-tint')).not.toBeNull();cleanup();
     round.phase='finished';round.countdown=10;round.result={round:1,elapsed:1800,reason:'draw',winners:[],scores:[]};
     render(<DeathScreen game={game}/>);expect(screen.getByText('Empate')).toBeTruthy();expect(screen.getByText('Nueva partida en 10 s')).toBeTruthy();
   });
-  it('la tormenta añade una sola línea compartida y libera su geometría y material',()=>{
+  it('fase 12: la tormenta es una barrera de energía en UNA malla que sigue al círculo y libera sus recursos',()=>{
     const view=new StormView(generateWorldLayout().terrain);
-    view.update({x:0,z:0,radius:40});expect(view.line.visible).toBe(true);
-    expect(view.line.geometry.getAttribute('position').count).toBe(96);
-    view.update({x:2,z:1,radius:30});expect(view.line.geometry.getAttribute('position').count).toBe(96);
-    view.update(null);expect(view.line.visible).toBe(false);view.dispose();
+    view.update({x:0,z:0,radius:40},1/60);expect(view.mesh.visible).toBe(true);
+    expect(view.mesh.material.transparent).toBe(true);expect(view.mesh.material.depthWrite).toBe(false);
+    expect(view.mesh.scale.x).toBe(40);
+    view.update({x:2,z:1,radius:30},1/60,true);expect(view.mesh.position.x).toBe(2);expect(view.mesh.scale.z).toBe(30);
+    expect(view.mesh.material.uniforms.uPulse!.value).toBeGreaterThanOrEqual(0);
+    view.update({x:2,z:1,radius:0});expect(view.mesh.visible).toBe(false);
+    view.update(null);expect(view.mesh.visible).toBe(false);view.dispose();
   });
   it('rechaza vidas y protección malformadas y reconoce daño ambiental acotado',()=>{
     for(const v of [{...fullVitals(),lives:4},{...fullVitals(),lives:NaN},{...fullVitals(),protection:4},{...fullVitals(),descending:1}])expect(isValidVitals(v)).toBe(false);

@@ -1,3 +1,4 @@
+import { ROUND_SECONDS } from '@shared/battle/zone';
 import { Buttons,emptyInput } from '@shared/types';
 import { describe,expect,it } from 'vitest';
 import { LobbyState,validLobby } from '@shared/lobby/LobbyState';
@@ -54,9 +55,9 @@ it('las estadísticas cuentan solo madera y construcciones autoritativas y conse
  for(let n=0;n<20;n++)builds.hitTree('a',0,15,true);
  const r={kind:'wall',x:0,y:0,z:0,rotation:0};expect(builds.place('a',r,{x:0,y:0,z:5})).toBe(true);expect(builds.place('a',r,{x:0,y:0,z:5})).toBe(false);
  fight.log.of('a').rangedShots=10;fight.log.of('a').accurateShots=4;fight.log.of('a').eliminations=1;
- round.elapsed=1800;round.before(1/30);
+ round.elapsed=ROUND_SECONDS;round.before(1/30);
  const a=round.snapshot().result!.scores.find(p=>p.id==='a')!;
- expect(a).toMatchObject({woodCollected:30,structuresBuilt:1,accuracy:40,survivalSeconds:1800,position:1});
+ expect(a).toMatchObject({woodCollected:30,structuresBuilt:1,accuracy:40,survivalSeconds:ROUND_SECONDS,position:1});
  expect(round.snapshot().result!.winners).toEqual(['a']);
 });
 
@@ -66,6 +67,6 @@ it('el daño final mide HP realmente perdidos sin sumar exceso sobre una vida',(
  const round=new BattleRound(fight,120,1,{actors:()=>actors,reset:ids=>{match.reset(ids);fight.reset(ids);},spawn:()=>undefined});round.start();fight.setHp('b',5);
  fight.step('a',{...emptyInput(1),buttons:Buttons.FIRE},{feet:actors[0]!.feet,grounded:true,speed:0,dt:1/30,tick:0,targets:()=>[{id:'b',feet:actors[1]!.feet}],castStatic:()=>null});
  expect(fight.log.of('a').damageDealt).toBe(15); // registro histórico de fase 6 intacto
- round.elapsed=1800;round.before(1/30);
+ round.elapsed=ROUND_SECONDS;round.before(1/30);
  expect(round.snapshot().result!.scores.find(p=>p.id==='a')?.damageDealt).toBe(5);
 });

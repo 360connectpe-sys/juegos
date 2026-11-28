@@ -142,8 +142,9 @@ Render en Safari iOS (sin WEBGL_multi_draw): NUNCA un BatchedMesh con muchas ins
 mallas normales (cambio de programa por frame). Nada de objetos nuevos por acceso en getters de sesión.
 Controles táctiles: arrastre con `TouchDrag` (zona muerta + tope); la mira táctil es conmutable.
 Ciclo: BattleRound y zone, compartidos servidor/offline. Vidas, protección y espera avanzan una
-vez por tick real de simulación, no por entrada. Máximo 1800 s también con reloj monotónico.
-Desempate: vidas, eliminations (definitivas), HP. El inventario se conserva al reaparecer hasta
+vez por tick real de simulación, no por entrada. Fase 12: máximo 900 s (15 min) también con reloj monotónico;
+5 fases de tormenta en `zone.ts` (85/60/40/20/5→0 m; 1/2/4/7/12 HP/s).
+Desempate (fase 12): vidas, HP y después eliminaciones de jugadores; si no, empate. El inventario se conserva al reaparecer hasta
 que se defina otra regla. No reiniciar secuencias ni retroceder revisiones de construcción.
 Red v8: nuevas sesiones durante una ronda son espectadoras; reconectar conserva las vidas.
 Lobby: LobbyState valida anfitrión, Listo y perfiles. Sala online = BattleRound.managed; sin

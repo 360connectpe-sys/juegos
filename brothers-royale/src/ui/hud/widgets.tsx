@@ -301,6 +301,10 @@ export function Minimap({ game }: { game: Game | null }) {
       const u = (x: number) => ((x + half) / st.size) * MAP_PX;
       c.clearRect(0, 0, MAP_PX, MAP_PX);
       if (st.zone) {
+        // Fuera de la zona actual: velo violeta (regla par-impar: el círculo queda limpio).
+        c.beginPath(); c.rect(0, 0, MAP_PX, MAP_PX);
+        c.arc(u(st.zone.current.x), u(st.zone.current.z), st.zone.current.radius / st.size * MAP_PX, 0, Math.PI * 2);
+        c.fillStyle = '#6b3fd04d'; c.fill('evenodd');
         for (const [circle, color, dashed] of [[st.zone.current, '#ac78ff', false], [st.zone.next, '#ffffff', true]] as const) {
           c.beginPath(); c.strokeStyle = color; c.lineWidth = 2; c.setLineDash(dashed ? [3, 3] : []);
           c.arc(u(circle.x), u(circle.z), circle.radius / st.size * MAP_PX, 0, Math.PI * 2); c.stroke();

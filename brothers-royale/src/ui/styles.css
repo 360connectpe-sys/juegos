@@ -1476,3 +1476,8 @@ kbd {
 .netbadge--ok i { background: var(--sun); }
 .netbadge--bad i { background: var(--coral); }
 .netbadge.is-warn { background: rgb(143 29 29 / 0.82); }
+/* Fase 12: la tormenta late una vez por segundo (el ritmo del daño) cuando se está fuera. */
+.storm-tint { animation: storm-pulse 1s ease-in-out infinite; }
+@keyframes storm-pulse { 0%, 100% { background: #4a2fa51a; box-shadow: inset 0 0 60px #5123957a; } 50% { background: #6a35c933; box-shadow: inset 0 0 110px #6b2fd0b0; } }
+.battle-zone--warn { color: #ffd36b; }
+@media (prefers-reduced-motion: reduce) { .storm-tint { animation: none; } }

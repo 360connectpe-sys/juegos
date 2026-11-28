@@ -324,7 +324,7 @@ export class Game {
     }
     const trees: Group = createTrees(layout.trees, layout.seed, this.quality.shadows);
     scene.add(trees);
-    this.stormView = new StormView(layout.terrain); scene.add(this.stormView.line);
+    this.stormView = new StormView(layout.terrain); scene.add(this.stormView.mesh);
     this.buildingView = new BuildingView(layout.trees, trees);
     scene.add(this.buildingView.root);
     this.buildingView.setShadows(this.quality.shadows);
@@ -715,7 +715,7 @@ export class Game {
     const watched = this.spectatedId ? this.remotes.get(this.spectatedId) : null;
     const followed = watched ?? avatar;
     const p = followed.position;
-    this.stormView?.update(battle?.phase === 'running' ? battle.zone.current : null);
+    this.stormView?.update(battle?.phase === 'running' ? battle.zone.current : null, dt, !!battle && battle.phase === 'running' && !contains(battle.zone.current, p));
     const zoom = this.input.consumeZoom();
     if (cameras) {
       if (zoom !== 0 && !this.inputSuspended) cameras.addZoom(zoom);
