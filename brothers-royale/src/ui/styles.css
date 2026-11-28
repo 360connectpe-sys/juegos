@@ -142,7 +142,9 @@ body,
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 5;
+  /* Fase 12: por encima de la zona táctil de mirada (.touch, 6): en el celular el botón de
+     Ajustes quedaba tapado por .touch__look y solo se podía abrir desde un ordenador. */
+  z-index: 7;
 }
 .hud__corner {
   position: absolute;
