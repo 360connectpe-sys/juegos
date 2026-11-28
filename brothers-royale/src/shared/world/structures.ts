@@ -186,14 +186,14 @@ export function createHouseDef(): PrefabDef {
   const slab = Math.hypot(hw, roofHeight) + 0.5;
   for (const sx of [-1, 1]) {
     parts.push(
+      // Fase 12: el tejado es sólido (se aterriza, camina y combate encima).
       bx([(sx * hw) / 2 + sx * 0.05, top + roofHeight / 2 + 0.12, 0], [slab, 0.22, D + 0.8], sx < 0 ? C.roof : C.roofDark, 'roof', {
-        collide: false,
         rot: [0, 0, -sx * slope],
       }),
     );
   }
-  parts.push(bx([0, top + roofHeight + 0.12, 0], [0.3, 0.3, D + 0.9], C.trim, 'roof', { collide: false }));
-  parts.push(bx([hw * 0.45, top + roofHeight * 0.8, -hd * 0.4], [0.6, 1.4, 0.6], C.chimney, 'roof', { collide: false }));
+  parts.push(bx([0, top + roofHeight + 0.12, 0], [0.3, 0.3, D + 0.9], C.trim, 'roof'));
+  parts.push(bx([hw * 0.45, top + roofHeight * 0.8, -hd * 0.4], [0.6, 1.4, 0.6], C.chimney, 'roof'));
 
   return {
     id: 'house',
@@ -201,7 +201,8 @@ export function createHouseDef(): PrefabDef {
     clearRadius: 9,
     interior: {
       min: { x: -hw + t - 0.1, y: -0.5, z: -hd + t - 0.1 },
-      max: { x: hw - t + 0.1, y: top, z: hd - t + 0.1 },
+      // Por debajo del tejado: quien está ENCIMA cuenta como fuera (el techo se ve).
+      max: { x: hw - t + 0.1, y: top - 0.4, z: hd - t + 0.1 },
       upperFloorY: G,
     },
   };
@@ -316,10 +317,10 @@ export function createSmallHouseDef(variant: SmallHouseVariant, paletteIndex: nu
 
   if (variant === 'stone') {
     // Azotea plana con pretil y una chimenea.
-    parts.push(bx([0, H + 0.1, 0], [W + 0.3, 0.2, D + 0.3], '#8f8a80', 'roof', { collide: false }));
-    parts.push(bx([0, H + 0.35, hd + 0.1], [W + 0.3, 0.3, 0.12], '#8f8a80', 'roof', { collide: false }));
-    parts.push(bx([0, H + 0.35, -hd - 0.1], [W + 0.3, 0.3, 0.12], '#8f8a80', 'roof', { collide: false }));
-    parts.push(bx([hw * 0.5, H + 0.7, -hd * 0.4], [0.5, 1, 0.5], '#7a7a7a', 'roof', { collide: false }));
+    parts.push(bx([0, H + 0.1, 0], [W + 0.3, 0.2, D + 0.3], '#8f8a80', 'roof'));
+    parts.push(bx([0, H + 0.35, hd + 0.1], [W + 0.3, 0.3, 0.12], '#8f8a80', 'roof'));
+    parts.push(bx([0, H + 0.35, -hd - 0.1], [W + 0.3, 0.3, 0.12], '#8f8a80', 'roof'));
+    parts.push(bx([hw * 0.5, H + 0.7, -hd * 0.4], [0.5, 1, 0.5], '#7a7a7a', 'roof'));
   } else {
     // Tejado a dos aguas con cumbrera en Z.
     const roofH = variant === 'long' ? 1.3 : 1.6;
@@ -327,20 +328,20 @@ export function createSmallHouseDef(variant: SmallHouseVariant, paletteIndex: nu
     const slope = Math.atan2(roofH, hw);
     const slab = Math.hypot(hw, roofH) + 0.35;
     for (const sx of [-1, 1])
-      parts.push(bx([(sx * hw) / 2 + sx * 0.04, H + roofH / 2 + 0.1, 0], [slab, 0.18, D + 0.5], pal.roof, 'roof', { collide: false, rot: [0, 0, -sx * slope] }));
+      parts.push(bx([(sx * hw) / 2 + sx * 0.04, H + roofH / 2 + 0.1, 0], [slab, 0.18, D + 0.5], pal.roof, 'roof', { rot: [0, 0, -sx * slope] }));
   }
   if (variant === 'porch') {
     // Porche: dos postes (colisionan) y un tejadillo.
     for (const sx of [-1, 1]) parts.push(bx([sx * (hw - 0.3), 1.2, hd + 1.4], [0.18, 2.4, 0.18], pal.trim, 'base', { facing: FRONT }));
-    parts.push(bx([0, 2.45, hd + 0.75], [W, 0.12, 1.7], pal.roof, 'roof', { collide: false }));
+    parts.push(bx([0, 2.45, hd + 0.75], [W, 0.12, 1.7], pal.roof, 'roof'));
   }
-  if (variant === 'cabin') parts.push(bx([-hw * 0.5, H + 1.2, -hd * 0.3], [0.45, 1.1, 0.45], '#8a8a8a', 'roof', { collide: false }));
+  if (variant === 'cabin') parts.push(bx([-hw * 0.5, H + 1.2, -hd * 0.3], [0.45, 1.1, 0.45], '#8a8a8a', 'roof'));
 
   return {
     id: `small-${variant}`,
     parts,
     clearRadius: Math.hypot(hw, hd) + (variant === 'porch' ? 3 : 2),
-    interior: { min: { x: -hw + t - 0.1, y: -0.5, z: -hd + t - 0.1 }, max: { x: hw - t + 0.1, y: H + 0.5, z: hd - t + 0.1 } },
+    interior: { min: { x: -hw + t - 0.1, y: -0.5, z: -hd + t - 0.1 }, max: { x: hw - t + 0.1, y: H - 0.4, z: hd - t + 0.1 } },
   };
 }
 
