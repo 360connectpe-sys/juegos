@@ -8,7 +8,6 @@ import { clamp } from '@shared/math';
 import { Buttons } from '@shared/types';
 
 export type HudElementId =
-  | 'menu'
   | 'wood'
   | 'construction'
   | 'joystick'
@@ -49,7 +48,6 @@ export interface HudElementInfo {
 }
 
 export const HUD_ELEMENTS: readonly HudElementInfo[] = [
-  {id:'menu',label:'Menú principal',kind:'info'},
   { id: 'joystick', label: 'Joystick', kind: 'control' },
   { id: 'jump', label: 'Saltar', kind: 'control' },
   { id: 'sprint', label: 'Correr', kind: 'control' },
@@ -82,17 +80,16 @@ const el = (x: number, y: number, scale = 1, opacity = 1): HudElementLayout => (
 /**
  * Disposición de fábrica pensada para celular en HORIZONTAL: pulgar izquierdo
  * en el joystick, pulgar derecho en un arco de botones alrededor de "Saltar",
- * indicadores en el centro inferior y minimapa arriba a la derecha.
+ * minimapa arriba a la izquierda, con salud y vidas debajo.
  */
 export function defaultHudLayout(): HudLayout {
   // Corrección móvil: zona central despejada; construcción y madera en una columna a
   // la izquierda (pulgar izquierdo, sobre el joystick); combate compacto en el arco del
-  // pulgar derecho; menú bajo el logo (el botón «Jugar en línea» se oculta en partida).
+  // pulgar derecho. La salida está en Ajustes.
   return {
-    menu: el(0.12, 0.2, 0.8),
-    wood: el(0.055, 0.31, 0.75),
-    construction: el(0.055, 0.56, 0.85),
-    joystick: el(0.17, 0.74),
+    wood: el(0.17, 0.50, 0.75),
+    construction: el(0.055, 0.70, 0.85),
+    joystick: el(0.23, 0.79, 0.85),
     jump: el(0.93, 0.79, 0.9),
     sprint: el(0.82, 0.9, 0.8),
     attack: el(0.8, 0.64, 0.95),
@@ -100,12 +97,12 @@ export function defaultHudLayout(): HudLayout {
     reload: el(0.69, 0.8, 0.85),
     interact: el(0.6, 0.9, 0.8, 0.9),
     build: el(0.52, 0.92, 0.75, 0.85),
-    health: el(0.3, 0.95),
+    health: el(0.10, 0.36, 0.9),
     ammo: el(0.5, 0.17, 0.85),
-    killfeed: el(0.25, 0.33, 0.8),
-    lives: el(0.3, 0.87, 0.85),
+    killfeed: el(0.32, 0.28, 0.8),
+    lives: el(0.10, 0.44, 0.75),
     inventory: el(0.5, 0.06, 0.82),
-    minimap: el(0.92, 0.27, 0.9),
+    minimap: el(0.10, 0.18, 0.85),
   };
 }
 
@@ -115,7 +112,6 @@ export function defaultHudLayout(): HudLayout {
  * la nueva. Lo que el jugador movió o cambió se respeta.
  */
 const PREVIOUS_DEFAULTS: Partial<HudLayout> = {
-  menu: el(0.25, 0.05, 0.85),
   wood: el(0.36, 0.77, 0.9),
   construction: el(0.48, 0.68, 0.85),
   joystick: el(0.14, 0.72),
@@ -132,6 +128,16 @@ const PREVIOUS_DEFAULTS: Partial<HudLayout> = {
   lives: el(0.36, 0.86, 0.9),
   inventory: el(0.5, 0.06, 0.9),
   minimap: el(0.92, 0.27),
+};
+
+const PHASE13_DEFAULTS: Partial<HudLayout> = {
+  wood: el(0.055, 0.31, 0.75),
+  construction: el(0.055, 0.56, 0.85),
+  joystick: el(0.17, 0.74),
+  health: el(0.3, 0.95),
+  killfeed: el(0.25, 0.33, 0.8),
+  lives: el(0.3, 0.87, 0.85),
+  minimap: el(0.92, 0.27, 0.9),
 };
 
 const sameLayout = (a: HudElementLayout, b: HudElementLayout) =>
@@ -159,7 +165,7 @@ export function parseHudLayout(raw: unknown): HudLayout {
   for (const id of HUD_IDS) {
     const el = sanitizeElement(o[id], def[id]);
     const old = PREVIOUS_DEFAULTS[id];
-    out[id] = old && sameLayout(el, old) ? { ...def[id] } : el;
+    out[id] = (old && sameLayout(el, old)) || (PHASE13_DEFAULTS[id] && sameLayout(el, PHASE13_DEFAULTS[id]!)) ? { ...def[id] } : el;
   }
   return out;
 }

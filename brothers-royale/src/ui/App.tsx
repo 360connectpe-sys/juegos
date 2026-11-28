@@ -13,7 +13,7 @@ import { InteractPrompt } from './components/InteractPrompt';
 import { HudEditor } from './hud/HudEditor';
 import { HudSlot } from './hud/HudSlot';
 import { loadHudLayout, resetHudLayout, saveHudLayout, type HudLayout } from './hud/layout';
-import { INFO_WIDGETS, renderInfoWidget } from './hud/widgets';
+import { INFO_WIDGETS, Minimap, renderInfoWidget } from './hud/widgets';
 import { DeathScreen } from './components/DeathScreen';
 import { loadSettings, loadVolume, resetSettings, saveSettings, saveVolume, type GameSettings } from '@/game/settings';
 import { QualityToggle } from './components/QualityToggle';
@@ -47,6 +47,7 @@ export function App() {
   const [hudLayout, setHudLayout] = useState<HudLayout>(() => loadHudLayout());
   const [volume, setVolume] = useState(() => loadVolume());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mapOpen,setMapOpen]=useState(false);
   const [editingHud, setEditingHud] = useState(false);
   const [profile,setProfile]=useState(loadProfile);
   const [practice,setPractice]=useState(false);
@@ -116,10 +117,10 @@ export function App() {
 
   // Con Ajustes o el editor abiertos, el personaje no se mueve y el ratón se suelta.
   useEffect(() => {
-    const paused = settingsOpen || editingHud || !!front || !!result;
+    const paused = settingsOpen || editingHud || mapOpen || !!front || !!result;
     game?.setInputSuspended(paused);
     if (paused && document.pointerLockElement) document.exitPointerLock?.();
-  }, [game, settingsOpen, editingHud, front, result]);
+  }, [game, settingsOpen, editingHud, mapOpen, front, result]);
 
   const updateSettings = (s: GameSettings) => {
     setSettings(s);
@@ -140,6 +141,7 @@ export function App() {
     return () => window.clearTimeout(t);
   }, [ready, hint, device]);
 
+  useEffect(()=>{if(front||result)setMapOpen(false);},[front,result]);
   const playing=!front&&!result;
   const showTouch = playing && ready && game && (isTouch || device === 'touch') && device !== 'gamepad';
 
@@ -147,7 +149,7 @@ export function App() {
     <main className="app">
       <PwaUpdate server={onlineParams.server} isBusy={() => {
         const live = game?.getFrontendState();
-        return !ready || editingHud || settingsOpen || live?.net === 'connecting' || live?.net === 'reconnecting'
+        return !ready || editingHud || settingsOpen || mapOpen || live?.net === 'connecting' || live?.net === 'reconnecting'
           || live?.battle?.phase === 'countdown' || live?.battle?.phase === 'running' || (playing && !result);
       }} />
       <canvas ref={canvasRef} className="app__canvas" aria-label="Escena del juego" onClick={onCanvasClick} onContextMenu={(e) => e.preventDefault()} />
@@ -155,8 +157,8 @@ export function App() {
       {ready && game && !editingHud && playing && (
         <div className="hud-safe hud-safe--info" aria-label="Estado del jugador">
           {INFO_WIDGETS.map((id) => (
-            <HudSlot key={id} id={id} layout={hudLayout[id]} interactive={id === 'menu' || id === 'construction' || id === 'inventory'}>
-              {renderInfoWidget(id, game, false, ()=>{game.returnToMenu();setPractice(false);})}
+            <HudSlot key={id} id={id} layout={hudLayout[id]} interactive={id === 'minimap' || id === 'construction' || id === 'inventory'}>
+              {renderInfoWidget(id, game, false, ()=>setMapOpen(true))}
             </HudSlot>
           ))}
         </div>
@@ -175,7 +177,7 @@ export function App() {
               <span>Ajustes</span>
             </button>
           }
-          // En partida no se muestra «Jugar en línea» (para salir está «Menú principal»).
+          // La salida de partida está en Ajustes, con confirmación.
           online={playing ? undefined :
             <OnlinePanel
               events={game.events}
@@ -186,10 +188,14 @@ export function App() {
           }
         />
       )}
-      {showTouch && !editingHud && !settingsOpen && <TouchControls touch={game.input.touch} layout={hudLayout} mode={settings.perspective} game={game} />}
+      {showTouch && !editingHud && !settingsOpen && !mapOpen && <TouchControls touch={game.input.touch} layout={hudLayout} mode={settings.perspective} game={game} />}
       {ready && game && !editingHud && playing && <DeathScreen game={game} />}
       {front&&game&&!result&&!editingHud&&<Frontend game={game} profile={profile} lobby={frontState?.lobby} localId={frontState?.localId??''} countdown={frontState?.battle?.countdown} server={onlineParams.server} error={frontState?.error||netError} busy={frontState?.net==='connecting'||frontState?.net==='reconnecting'} onProfile={changeProfile} onSettings={()=>setSettingsOpen(true)} onConnect={req=>{setNetError('');void game.goOnline(req);}} onPractice={()=>{setPractice(true);game.updateProfile(profile);}} onLeave={()=>{game.goOffline();setPractice(false);}}/>}
       {ready&&game&&result&&<Results result={result} localId={frontState?.localId??''} busy={frontState?.net==='reconnecting'} onLobby={()=>{if(!game.returnToLobby())return;dismissedResult.current=(frontState?.sessionKey??'')+':'+result.round;setResult(null);setPractice(false);}} onRematch={()=>{if(!game.rematch())return;dismissedResult.current=(frontState?.sessionKey??'')+':'+result.round;setResult(null);if(!online)setPractice(true);}}/>}
+      {ready && game && mapOpen && playing && <div className="full-map" role="dialog" aria-modal="true" aria-label="Mapa completo" onKeyDown={e=>{if(e.key==='Escape')setMapOpen(false);}}>
+        <div className="full-map__card"><header><b>Mapa</b><span>Toca para marcar destino · hasta 3</span><button type="button" autoFocus onClick={()=>setMapOpen(false)}>Volver</button></header>
+        <Minimap game={game} expanded/><footer><span>▲ Tú · morado: tormenta · blanco: siguiente zona · dorado: destino</span><button type="button" onClick={()=>game.clearMapMarkers()}>Borrar destinos</button></footer></div>
+      </div>}
       {ready && game && settingsOpen && !editingHud && (
         <SettingsPanel
           settings={settings}
@@ -209,6 +215,7 @@ export function App() {
             setHudLayout(resetHudLayout());
           }}
           onClose={() => setSettingsOpen(false)}
+          onExit={playing?()=>{game.returnToMenu();setPractice(false);setSettingsOpen(false);setMapOpen(false);}:undefined}
         />
       )}
       {ready && game && editingHud && (
@@ -224,7 +231,7 @@ export function App() {
           }}
         />
       )}
-      {ready && game && playing && !settingsOpen && !editingHud && <InteractPrompt game={game} device={device} />}
+      {ready && game && playing && !settingsOpen && !editingHud && !mapOpen && <InteractPrompt game={game} device={device} />}
       {ready && game && <GraphicsNotice events={game.events} />}
       {ready && isTouch && <OrientationHint />}
       <LoadingScreen progress={progress.value} label={progress.label} error={error} hidden={ready} />

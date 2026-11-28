@@ -11,6 +11,7 @@ interface Props {
   onResetAll(): void;
   onFullscreen(): void;
   onClose(): void;
+  onExit?(): void;
   /** Volumen de efectos 0..1 (se guarda aparte). */
   volume?: number;
   onVolume?(v: number): void;
@@ -26,8 +27,9 @@ const MODE_HELP: Record<CameraMode, string> = {
  * Ajustes del jugador. La perspectiva SOLO se elige aquí. Todo se guarda en
  * este dispositivo y se puede restablecer.
  */
-export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEditHud, onResetAll, onFullscreen, onClose, volume = DEFAULT_VOLUME, onVolume }: Props) {
+export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEditHud, onResetAll, onFullscreen, onClose, onExit, volume = DEFAULT_VOLUME, onVolume }: Props) {
   const ids = { look: useId(), aim: useId(), invert: useId() };
+  const [confirmExit,setConfirmExit]=useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const set = (patch: Partial<GameSettings>) => onChange({ ...settings, ...patch });
 
@@ -122,6 +124,10 @@ export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEd
           </div>
         </section>
 
+        {onExit && <section className="settings__sec" aria-label="Salir de la partida">
+          {!confirmExit ? <button type="button" className="net__btn" onClick={()=>setConfirmExit(true)}>Menú principal</button>
+            : <div className="settings__confirm" role="alert"><span>¿Salir de la partida? Se abandonará la sala actual.</span><button type="button" className="net__btn net__btn--danger" onClick={onExit}>Salir</button><button type="button" className="net__btn" onClick={()=>setConfirmExit(false)}>Cancelar</button></div>}
+        </section>}
         <section className="settings__sec" aria-label="Restablecer">
           {!confirmReset ? (
             <button type="button" className="net__btn" onClick={() => setConfirmReset(true)}>

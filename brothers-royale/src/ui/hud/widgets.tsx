@@ -2,7 +2,7 @@ import { type BuildKind } from '@shared/building/BuildingState';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import type { Game, KillFeedEntry } from '@/game/Game';
 import { magOf, type Inventory as InventoryState } from '@shared/inventory';
-import { isWeapon, ITEMS, itemName, type ItemKind, type ItemStack } from '@shared/items';
+import { isWeapon, supportsScope, ITEMS, itemName, type ItemKind, type ItemStack } from '@shared/items';
 import type { Vitals } from '@shared/combat/CombatState';
 import { HEALTH, WEAPON_STATS } from '@shared/combat/weapons';
 import { terrainHeight } from '@shared/world/terrain';
@@ -102,7 +102,7 @@ export function LiveAmmo({ game }: { game: Game | null }) {
   return <AmmoCounter inventory={inv} vitals={v} />;
 }
 
-const WEAPON_SHORT: Record<string, string> = { axe: 'hacha', pistol: 'pistola', smg: 'subfusil', rifle: 'rifle', shotgun: 'escopeta' };
+const WEAPON_SHORT: Record<string, string> = { axe: 'hacha', pistol: 'pistola', smg: 'subfusil', rifle: 'rifle', shotgun: 'escopeta', sniper: 'francotirador' };
 
 /** Últimas bajas (desaparecen a los 6 s). Datos listos para las estadísticas de la fase 8. */
 export function KillFeed({ entries }: { entries: (KillFeedEntry & { key: number })[] }) {
@@ -167,12 +167,15 @@ export function ItemIcon({ kind }: { kind: ItemKind }) {
         <path d="M14 3c3 0 6 2 7 5-2 0-4 1-5 3l-2-2-8 12-2-1 8-12-2-2c1-2 2-3 4-3Z" />
       </svg>
     );
-  if (cat === 'weapon')
-    return (
-      <svg viewBox="0 0 24 24" className="w-icon" aria-hidden="true">
-        <path d={kind === 'shotgun' || kind === 'rifle' ? 'M2 9h17l3 2v2H9l-2 5H4l1-5H2Z' : 'M3 8h14l2 2v2H11l-2 6H6l1-6H3Z'} />
-      </svg>
-    );
+  const paths: Partial<Record<ItemKind,string>> = {
+    pistol:'M3 7h15l3 2v3H11l-2 7H5l2-7H3Zm9 5v3h3v-3Z',
+    smg:'M2 7h14v2h6v3H13l1 7h-4l-1-7H6l-1 6H2l2-7H2Zm4-3h7v2H6Z',
+    shotgun:'M1 9h21v2H9v2h13v2H8l-4 4H1l3-6H1Zm8 6h6v2H9Z',
+    rifle:'M1 9h6V7h5v2h11v2H12l-1 7H8l1-6H6l-3 4H1Zm13-3h5v2h-5Z',
+    sniper:'M1 10h9V8H8V6h9v2h-4v2h10v2H11l-1 6H7l1-5H5l-4 4Zm18 3h1l2 6h-2Z',
+    scope2:'M4 8h16v8H4Zm4-3h8v2H8Zm2 12h4v3h-4Z',
+  };
+  if(paths[kind])return <svg viewBox="0 0 24 24" className="w-icon" aria-hidden="true"><path d={paths[kind]}/></svg>;
   if (cat === 'ammo')
     return (
       <svg viewBox="0 0 24 24" className="w-icon" aria-hidden="true">
@@ -186,7 +189,7 @@ export function ItemIcon({ kind }: { kind: ItemKind }) {
   );
 }
 
-const AMMO_SHORT: Record<string, string> = { ammo_light: 'Ligera', ammo_medium: 'Media', ammo_shells: 'Cartuchos' };
+
 
 /**
  * Inventario de 5 huecos. Sin datos muestra los huecos vacíos (vista previa
@@ -198,15 +201,18 @@ export function Inventory({
   selected = 0,
   inventory = null,
   onSelect,
+  onScope,
 }: {
   slots?: number;
   selected?: number;
   inventory?: InventoryState | null;
   onSelect?: (slot: number) => void;
+  onScope?: (equipped: boolean) => void;
 }) {
   const sel = inventory?.selected ?? selected;
   const items: (ItemStack | null)[] = inventory?.slots ?? Array.from({ length: slots }, () => null);
-  const ammo = inventory ? Object.entries(inventory.ammo).filter(([, n]) => n > 0) : [];
+  const held = items[sel];
+  const canScope = held && supportsScope(held.kind) && (held.scope || items.some(s=>s?.kind==='scope2'));
   return (
     <div className="w-inv-wrap">
       <ol className="w-inv" aria-label={inventory ? 'Inventario' : 'Inventario vacío'}>
@@ -224,20 +230,14 @@ export function Inventory({
                 {i + 1}
               </span>
               {it && <ItemIcon kind={it.kind} />}
+              {it && isWeapon(it.kind) && <span className="w-inv__ammo" aria-label={`Munición ${magOf(it)} / ${inventory?.ammo[ITEMS[it.kind].ammo!] ?? 0}`}>{magOf(it)}<small>/{inventory?.ammo[ITEMS[it.kind].ammo!] ?? 0}</small></span>}
+              {it && (it.scope || it.kind==='sniper') && <span className="w-inv__scope">{it.kind==='sniper'?'x4':'x2'}</span>}
               {it && it.qty > 1 && <span className="w-inv__qty">{it.qty}</span>}
             </button>
           </li>
         ))}
       </ol>
-      {ammo.length > 0 && (
-        <p className="w-ammo" aria-label="Munición">
-          {ammo.map(([k, n]) => (
-            <span key={k}>
-              {AMMO_SHORT[k]} {n}
-            </span>
-          ))}
-        </p>
-      )}
+      {canScope && <button type="button" className="w-scope-toggle" onClick={()=>onScope?.(!held?.scope)} aria-label={held?.scope?'Retirar Mira x2':'Equipar Mira x2'} aria-pressed={!!held?.scope}><ItemIcon kind="scope2"/><span>{held?.scope?'− x2':'+ x2'}</span></button>}
     </div>
   );
 }
@@ -250,10 +250,10 @@ export function LiveInventory({ game }: { game: Game | null }) {
     setInv(game.inventory);
     return game.events.on('inventory', setInv);
   }, [game]);
-  return <Inventory inventory={inv} onSelect={game ? (i) => game.selectSlot(i) : undefined} />;
+  return <Inventory inventory={inv} onSelect={game ? (i) => game.selectSlot(i) : undefined} onScope={game ? equipped=>game.equipScope(equipped) : undefined} />;
 }
 
-const MAP_PX = 128;
+
 
 /**
  * Minimapa: el terreno se pinta UNA vez en un canvas pequeño; encima, otro
@@ -261,7 +261,8 @@ const MAP_PX = 128;
  * Va girado 45° para coincidir con la vista isométrica (arriba = hacia donde
  * "sube" la pantalla).
  */
-export function Minimap({ game }: { game: Game | null }) {
+export function Minimap({ game, expanded = false, onOpen }: { game: Game | null; expanded?: boolean; onOpen?:()=>void }) {
+  const MAP_PX = expanded ? 512 : 128;
   const baseRef = useRef<HTMLCanvasElement>(null);
   const dotsRef = useRef<HTMLCanvasElement>(null);
 
@@ -289,7 +290,7 @@ export function Minimap({ game }: { game: Game | null }) {
       c.fillStyle = s.def.id.startsWith('small-') ? '#8a3b2b' : '#b23a37';
       c.fillRect(((s.x + half) / layout.terrain.size) * MAP_PX - r, ((s.z + half) / layout.terrain.size) * MAP_PX - r, r * 2, r * 2);
     }
-  }, [game]);
+  }, [game, MAP_PX, expanded]);
 
   useEffect(() => {
     if (!game) return;
@@ -333,6 +334,11 @@ export function Minimap({ game }: { game: Game | null }) {
         c.arc(u(o.x), u(o.z), 3, 0, Math.PI * 2);
         c.fill();
       }
+      for(const mark of st.markers) {
+        c.fillStyle='#ffdf67'; c.strokeStyle='#3c234f'; c.lineWidth=1.5;
+        c.beginPath();c.arc(u(mark.x),u(mark.z),expanded?6:4,0,Math.PI*2);c.fill();c.stroke();
+        c.beginPath();c.moveTo(u(mark.x),u(mark.z)+4);c.lineTo(u(mark.x),u(mark.z)+10);c.stroke();
+      }
       if (st.local) {
         const { x, z, yaw } = st.local;
         c.save();
@@ -354,10 +360,15 @@ export function Minimap({ game }: { game: Game | null }) {
     draw();
     const t = window.setInterval(draw, 100);
     return () => window.clearInterval(t);
-  }, [game]);
+  }, [game, MAP_PX, expanded]);
 
   return (
-    <div className="w-map" role="img" aria-label="Minimapa">
+    <div className={`w-map${expanded?' w-map--full':''}`} role="button" tabIndex={0} aria-label={expanded?'Mapa completo: toca para marcar destino':'Abrir mapa completo'}
+      onClick={e=>{
+        if(!expanded){onOpen?.();return;}
+        const rect=e.currentTarget.getBoundingClientRect(), size=game?.worldLayout?.terrain.size??0;
+        if(size)game?.addMapMarker(((e.clientX-rect.left)/rect.width-.5)*size,((e.clientY-rect.top)/rect.height-.5)*size);
+      }} onKeyDown={e=>{if(!expanded&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onOpen?.();}}}>
       <div className="w-map__rot">
         <canvas ref={baseRef} width={MAP_PX} height={MAP_PX} />
         <canvas ref={dotsRef} width={MAP_PX} height={MAP_PX} />
@@ -366,13 +377,12 @@ export function Minimap({ game }: { game: Game | null }) {
   );
 }
 
-export type InfoWidgetId = 'menu' | 'wood' | 'construction' | 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
-export const INFO_WIDGETS: readonly InfoWidgetId[] = ['menu', 'wood', 'construction', 'health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
+export type InfoWidgetId = 'wood' | 'construction' | 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
+export const INFO_WIDGETS: readonly InfoWidgetId[] = ['wood', 'construction', 'health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
 
 /** Indicadores del HUD (todas las pantallas). */
-export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = false, onMenu?:()=>void) {
+export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = false, onMap?:()=>void) {
   switch (id) {
-    case 'menu': return <button type="button" className="menu-button" onClick={preview?undefined:onMenu}>Menú principal</button>;
     case 'wood':
       return <ConstructionWidget game={game} counter />;
     case 'construction':
@@ -388,7 +398,7 @@ export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = 
     case 'inventory':
       return <LiveInventory game={game} />;
     case 'minimap':
-      return <Minimap game={game} />;
+      return <Minimap game={game} onOpen={preview?undefined:onMap} />;
   }
 }
 

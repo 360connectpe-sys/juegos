@@ -31,18 +31,22 @@ export function DeathScreen({ game }: { game: Game }) {
       {round?.phase === 'waiting' && (ui?.offline ? <button onClick={() => game.startRound()}>Iniciar partida offline</button> : <span>Esperando jugadores · mínimo 2</span>)}
       {round?.phase === 'countdown' && <span>Partida en {Math.ceil(round.countdown)} s</span>}
       {round?.phase === 'running' && <>
-        <span className="battle-clock">Quedan {clock(ROUND_SECONDS - round.elapsed)} · Fase {round.zone.phase + 1}/{ZONE_PHASES.length} · {round.players.filter(p => p.lives > 0).length} supervivientes</span>
-        {round.zone.closing ? <span className="battle-zone">La zona se está cerrando · {round.zone.damage} HP/s fuera</span>
-          : round.zone.warning ? <strong className="battle-zone battle-zone--warn">La zona se cierra en {Math.ceil(round.zone.changesIn)} s</strong>
-            : round.zone.changesIn > 0 && round.elapsed < ROUND_SECONDS && <span className="battle-zone">Próximo cierre en {clock(round.zone.changesIn)}</span>}
+        <div className="battle-meters">
+          <span aria-label={`Tiempo restante ${clock(ROUND_SECONDS-round.elapsed)}`}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg>{clock(ROUND_SECONDS-round.elapsed)}</span>
+          <span aria-label="Supervivientes"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M6 21v-4a6 6 0 0 1 12 0v4"/></svg>{round.players.filter(p=>p.lives>0).length}</span>
+          <span className={`phase-meter${round.zone.warning?' is-warning':''}`} aria-label={`Fase ${round.zone.phase+1} de ${ZONE_PHASES.length}. ${round.zone.closing?'Cerrando':'Próximo cierre'} en ${clock(round.zone.changesIn)}`}>
+            <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="11"/><circle className="phase-meter__progress" cx="14" cy="14" r="11" pathLength="100" strokeDasharray={`${100*(round.zone.phase+1)/ZONE_PHASES.length} 100`}/><text x="14" y="18">{round.zone.phase+1}</text></svg>
+            {round.zone.closing?'↘ ':''}{clock(round.zone.changesIn)}
+          </span>
+        </div>
         {ui?.outside && <strong>Fuera de la zona · {round.zone.damage} HP/s</strong>}
       </>}
       {ui?.air === 1 && <>
-        <strong className="air-status">En el avión · elige dónde saltar (o saltarás al final de la ruta)</strong>
+        <strong className="air-status">Elige destino en el mapa</strong>
         <button type="button" className="air-jump" onClick={() => game.jumpFromPlane()}>Saltar</button>
       </>}
-      {ui?.air === 2 && <span className="air-status">Caída libre · muévete para elegir dónde caer · correr = picado · saltar = abrir paracaídas</span>}
-      {ui?.air === 3 && <span className="air-status">Paracaídas · dirige el aterrizaje · correr = bajar más rápido</span>}
+      {ui?.air === 2 && <span className="air-status">Caída · ↕ dirigir · correr: picado · saltar: paracaídas</span>}
+      {ui?.air === 3 && <span className="air-status">Paracaídas · ↕ dirigir · correr: bajar</span>}
       {ui?.descending && !ui.air && <span>Descendiendo · dirige el aterrizaje con el movimiento</span>}
       {(ui?.protection ?? 0) > 0 && <span>Protección {Math.ceil(ui!.protection)} s · atacar la cancela</span>}
       {result && <><strong>{result.winners.length === 1 ? `Ganador: ${winners}` : 'Empate'}</strong><span>Nueva partida en {Math.ceil(round!.countdown)} s</span></>}

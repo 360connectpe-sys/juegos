@@ -37,7 +37,8 @@ describe('pantallas y persistencia',()=>{
   view.rerender(<Frontend {...f.props} countdown={7} lobby={{...lobby,phase:'countdown'}}/>);expect(screen.getByText('Empieza en 7 s')).toBeTruthy();
  });
  it('guarda nombre y polo, migra el nombre anterior y recupera preferencias corruptas',()=>{
-  expect(parseHudLayout({health:{x:.2,y:.4}}).menu.visible).toBe(true);
+  expect(parseHudLayout({health:{x:.2,y:.4}}).health.x).toBe(.2);
+  expect(parseHudLayout({menu:{visible:true}})).not.toHaveProperty('menu');
   localStorage.setItem('br.name','Anterior');expect(loadProfile()).toEqual({name:'Anterior',skin:0});saveProfile({name:'  Ana  ',skin:11});expect(loadProfile()).toEqual({name:'Ana',skin:11});
   localStorage.setItem(PROFILE_KEY,'{');expect(loadProfile().skin).toBe(0);expect(parseProfile({name:12,skin:Infinity})).toEqual({name:'Jugador',skin:0});
   vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('Bloqueado');});expect(()=>saveProfile({name:'B',skin:2})).not.toThrow();

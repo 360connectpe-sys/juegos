@@ -49,8 +49,8 @@ describe('HUD y vistas de la fase 8',()=>{
   });
   it('muestra aviso de treinta segundos, tormenta y resultado de empate',()=>{
     const {game,round}=fixture();render(<DeathScreen game={game}/>);
-    expect(screen.getByText('La zona se cierra en 30 s')).toBeTruthy();
-    expect(screen.getByText(/Quedan 11:30 · Fase 1\/5/)).toBeTruthy();
+    expect(screen.getByLabelText('Fase 1 de 5. Próximo cierre en 0:30')).toBeTruthy();
+    expect(screen.getByLabelText('Tiempo restante 11:30')).toBeTruthy();
     expect(document.querySelector('.storm-tint')).not.toBeNull();cleanup();
     round.phase='finished';round.countdown=10;round.result={round:1,elapsed:1800,reason:'draw',winners:[],scores:[]};
     render(<DeathScreen game={game}/>);expect(screen.getByText('Empate')).toBeTruthy();expect(screen.getByText('Nueva partida en 10 s')).toBeTruthy();

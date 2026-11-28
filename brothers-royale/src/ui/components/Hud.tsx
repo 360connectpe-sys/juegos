@@ -5,7 +5,6 @@ import type { CameraMode } from '@/engine/camera/cameraMath';
 import { FpsCounter } from './FpsCounter';
 import { NetBadge } from './NetBadge';
 import type { ReactNode } from 'react';
-import { Logo } from './Logo';
 
 interface Props {
   events: EventBus<GameEvents>;
@@ -53,7 +52,6 @@ export function Hud({ events, device, showHint, online, quality, mode = 'isometr
   return (
     <div className="hud">
       <div className="hud__corner">
-        <Logo size="small" />
         {online}
       </div>
       <div className="hud__right">
