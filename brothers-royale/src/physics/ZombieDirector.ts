@@ -58,6 +58,8 @@ interface Zombie {
   lastHp: number;
   deadT: number;
   seq: number;
+  /** Fase 16: ningún jugador a menos de 45 m: piensa con menos frecuencia. */
+  lazy?: boolean;
 }
 
 export class ZombieDirector {
@@ -123,7 +125,9 @@ export class ZombieDirector {
       const hp = this.host.combat.hp(z.id);
       if (hp < z.lastHp) { z.anim = 4; z.animT = ZOMBIE.hitSeconds; }
       z.lastHp = hp;
-      if ((tick + z.num) % ZOMBIE.thinkEvery === 0) this.think(z, ZOMBIE.thinkEvery * dt);
+      // Fase 16: sin ningún jugador cerca (ni objetivo), la IA piensa 3 veces menos (el cuerpo sigue a 30 Hz).
+      const every = z.lazy ? ZOMBIE.thinkEvery * 3 : ZOMBIE.thinkEvery;
+      if ((tick + z.num) % every === 0) this.think(z, every * dt);
       // Ataque cuerpo a cuerpo con cadencia fija.
       z.attackCd = Math.max(0, z.attackCd - dt);
       const t = z.target ? this.candidates.find((c) => c.id === z.target) : undefined;
@@ -178,6 +182,7 @@ export class ZombieDirector {
       z.retargetT = ZOMBIE.retargetEvery;
     }
     const t = z.target ? this.candidates.find((c) => c.id === z.target) : undefined;
+    z.lazy = !t && !this.candidates.some((c) => c.targetable && Math.hypot(c.feet.x - feet.x, c.feet.z - feet.z) < 45);
     let wx: number, wz: number;
     if (t && Math.hypot(t.feet.x - feet.x, t.feet.z - feet.z) <= ZOMBIE.attackRange && Math.abs(t.feet.y - feet.y) < 1.6) {
       // Ya está al alcance: quieto y atacando (sin falsos atascos ni saltos).

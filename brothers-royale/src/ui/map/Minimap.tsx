@@ -31,7 +31,8 @@ export function Minimap({game,expanded=false,onOpen}:{game:Game|null;expanded?:b
       for(const mark of st.markers){const p=point(mark.x,mark.z);ctx.fillStyle='#ffdf67';ctx.strokeStyle='#3c234f';ctx.lineWidth=px;ctx.beginPath();ctx.arc(p.x,p.y,px*2,0,Math.PI*2);ctx.fill();ctx.stroke();}
       if(st.local){const p=point(st.local.x,st.local.z);ctx.save();ctx.translate(p.x,p.y);ctx.rotate(-st.local.yaw);ctx.fillStyle='white';ctx.strokeStyle='#231f5c';ctx.lineWidth=px;ctx.beginPath();ctx.moveTo(0,px*4);ctx.lineTo(px*2.7,-px*2.7);ctx.lineTo(-px*2.7,-px*2.7);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();}
     };
-    redraw.current=draw;draw();const timer=window.setInterval(draw,100);return()=>{clearInterval(timer);redraw.current=()=>{};};
+    redraw.current=draw;draw();// Fase 16: el minimapa pequeño se redibuja a 5 Hz (el ampliado a 10 Hz); el terreno es un raster fijo.
+    const timer=window.setInterval(draw,expanded?100:200);return()=>{clearInterval(timer);redraw.current=()=>{};};
   },[game,expanded,pixels]);
   const refresh=()=>{setZoom(view.current.zoom);redraw.current();};
   const changeZoom=(factor:number)=>{view.current.zoomAt(factor);refresh();};

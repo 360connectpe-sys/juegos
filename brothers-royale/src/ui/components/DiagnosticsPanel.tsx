@@ -28,6 +28,7 @@ export function DiagnosticsPanel({ game }: { game: Game }) {
       <span>{Math.round(d.fps)} FPS · {d.frameMs.toFixed(1)} ms (peor {d.worstMs.toFixed(0)})</span>
       <span>{d.drawCalls} draw calls · {(d.triangles / 1000).toFixed(1)} k triáng.</span>
       <span>Pixel ratio {d.pixelRatio.toFixed(2)}</span>
+      <span>Personajes animados {d.animated}/{d.remotes} · zombis {d.zombies}</span>
       <span>Calidad {QUALITY_LABEL[d.selected]} → efectiva {QUALITY_LABEL[d.effective]}{d.automatic ? ' (auto)' : ''}</span>
       <span>Build {RUNNING_BUILD} · v{PROTOCOL_VERSION}</span>
     </div>

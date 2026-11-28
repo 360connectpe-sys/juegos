@@ -148,6 +148,8 @@ export class Game {
   private wasAloft = false;
   private lastInvTotal = -1;
   private correctionSerial = 0;
+  /** Fase 16 (diagnóstico): personajes remotos con animación calculada en el último frame. */
+  private animatedCount = 0;
   private lastWood = -1;
   /** Madera propia; al subir (talar o botín) suena el golpe de madera (fase 15, H7). */
   private currentWood(): number {
@@ -823,13 +825,17 @@ export class Game {
     this.projScreen.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projScreen);
     // Fase 15: además, los lejanos (> 45 m) no recalculan la animación (solo se mueven).
+    let animated = 0;
     const me0 = avatar.position;
     for (const r of this.remotes.values()) {
       this.cullSphere.set(r.position, 1.5);
       this.cullSphere.center.y += 1;
       const far = (r.position.x - me0.x) ** 2 + (r.position.z - me0.z) ** 2 > 45 * 45;
-      r.render(alpha, dt, !far && this.frustum.intersectsSphere(this.cullSphere));
+      const animate = !far && this.frustum.intersectsSphere(this.cullSphere);
+      if (animate) animated++;
+      r.render(alpha, dt, animate);
     }
+    this.animatedCount = animated;
     if (this.quality.blobShadows) this.blobs.update(this.allAvatars());
     const battle = this.session?.battle;
     const spectator = (this.vitals.lives ?? 3) === 0;
@@ -1228,7 +1234,8 @@ export class Game {
   /** Fase 15.2: datos del panel de diagnóstico (los que el motor ya mide). */
   diagnostics() {
     const f = this.engine.frameInfo();
-    return { fps: f.fps, frameMs: f.frameMs, worstMs: f.worstMs, drawCalls: f.drawCalls, triangles: f.triangles, pixelRatio: f.pixelRatio, ...this.qualityState };
+    return { fps: f.fps, frameMs: f.frameMs, worstMs: f.worstMs, drawCalls: f.drawCalls, triangles: f.triangles, pixelRatio: f.pixelRatio, ...this.qualityState,
+      animated: this.animatedCount, remotes: this.remotes.size, zombies: this.zombieView?.mesh.count ?? 0 };
   }
   /** Calidad elegida por el jugador (Ajustes) y efectiva (puede ser una bajada automática). */
   private selectedTier: QualityTier = 'normal';
