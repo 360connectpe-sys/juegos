@@ -22,7 +22,7 @@ y seguir por el primer bloque PENDIENTE.
 | 15.5 Personajes/armas/paracaídas | HECHO (armas: solo cámara de apuntado) |
 | 15.6 Animaciones/agacharse | HECHO |
 | 15.7 Botín/HUD/tormenta | HECHO |
-| 15.8 Integración y preparación de publicación | PENDIENTE |
+| 15.8 Integración y preparación de publicación | PREPARADO (falta confirmación del usuario para publicar) |
 
 **15.1** (`quality.ts`, `AdaptiveResolution.ts`, `Engine.ts`, `Game.ts`): sin sombras ni manchas en Baja y Normal;
 resolución adaptativa con pasos más suaves (0,08, máx. ×2) y suelos 0,6/0,75; `PerformanceGovernor`: si Normal no
@@ -75,6 +75,15 @@ reacción del árbol (sacudida) y retroceso ya existían de fases previas; no se
 sorteos para el resto del botín), 9 cofres exteriores (antes 6); aviso de recoger/abrir más compacto y más abajo
 (fuera del centro); la casilla del arma en la mano ya no repite la munición del indicador inferior y las demás solo
 muestran el cargador; barrera de tormenta morada con mezcla normal (la aditiva sobre el cielo se veía azul/blanca).
+
+**15.8**: suite 460 OK + 2 omitidas; `npm run check` OK; prueba en línea local (2 clientes, protocolo v11): avión,
+aterrizaje, agacharse visto por el otro y vista previa de pared válida. `jugar/` = build `85bd8043d4782e2d` (v11).
+Beta preparada en commit local `00ab6a7` (rama `brothers-royale-beta-pages` de un worktree; sync-beta conservó
+config.js WSS). **Publicar solo tras confirmar que no hay partidas activas**, en este orden (servidor primero):
+1. `git push origin 48ba41d:brothers-royale-phase-3.1` (Render redepliega; esperar `/health` con `protocol: 11`).
+2. Recrear el commit de la beta (`node brothers-royale/scripts/sync-beta.mjs brothers-royale/jugar brothers-royale/beta`
+   sobre `origin/brothers-royale-beta-pages`) y `git push origin HEAD:brothers-royale-beta-pages`.
+Los clientes v10 abiertos verán «versión distinta» hasta actualizar la PWA.
 
 Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
 izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.
