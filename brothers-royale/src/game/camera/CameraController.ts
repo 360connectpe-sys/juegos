@@ -11,7 +11,7 @@ import {
   type CameraMode,
   type LookState,
 } from '@/engine/camera/cameraMath';
-import { CAMERA_RIG } from '@shared/constants';
+import { CAMERA_RIG, PLAYER } from '@shared/constants';
 import { clamp } from '@shared/math';
 import type { Vec3 } from '@shared/types';
 
@@ -106,6 +106,10 @@ export class CameraController {
   }
 
   /** Coloca la cámara activa. `feet` = posición interpolada del personaje. */
+  /** Fase 15: el jugador seguido está agachado (solo vista). */
+  crouched = false;
+  private crouchK = 0;
+
   update(feet: Vector3, vx: number, vz: number, dt: number): void {
     const optical = this.aiming ? this.magnification : 1;
     if (this.mode === 'isometric') {
@@ -127,6 +131,9 @@ export class CameraController {
       cam.updateProjectionMatrix();
     }
     const head = pivotPoint(feet, this.mode);
+    // Fase 15: agachado, la cabeza (1ª) y el hombro (3ª) bajan suavemente.
+    this.crouchK += ((this.crouched ? 1 : 0) - this.crouchK) * Math.min(1, dt > 0 ? dt * 12 : 1);
+    head.y -= PLAYER.crouchDrop * this.crouchK;
     this.focusPoint.set(feet.x, feet.y, feet.z);
     cam.rotation.set(-this.look.pitch, this.look.yaw + Math.PI, 0);
 

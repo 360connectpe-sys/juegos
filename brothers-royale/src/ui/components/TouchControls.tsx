@@ -26,7 +26,7 @@ export function attackLabel(inv: Inventory | null | undefined): string {
 }
 
 /** Acciones con efecto en la fase 6 (las demás siguen reservadas). */
-const ACTIVE_ACTIONS = new Set<HudElementId>(['attack', 'aim', 'reload', 'interact', 'build']);
+const ACTIVE_ACTIONS = new Set<HudElementId>(['attack', 'aim', 'reload', 'interact', 'build', 'crouch']);
 
 const RADIUS = 56; // px de recorrido del stick (a escala 1)
 
@@ -61,6 +61,7 @@ export function TouchControls({ touch, layout = defaultHudLayout(), mode = 'isom
   const fireDrag = useRef(new TouchDrag());
   const [firing, setFiring] = useState(false);
   const [aimOn, setAimOn] = useState(touch.aiming);
+  const [crouchOn, setCrouchOn] = useState(touch.crouching);
   const jumpPointer = useRef<number | null>(null);
   const [sprinting, setSprinting] = useState(touch.sprinting);
   const [jumping, setJumping] = useState(false);
@@ -262,6 +263,16 @@ export function TouchControls({ touch, layout = defaultHudLayout(), mode = 'isom
                 onContextMenu={(e) => e.preventDefault()}
               >
                 {attack}
+              </button>
+            ) : b.id === 'crouch' ? (
+              <button
+                type="button"
+                className={`touch__btn touch__action touch__action--crouch${crouchOn ? ' is-on is-toggled' : ''}`}
+                aria-pressed={crouchOn}
+                onPointerDown={(e) => { e.preventDefault(); setCrouchOn(touch.toggleCrouch()); }}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                {b.label}
               </button>
             ) : b.id === 'aim' ? (
               <button

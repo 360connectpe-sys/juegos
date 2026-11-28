@@ -59,7 +59,7 @@ export interface PlayerInput {
   viewTick?: number;
 }
 
-export type Locomotion = 'idle' | 'walk' | 'run' | 'jump' | 'fall';
+export type Locomotion = 'idle' | 'walk' | 'run' | 'jump' | 'fall' | 'crouch';
 
 /** Estado público de un jugador (lo que el servidor difundirá). */
 export interface PlayerState {

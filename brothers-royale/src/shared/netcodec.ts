@@ -12,7 +12,7 @@ import type { Locomotion, PlayerState } from './types';
  */
 export const PACKED_STRIDE = 10;
 
-const LOCOMOTIONS: readonly Locomotion[] = ['idle', 'walk', 'run', 'jump', 'fall'];
+const LOCOMOTIONS: readonly Locomotion[] = ['idle', 'walk', 'run', 'jump', 'fall', 'crouch'];
 
 const POS = 100; // cm
 const ANG = 1000; // mrad

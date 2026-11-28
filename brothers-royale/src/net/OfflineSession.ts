@@ -1,7 +1,7 @@
 import { unpackZombies, ZombieDirector, type PublicZombie } from '@/physics/ZombieDirector';
 import { BattleRound } from '@shared/battle/BattleRound';
 import { DEFAULT_MODIFIERS } from '@shared/movement';
-import { WORLD } from '@shared/constants';
+import { PLAYER, WORLD } from '@shared/constants';
 import type { BuildingWorld } from '@/physics/BuildingWorld';
 import type { BuildRequest } from '@shared/building/BuildingState';
 import { CharacterBody } from '@/physics/CharacterBody';
@@ -190,7 +190,8 @@ export class OfflineSession implements GameSession {
   }
 
   private *targets(): Generator<TargetPose> {
-    yield { id: this.localPlayerId, feet: this.local.state.position };
+    const f = this.local.state.position;
+    yield { id: this.localPlayerId, feet: this.local.crouched ? { x: f.x, y: f.y - PLAYER.crouchDrop, z: f.z } : f };
     for (const [id, d] of this.dummies) yield { id, feet: d.state.position };
     if (this.zombieDirector) yield* this.zombieDirector.poses();
   }

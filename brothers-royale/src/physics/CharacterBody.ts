@@ -13,7 +13,9 @@ import {
 import { isValidPlayerInput } from '@shared/inputValidation';
 import type { CharacterSnapshot } from '@shared/reconciliation';
 export type { CharacterSnapshot } from '@shared/reconciliation';
-import { emptyInput, type PlayerInput, type PlayerState, type Vec3 } from '@shared/types';
+import { Buttons, emptyInput, hasButton, type PlayerInput, type PlayerState, type Vec3 } from '@shared/types';
+
+const IDENTITY_ROT = { x: 0, y: 0, z: 0, w: 1 };
 import { PLAYER_GROUPS } from './groups';
 import type { PhysicsWorld } from './PhysicsWorld';
 
@@ -109,6 +111,11 @@ export class CharacterBody {
       return;
     }
     const m = this.motor;
+    // Fase 15: agacharse (botón CROUCH). Solo en tierra o saltando, nunca cayendo del avión;
+    // no se levanta si no cabe de pie (techo, rampa, mesa encima).
+    const wantCrouch = hasButton(input.buttons, Buttons.CROUCH) && !this.modifiers.air && !this.modifiers.descent;
+    if (wantCrouch && !m.crouched) { m.crouched = true; this.applyShape(); }
+    else if (!wantCrouch && m.crouched && this.canStand()) { m.crouched = false; this.applyShape(); }
     const wasGrounded = m.grounded;
     const vyBefore = m.vy;
     const { jumped } = motorIntent(m, input, dt, this.modifiers);
@@ -142,14 +149,14 @@ export class CharacterBody {
 
     const s = this.state;
     s.position.x = next.x;
-    s.position.y = next.y - FOOT_OFFSET;
+    s.position.y = next.y - this.footOffset;
     s.position.z = next.z;
     s.velocity.x = move.x / dt;
     s.velocity.y = move.y / dt;
     s.velocity.z = move.z / dt;
     s.yaw = m.yaw;
     s.grounded = grounded;
-    s.locomotion = deriveLocomotion(grounded, m.vx, m.vy, m.vz);
+    s.locomotion = deriveLocomotion(grounded, m.vx, m.vy, m.vz, !!m.crouched);
   }
 
   snapshot(): CharacterSnapshot {
@@ -163,8 +170,39 @@ export class CharacterBody {
     };
   }
 
+  /** Cápsula de pie o agachada (misma base: los pies no se mueven). */
+  private applyShape(): void {
+    const h = this.motor.crouched ? PLAYER.crouchHalfHeight : PLAYER.halfHeight;
+    const old = this.collider.halfHeight();
+    if (Math.abs(old - h) < 1e-6) return;
+    // El centro del cuerpo baja/sube lo mismo que cambia la cápsula: los pies no se mueven.
+    // (Desplazar solo el colisionador confundía al controlador de Rapier: se hundía y atascaba.)
+    const t = this.body.translation();
+    const next = { x: t.x, y: t.y + (h - old), z: t.z };
+    this.collider.setHalfHeight(h);
+    this.body.setTranslation(next, true);
+    this.body.setNextKinematicTranslation(next);
+    this.physics.world.propagateModifiedBodyPositionsToColliders();
+  }
+
+  /** Distancia de los pies al centro de la cápsula (de pie o agachado). */
+  private get footOffset(): number { return (this.motor.crouched ? PLAYER.crouchHalfHeight : PLAYER.halfHeight) + PLAYER.radius; }
+
+  /** ¿Cabe de pie aquí? (solo mundo, estructuras y construcciones; nunca otros jugadores). */
+  private canStand(): boolean {
+    const t = this.body.translation();
+    // Cápsula de pie algo recortada por abajo (no debe tocar el suelo que se pisa).
+    const c = { x: t.x, y: t.y + (PLAYER.halfHeight - PLAYER.crouchHalfHeight) + 0.08, z: t.z };
+    const shape = new this.physics.R.Capsule(PLAYER.halfHeight - 0.08, PLAYER.radius - 0.02);
+    return !this.physics.world.intersectionWithShape(c, IDENTITY_ROT, shape, undefined, PLAYER_GROUPS, this.collider);
+  }
+
+  /** ¿Agachado? (vista, cámara y caja de impacto). */
+  get crouched(): boolean { return !!this.motor.crouched; }
+
   restore(snap: CharacterSnapshot): void {
     this.motor = { ...snap.motor };
+    this.applyShape();
     this.modifiers = { ...snap.modifiers };
     this.setFeet(snap.position);
     this.state.velocity = { ...snap.velocity };
@@ -179,6 +217,7 @@ export class CharacterBody {
 
   teleport(p: Vec3): void {
     this.motor = initialMotorState(this.motor.yaw);
+    this.applyShape();
     this.setFeet(p);
     this.state.velocity = { x: 0, y: 0, z: 0 };
     // Tras un teletransporte no se está apoyado hasta el siguiente paso (no "aterrizar" en el aire).
@@ -186,7 +225,7 @@ export class CharacterBody {
   }
 
   private setFeet(p: Vec3): void {
-    const t = { x: p.x, y: p.y + FOOT_OFFSET, z: p.z };
+    const t = { x: p.x, y: p.y + this.footOffset, z: p.z };
     this.body.setTranslation(t, true);
     this.body.setNextKinematicTranslation(t);
     // Sin esto el colisionador seguiría en la posición vieja hasta el próximo world.step().

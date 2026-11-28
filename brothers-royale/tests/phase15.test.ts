@@ -169,3 +169,47 @@ describe('fase 15.4: terreno, sectores y vegetación', () => {
     expect(Math.min(...l.trees.map((t) => t.scale))).toBeGreaterThanOrEqual(1);
   });
 });
+
+import { CharacterBody } from '@/physics/CharacterBody';
+import { loadRapier, PhysicsWorld } from '@/physics/PhysicsWorld';
+import { Buttons, emptyInput } from '@shared/types';
+import { PLAYER } from '@shared/constants';
+import { packPlayer, unpackPlayers } from '@shared/netcodec';
+import { rayHitbox } from '@shared/combat/hitscan';
+describe('fase 15.6: agacharse', () => {
+  it('mitad de velocidad, pasa bajo un hueco de 1,3 m y no se levanta debajo; al salir, de pie', async () => {
+    const ph = new PhysicsWorld(await loadRapier());
+    ph.addStatic({ kind: 'box', center: { x: 0, y: -0.5, z: 0 }, halfExtents: { x: 30, y: 0.5, z: 30 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, layer: 'world' });
+    // Viga baja: su cara inferior a 1,3 m (de pie no se cabe: 1,7 m).
+    ph.addStatic({ kind: 'box', center: { x: 0, y: 1.8, z: 5 }, halfExtents: { x: 3, y: 0.5, z: 1 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, layer: 'structure' });
+    ph.step();
+    const b = new CharacterBody(ph, 'c', 'C', { x: 0, y: 0.1, z: 0 });
+    let seq = 0;
+    const run = (input: Partial<ReturnType<typeof emptyInput>>, n: number) => { for (let i = 0; i < n; i++) { b.step({ ...emptyInput(++seq), ...input }); ph.step(); } return b.state; };
+    run({}, 20);
+    let s = run({ moveZ: 1, buttons: Buttons.CROUCH }, 20);
+    expect(s.locomotion).toBe('crouch');
+    expect(Math.hypot(s.velocity.x, s.velocity.z)).toBeCloseTo(PLAYER.walkSpeed * PLAYER.crouchSpeed, 0);
+    s = run({ moveZ: 1, buttons: Buttons.CROUCH }, 38); // bajo la viga
+    expect(s.position.z).toBeGreaterThan(4.2); expect(s.position.z).toBeLessThan(5.8);
+    s = run({}, 10); // suelta el botón debajo: sigue agachado
+    expect(b.crouched).toBe(true);
+    s = run({ moveZ: 1 }, 40); // sale agachado y se levanta solo
+    expect(s.position.z).toBeGreaterThan(6.2);
+    expect(b.crouched).toBe(false);
+    // De pie no cabe bajo la viga: se queda delante.
+    const c = new CharacterBody(ph, 'd', 'D', { x: 1.5, y: 0.1, z: 0 });
+    for (let i = 0; i < 80; i++) { c.step({ ...emptyInput(i + 1), moveZ: 1 }); ph.step(); }
+    expect(c.state.position.z).toBeLessThan(4);
+    ph.dispose();
+  });
+  it('la caja de impacto agachada es más baja y la locomoción viaja en el snapshot', () => {
+    const feet = { x: 0, y: 0, z: 0 };
+    const head = { x: 0, y: 1.25, z: -5 }, dir = { x: 0, y: 0, z: 1 };
+    expect(rayHitbox(head, dir, feet, 50)).not.toBeNull();
+    expect(rayHitbox(head, dir, { ...feet, y: -PLAYER.crouchDrop }, 50)).toBeNull();
+    const out: number[] = [];
+    packPlayer(out, 3, { id: 'a', name: 'a', position: feet, velocity: feet, yaw: 0, grounded: true, locomotion: 'crouch', lastProcessedSeq: 1 });
+    expect(unpackPlayers(out)[0]!.locomotion).toBe('crouch');
+  });
+});

@@ -10,7 +10,7 @@ import { BuildingWorld } from '@/physics/BuildingWorld';
 import { ZombieDirector } from '@/physics/ZombieDirector';
 import { CharacterBody } from '@/physics/CharacterBody';
 import { loadRapier, PhysicsWorld } from '@/physics/PhysicsWorld';
-import { SIMULATION, WORLD } from '@shared/constants';
+import { PLAYER, SIMULATION, WORLD } from '@shared/constants';
 import { isValidPlayerInput } from '@shared/inputValidation';
 import { packPlayer } from '@shared/netcodec';
 import { NET, type RosterEntry, type SnapshotMessage } from '@shared/protocol';
@@ -89,7 +89,7 @@ export class ServerWorld {
       speed: 0,
       dt: SIMULATION.fixedDt,
       tick: 0,
-      targets: (viewTick) => this.targetsAt(viewTick),
+      targets: (viewTick) => this.crouchAware(this.targetsAt(viewTick)),
       damageObstacle: (by, o, d, max, damage, axe) => this.building.damageRay(by, o, d, max, damage, axe),
       castStatic: (o, d, max) => physics.castStatic(o, d, max),
     };
@@ -109,6 +109,17 @@ export class ServerWorld {
       giveWood: (id, n) => { this.building.state.giveWood(id, n); },
     }, matchSeed);
     this.zombies.onRemoved = id => this.history.forget(id);
+  }
+
+  /**
+   * Fase 15: la caja de impacto de un jugador agachado baja `PLAYER.crouchDrop` (se aplica como
+   * pies más bajos: cuerpo y cabeza a la vez). Usa el estado actual de agachado.
+   */
+  private *crouchAware(poses: Iterable<TargetPose>): Generator<TargetPose> {
+    for (const t of poses) {
+      const p = this.players.get(t.id);
+      yield p?.body.crouched ? { id: t.id, feet: { x: t.feet.x, y: t.feet.y - PLAYER.crouchDrop, z: t.feet.z } } : t;
+    }
   }
 
   /** Objetivos rebobinados al tick que veía el atacante (limitado a LAG_COMPENSATION). */

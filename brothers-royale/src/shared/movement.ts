@@ -69,6 +69,8 @@ export interface MotorState {
   jumpBuffer: number;
   /** El botón de salto estaba pulsado el tick anterior (detección de flanco). */
   jumpHeld: boolean;
+  /** Fase 15: agachado (lo decide CharacterBody: no se levanta bajo un techo). */
+  crouched?: boolean;
 }
 
 export const initialMotorState = (yaw = 0): MotorState => ({
@@ -80,6 +82,7 @@ export const initialMotorState = (yaw = 0): MotorState => ({
   coyote: 0,
   jumpBuffer: 0,
   jumpHeld: false,
+  crouched: false,
 });
 
 /** Velocidad horizontal objetivo (m/s) para una entrada. Pura y determinista. */
@@ -140,6 +143,8 @@ export function motorIntent(
     return { jumped: false };
   }
   // Horizontal con aceleración (control total en suelo, reducido en el aire).
+  // Agachado: mitad de velocidad, sin correr ni saltar.
+  if (s.crouched) mods = { ...mods, speedMultiplier: mods.speedMultiplier * PLAYER.crouchSpeed, canSprint: false, canJump: false };
   const target = desiredHorizontalVelocity(input, mods);
   const moving = target.x !== 0 || target.y !== 0;
   const accel = s.grounded ? (moving ? PLAYER.groundAccel : PLAYER.groundDecel) : PLAYER.airAccel;
@@ -206,8 +211,9 @@ export function applyCollisionResult(
 }
 
 /** Estado de animación/locomoción derivado (lo pueden calcular también los clientes remotos). */
-export function deriveLocomotion(grounded: boolean, vx: number, vy: number, vz: number): Locomotion {
+export function deriveLocomotion(grounded: boolean, vx: number, vy: number, vz: number, crouched = false): Locomotion {
   if (!grounded) return vy > 0.5 ? 'jump' : 'fall';
+  if (crouched) return 'crouch';
   const speed = Math.hypot(vx, vz);
   if (speed < 0.3) return 'idle';
   return speed >= PLAYER.runThreshold ? 'run' : 'walk';

@@ -113,6 +113,7 @@ export class KeyboardSource implements InputSource {
   buildRequest: 'wall' | 'floor' | 'ramp' | 'roof' | null = null;
   /** Fase 15: tecla T = girar la pieza 90° antes de colocarla. */
   buildRotate = false;
+  private crouchToggle = false;
 
   constructor(private readonly target: Window) {
     target.addEventListener('keydown', this.onDown);
@@ -126,6 +127,8 @@ export class KeyboardSource implements InputSource {
     const y = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
     let actions = this.actionLatch;
     for (const [code, bit] of Object.entries(KEY_ACTIONS)) if (k.has(code)) actions |= bit;
+    // Fase 15: G conmuta agacharse; Ctrl izquierdo lo mantiene mientras se pulsa.
+    if (this.crouchToggle || k.has('ControlLeft')) actions |= Buttons.CROUCH;
     const frame: InputFrame = {
       move: { x, y },
       sprint: k.has('ShiftLeft') || k.has('ShiftRight'),
@@ -156,6 +159,7 @@ export class KeyboardSource implements InputSource {
     const piece = BUILD_KEYS[e.code];
     if (piece && !e.repeat) this.buildRequest = piece;
     if (e.code === 'KeyT' && !e.repeat) this.buildRotate = true;
+    if (e.code === 'KeyG' && !e.repeat) this.crouchToggle = !this.crouchToggle;
     const action = KEY_ACTIONS[e.code];
     if (action && !e.repeat) this.actionLatch |= action;
     if (e.code === 'Equal' || e.code === 'NumpadAdd') this.zoomDelta -= 0.1;
@@ -275,6 +279,7 @@ export class TouchSource implements InputSource {
   private sprintToggle = false;
   /** Mira conmutable: una pulsación la activa y otra la desactiva (no hay que mantener). */
   private aimToggle = false;
+  private crouchToggle = false;
   private jumpHeld = false;
   private jumpLatch = false;
   private held = 0;
@@ -315,6 +320,17 @@ export class TouchSource implements InputSource {
     return this.aimToggle;
   }
 
+  /** Fase 15: agacharse conmutable (botón Agachar). Devuelve el nuevo estado. */
+  toggleCrouch(): boolean {
+    this.crouchToggle = !this.crouchToggle;
+    this.activity = true;
+    return this.crouchToggle;
+  }
+
+  get crouching(): boolean {
+    return this.crouchToggle;
+  }
+
   /** Botones de acción (ataque, apuntar, recarga, interacción, construcción). */
   setAction(bit: number, down: boolean): void {
     if (down) {
@@ -352,7 +368,7 @@ export class TouchSource implements InputSource {
       sprint: this.sprintToggle || mag > 0.95,
       jump: this.jumpLatch || this.jumpHeld,
       active: this.activity,
-      actions: this.held | this.latch | (this.aimToggle ? Buttons.AIM : 0),
+      actions: this.held | this.latch | (this.aimToggle ? Buttons.AIM : 0) | (this.crouchToggle ? Buttons.CROUCH : 0),
     };
     if (this.aim.x !== 0 || this.aim.y !== 0) frame.aim = this.aim;
     this.jumpLatch = false;
@@ -366,6 +382,7 @@ export class TouchSource implements InputSource {
     this.aim = { x: 0, y: 0 };
     this.jumpHeld = false;
     this.aimToggle = false;
+    this.crouchToggle = false;
     this.held = 0;
     this.lookX = 0;
     this.lookY = 0;
@@ -402,6 +419,8 @@ export class GamepadSource implements InputSource {
   readonly device = 'gamepad' as const;
   private prevJump = false;
   private prevNext = false;
+  private prevR3 = false;
+  private crouchToggle = false;
   /** RB: pasar al hueco siguiente (se cuenta en el flanco). */
   nextSlotPressed = false;
   connected = false;
@@ -432,6 +451,11 @@ export class GamepadSource implements InputSource {
     this.prevNext = next;
     let actions = 0;
     for (const [btn, bit] of PAD_ACTIONS) if (pressed(btn)) actions |= bit;
+    // Fase 15: R3 (pulsar el stick derecho) conmuta agacharse.
+    const r3 = pressed(PAD.R3);
+    if (r3 && !this.prevR3) this.crouchToggle = !this.crouchToggle;
+    this.prevR3 = r3;
+    if (this.crouchToggle) actions |= Buttons.CROUCH;
     const aim = this.rightStick(p);
     const anyButton = p.buttons.some((b) => b.pressed);
     const active = anyButton || move.x !== 0 || move.y !== 0 || aim.x !== 0 || aim.y !== 0;

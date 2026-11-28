@@ -20,7 +20,7 @@ y seguir por el primer bloque PENDIENTE.
 | 15.3 Construcción | HECHO (protocolo v11) |
 | 15.4 Terreno/zonas/vegetación | HECHO |
 | 15.5 Personajes/armas/paracaídas | HECHO (armas: solo cámara de apuntado) |
-| 15.6 Animaciones/agacharse | PENDIENTE |
+| 15.6 Animaciones/agacharse | HECHO |
 | 15.7 Botín/HUD/tormenta | PENDIENTE |
 | 15.8 Integración y preparación de publicación | PENDIENTE |
 
@@ -62,6 +62,14 @@ anchura (hitbox, armas en mano y animaciones intactas; 1 SkinnedMesh, material c
 la cámara se aparta más del hombro (×2,4). Paracaídas propio más pequeño y alto (iso 0,45, 3ª 0,7, 1ª oculto) y
 cámara isométrica centrada en el suelo durante la caída. Velocidades y reglas de la fase 14 sin cambios.
 Armas: no se rediseñaron modelos (pendiente; se priorizó estabilidad).
+
+**15.6**: agacharse con el bit `Buttons.CROUCH` (ya reservado): `MotorState.crouched` (va en la reconciliación),
+cápsula de 1,1 m (`PLAYER.crouchHalfHeight`) moviendo el centro del cuerpo (los pies no se mueven), mitad de
+velocidad, sin correr ni saltar, no se levanta si no cabe de pie (`canStand`), caja de impacto 0,55 m más baja
+(servidor y offline), locomoción `crouch` en el snapshot, pose y cámara (1ª/3ª) más bajas. Controles: G conmuta,
+Ctrl izq. mantiene, R3 en el mando, botón táctil «Agachar» conmutable y movible en el editor del HUD. Hacha,
+reacción del árbol (sacudida) y retroceso ya existían de fases previas; no se añadió destello. Pruebas en
+`tests/phase15.test.ts`.
 
 Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
 izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.

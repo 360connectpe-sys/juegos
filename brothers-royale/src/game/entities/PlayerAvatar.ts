@@ -47,16 +47,19 @@ interface Pose {
   armsUp: number;
   legsTuck: number;
   bob: number;
+  /** Fase 15: cuánto baja el cuerpo (agachado). */
+  drop: number;
 }
 
-const POSE_KEYS: (keyof Pose)[] = ['armSwing', 'legSwing', 'cadence', 'lean', 'armsUp', 'legsTuck', 'bob'];
+const POSE_KEYS: (keyof Pose)[] = ['armSwing', 'legSwing', 'cadence', 'lean', 'armsUp', 'legsTuck', 'bob', 'drop'];
 
 const POSES: Record<Locomotion, Pose> = {
-  idle: { armSwing: 0.05, legSwing: 0, cadence: 0, lean: 0, armsUp: 0, legsTuck: 0, bob: 0.02 },
-  walk: { armSwing: 0.7, legSwing: 0.75, cadence: 2.1, lean: 0.06, armsUp: 0, legsTuck: 0, bob: 0.05 },
-  run: { armSwing: 1.1, legSwing: 1.0, cadence: 1.75, lean: 0.22, armsUp: 0.2, legsTuck: 0, bob: 0.09 },
-  jump: { armSwing: 0, legSwing: 0, cadence: 0, lean: 0.05, armsUp: 2.4, legsTuck: 0.6, bob: 0 },
-  fall: { armSwing: 0, legSwing: 0, cadence: 0, lean: -0.05, armsUp: 1.3, legsTuck: 0.25, bob: 0 },
+  crouch: { drop: 0.42, armSwing: 0.25, legSwing: 0.35, cadence: 2.6, lean: 0.32, armsUp: 0.15, legsTuck: 1.05, bob: 0.02 },
+  idle: { drop: 0, armSwing: 0.05, legSwing: 0, cadence: 0, lean: 0, armsUp: 0, legsTuck: 0, bob: 0.02 },
+  walk: { drop: 0, armSwing: 0.7, legSwing: 0.75, cadence: 2.1, lean: 0.06, armsUp: 0, legsTuck: 0, bob: 0.05 },
+  run: { drop: 0, armSwing: 1.1, legSwing: 1.0, cadence: 1.75, lean: 0.22, armsUp: 0.2, legsTuck: 0, bob: 0.09 },
+  jump: { drop: 0, armSwing: 0, legSwing: 0, cadence: 0, lean: 0.05, armsUp: 2.4, legsTuck: 0.6, bob: 0 },
+  fall: { drop: 0, armSwing: 0, legSwing: 0, cadence: 0, lean: -0.05, armsUp: 1.3, legsTuck: 0.25, bob: 0 },
 };
 
 // ---------------------------------------------------------------------------
@@ -317,7 +320,7 @@ export class PlayerAvatar {
       squash = 1 - Math.sin(t * Math.PI) * 0.18;
       bob -= (1 - squash) * 0.5;
     }
-    root.position.y = bob;
+    root.position.y = bob - p.drop;
     root.scale.set(2 - squash, squash, 2 - squash);
     this.combatPose(dt);
   }
@@ -375,6 +378,9 @@ export class PlayerAvatar {
   get downed(): boolean {
     return this.deadT > 0.5;
   }
+
+  /** Fase 15: agachado (para la cámara). */
+  get isCrouched(): boolean { return this.locomotion === 'crouch'; }
 
   get position(): Vector3 {
     return this.root.position;

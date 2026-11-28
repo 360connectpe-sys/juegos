@@ -846,6 +846,7 @@ export class Game {
     const zoom = this.input.consumeZoom();
     if (cameras) {
       if (zoom !== 0 && !this.inputSuspended) cameras.addZoom(zoom);
+      cameras.crouched = followed.isCrouched;
       cameras.update(p, followed.velocity.x, followed.velocity.z, dt);
       this.engine.activeCamera = cameras.camera;
       avatar.root.visible = !spectator && !cameras.hideAvatar;

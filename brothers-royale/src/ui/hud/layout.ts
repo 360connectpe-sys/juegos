@@ -23,7 +23,8 @@ export type HudElementId =
   | 'killfeed'
   | 'lives'
   | 'inventory'
-  | 'minimap';
+  | 'minimap'
+  | 'crouch';
 
 export interface HudElementLayout {
   /** Centro del elemento, normalizado al área segura (0 = izquierda/arriba). */
@@ -64,6 +65,7 @@ export const HUD_ELEMENTS: readonly HudElementInfo[] = [
   { id: 'lives', label: 'Vidas', kind: 'info' },
   { id: 'inventory', label: 'Inventario', kind: 'info' },
   { id: 'minimap', label: 'Minimapa', kind: 'info' },
+  { id: 'crouch', label: 'Agachar', kind: 'control', action: Buttons.CROUCH },
 ];
 
 export const HUD_IDS: readonly HudElementId[] = HUD_ELEMENTS.map((e) => e.id);
@@ -103,6 +105,8 @@ export function defaultHudLayout(): HudLayout {
     lives: el(0.10, 0.44, 0.75),
     inventory: el(0.5, 0.06, 0.82),
     minimap: el(0.10, 0.18, 0.85),
+    // Fase 15: agacharse, sobre Apuntar en la columna del pulgar derecho (pequeño, conmutable).
+    crouch: el(0.93, 0.38, 0.7),
   };
 }
 

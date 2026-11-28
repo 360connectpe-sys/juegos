@@ -43,6 +43,11 @@ export const PLAYER = {
   /** Cápsula: radio y media altura del segmento cilíndrico. */
   radius: 0.35,
   halfHeight: 0.5,
+  /** Fase 15: agachado (cápsula de 1,1 m, mitad de velocidad, sin correr ni saltar). */
+  crouchHalfHeight: 0.2,
+  crouchSpeed: 0.5,
+  /** Cuánto baja la caja de impacto, la cámara y la figura al agacharse (m). */
+  crouchDrop: 0.55,
   /** Escalón máximo que se sube sin saltar (m). */
   maxStepHeight: 0.4,
   maxSlopeDeg: 50,
