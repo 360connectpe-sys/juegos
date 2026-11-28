@@ -49,6 +49,10 @@ export class Engine {
   private readonly governor = new PerformanceGovernor();
   /** Fase 15: el dispositivo no alcanza el objetivo en Normal ni con la resolución mínima. */
   onSlowDevice: (() => void) | null = null;
+  /** Fase 15.2: tras una bajada automática, el rendimiento volvió a ser holgado. */
+  onRecovered: (() => void) | null = null;
+  /** La calidad actual es una bajada automática (no la elegida por el jugador). */
+  autoReduced = false;
   private readonly contextMonitor: ContextLossMonitor;
   private rafId = 0;
   private running = false;
@@ -169,7 +173,11 @@ export class Engine {
         this.renderer.setPixelRatio(newRatio);
         this.resize();
       }
-      if (this.adaptive.windows !== windows && this.governor.feed(this.quality.tier, this.adaptive.lastP90Ms, this.adaptive.targetFps, this.renderer.getPixelRatio(), this.quality.minPixelRatio)) this.onSlowDevice?.();
+      if (this.adaptive.windows !== windows) {
+        const verdict = this.governor.feed(this.quality.tier, this.adaptive.lastP90Ms, this.adaptive.targetFps, this.renderer.getPixelRatio(), this.quality.minPixelRatio, this.quality.pixelRatio, this.autoReduced);
+        if (verdict === 'down') this.onSlowDevice?.();
+        else if (verdict === 'up') this.onRecovered?.();
+      }
       if (this.quality.shadows && this.frameCount % this.quality.shadowUpdateInterval === 0) {
         this.renderer.shadowMap.needsUpdate = true;
       }

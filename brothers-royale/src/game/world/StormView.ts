@@ -1,4 +1,4 @@
-import { CylinderGeometry, DoubleSide, Mesh, ShaderMaterial } from 'three';
+import { BackSide, CylinderGeometry, FrontSide, Mesh, ShaderMaterial } from 'three';
 import type { Circle } from '@shared/battle/zone';
 import type { TerrainParams } from '@shared/world/terrain';
 
@@ -45,7 +45,7 @@ export class StormView {
     const geometry = new CylinderGeometry(1, 1, 1, STORM_WALL.segments, 1, true);
     geometry.translate(0, 0.5, 0);
     const material = new ShaderMaterial({
-      vertexShader: vertex, fragmentShader: fragment, transparent: true, depthWrite: false, side: DoubleSide, 
+      vertexShader: vertex, fragmentShader: fragment, transparent: true, depthWrite: false, side: BackSide, 
       uniforms: { uTime: { value: 0 }, uRadius: { value: 1 }, uPulse: { value: 0 } },
     });
     this.mesh = new Mesh(geometry, material);
@@ -53,7 +53,11 @@ export class StormView {
     this.mesh.matrixAutoUpdate = false;
   }
   /** `outside` = el jugador seguido recibe daño: la barrera late más fuerte. */
-  update(circle: Circle | null, dt = 0, outside = false): void {
+  /**
+   * Fase 15.2: se dibuja UNA sola cara (la mitad de fragmentos transparentes): la interior
+   * cuando la cámara está dentro de la zona y la exterior cuando está fuera. `camX/camZ` = cámara.
+   */
+  update(circle: Circle | null, dt = 0, outside = false, camX = NaN, camZ = NaN): void {
     const m = this.mesh;
     m.visible = circle !== null && circle.radius > 0.05;
     if (!circle || !m.visible) return;
@@ -62,6 +66,9 @@ export class StormView {
     u.uTime!.value = this.time;
     u.uRadius!.value = circle.radius;
     u.uPulse!.value = outside ? 0.5 + 0.5 * Math.sin(this.time * 6.2831) : 0;
+    const camInside = !Number.isFinite(camX) || Math.hypot(camX - circle.x, camZ - circle.z) < circle.radius;
+    const side = camInside ? BackSide : FrontSide;
+    if (m.material.side !== side) { m.material.side = side; m.material.needsUpdate = true; }
     m.position.set(circle.x, STORM_WALL.bottom, circle.z);
     m.scale.set(circle.radius, STORM_WALL.height, circle.radius);
     m.updateMatrix();

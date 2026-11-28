@@ -54,8 +54,8 @@ export function buildQuality(tier: QualityTier | LegacyQualityTier, devicePixelR
     return {
       tier: 'low',
       pixelRatio: Math.min(dpr, 1),
-      // Fase 15: suelo más alto (0,6) para limitar la pixelación al bajar resolución.
-      minPixelRatio: 0.6,
+      // Fase 15.2: suelo 0,8 (antes 0,6): con menos la imagen se pixelaba demasiado.
+      minPixelRatio: Math.min(0.8, Math.min(dpr, 1)),
       antialias: false,
       // Fase 15: sin sombras en ninguna calidad (ni mapa de sombras ni manchas).
       shadows: false,
@@ -68,7 +68,8 @@ export function buildQuality(tier: QualityTier | LegacyQualityTier, devicePixelR
     tier: 'normal',
     // En móvil 1,5 basta para pantallas de 3x; en escritorio hasta 2 (sin MSAA).
     pixelRatio: Math.min(dpr, isTouch ? 1.5 : 2),
-    minPixelRatio: 0.75,
+    // Fase 15.2: suelo 1,0 (antes 0,75) salvo pantallas de menos de 1 px por punto.
+    minPixelRatio: Math.min(1, dpr),
     antialias: false,
     // Fase 15: Normal tampoco dibuja sombras (rendimiento, batería y calor).
     shadows: false,
@@ -122,23 +123,36 @@ export function saveQuality(t: QualityTier): void {
 }
 
 /**
- * Fase 15: capacidad por rendimiento REAL (no solo núcleos). Recibe cada ventana de la
- * resolución adaptativa; si en Normal la resolución ya está en su mínimo y aun así el
- * percentil 90 queda muy lejos del objetivo durante varias ventanas seguidas, propone
- * bajar a Baja (una sola vez). Nunca sube sola: igualdad competitiva y sin oscilaciones.
+ * Capacidad por rendimiento REAL (fase 15; revisado en 15.2). Recibe cada ventana de la resolución
+ * adaptativa (≈1,5 s):
+ * - En Normal, si la resolución ya está en su mínimo y el percentil 90 sigue muy lejos del objetivo
+ *   durante varias ventanas seguidas, propone bajar a Baja ('down').
+ * - En Baja por bajada automática, si la resolución está en su máximo y va holgado durante muchas
+ *   ventanas, propone volver a la calidad elegida ('up').
+ * Cada vuelta atrás duplica la espera de la siguiente bajada: no oscila. Nunca decide nada que se
+ * guarde como preferencia del jugador.
  */
 export class PerformanceGovernor {
   private bad = 0;
-  private decided = false;
-  constructor(private readonly windowsNeeded = 4) {}
-  /** Devuelve true cuando conviene pasar a Baja. */
-  feed(tier: QualityTier, p90Ms: number, targetFps: number, pixelRatio: number, minPixelRatio: number): boolean {
-    if (this.decided || tier !== 'normal' || !(p90Ms > 0)) return false;
-    const atMin = pixelRatio <= minPixelRatio + 1e-6;
-    const slow = p90Ms > (1000 / targetFps) * 1.45;
-    this.bad = atMin && slow ? this.bad + 1 : 0;
-    if (this.bad >= this.windowsNeeded) { this.decided = true; return true; }
-    return false;
+  private good = 0;
+  private downNeeded: number;
+  constructor(windowsNeeded = 6, private readonly upNeeded = 12) { this.downNeeded = windowsNeeded; }
+  feed(tier: QualityTier, p90Ms: number, targetFps: number, pixelRatio: number, minPixelRatio: number, maxPixelRatio = Infinity, reduced = false): 'down' | 'up' | null {
+    if (!(p90Ms > 0)) return null;
+    const budget = 1000 / targetFps;
+    if (tier === 'normal') {
+      this.good = 0;
+      const slow = pixelRatio <= minPixelRatio + 1e-6 && p90Ms > budget * 1.45;
+      this.bad = slow ? this.bad + 1 : 0;
+      if (this.bad >= this.downNeeded) { this.bad = 0; return 'down'; }
+      return null;
+    }
+    this.bad = 0;
+    if (!reduced) return null;
+    const easy = pixelRatio >= maxPixelRatio - 1e-6 && p90Ms <= budget * 1.05;
+    this.good = easy ? this.good + 1 : 0;
+    if (this.good >= this.upNeeded) { this.good = 0; this.downNeeded = Math.min(this.downNeeded * 2, 40); return 'up'; }
+    return null;
   }
-  reset(): void { this.bad = 0; }
+  reset(): void { this.bad = 0; this.good = 0; }
 }

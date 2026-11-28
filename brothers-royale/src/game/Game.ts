@@ -16,7 +16,7 @@ import { Engine } from '@/engine/Engine';
 import { FixedStepLoop } from '@/engine/FixedStepLoop';
 import { Lighting } from '@/engine/Lighting';
 import type { ContextStatus } from '@/engine/ContextLossMonitor';
-import { buildQuality, loadSavedQuality, saveQuality, type QualitySettings, type QualityTier } from '@/engine/quality';
+import { buildQuality, saveQuality, type QualitySettings, type QualityTier } from '@/engine/quality';
 import type { GameSession } from '@/net/GameSession';
 import { OfflineSession } from '@/net/OfflineSession';
 // Solo tipos: el SDK de Colyseus se descarga cuando el jugador pide jugar en línea.
@@ -235,7 +235,11 @@ export class Game {
     this.engine = new Engine(canvas, quality);
     // Fase 15: si Normal no rinde ni con la resolución mínima, pasa a Baja (solo si el
     // jugador no eligió calidad a mano; podrá volver a Normal en Ajustes).
-    this.engine.onSlowDevice = () => { if (loadSavedQuality() === null) this.setQuality('low'); };
+    // Fase 15.2: la bajada automática es solo la calidad EFECTIVA de esta sesión; la elegida (la
+    // guardada) no cambia, y se recupera sola cuando el rendimiento vuelve a ser holgado.
+    this.selectedTier = quality.tier;
+    this.engine.onSlowDevice = () => { if (this.quality.tier === 'normal') this.applyQuality('low', true); };
+    this.engine.onRecovered = () => { if (this.engine.autoReduced) this.applyQuality(this.selectedTier, false); };
     this.engine.onContextChange = (s) => this.events.emit('graphics', s);
     this.blobs.visible = quality.blobShadows;
     this.engine.scene.add(this.blobs.mesh);
@@ -851,7 +855,8 @@ export class Game {
     if (!spectator && (myAir === 2 || myAir === 3) && (!cameras || cameras.mode === 'isometric') && this.layout) {
       p = this.airFocus.set(p.x, Math.max(terrainHeight(p.x, p.z, this.layout.terrain), p.y - 6), p.z);
     }
-    this.stormView?.update(battle?.phase === 'running' ? battle.zone.current : null, dt, !!battle && battle.phase === 'running' && !contains(battle.zone.current, p));
+    const cpos = this.engine.activeCamera.position;
+    this.stormView?.update(battle?.phase === 'running' ? battle.zone.current : null, dt, !!battle && battle.phase === 'running' && !contains(battle.zone.current, p), cpos.x, cpos.z);
     const opticalItem = this.session?.match.inventory?.slots[this.session.match.inventory.selected];
     const optic: 1|2|4 = opticalItem?.kind === 'sniper' ? 4 : opticalItem?.scope === 'x2' ? 2 : 1;
     const ads = this.lastAiming && !this.inputSuspended && !this.vitals.dead && !this.vitals.descending && this.vitals.reload <= 0 && !!opticalItem && isWeapon(opticalItem.kind);
@@ -968,7 +973,7 @@ export class Game {
   }
 
   get qualityTier(): QualityTier {
-    return this.quality.tier;
+    return this.selectedTier;
   }
 
   /** Perspectiva actual. */
@@ -1202,7 +1207,24 @@ export class Game {
    * Cambia la calidad en vivo (sin recargar). Solo cambia el render: el mundo,
    * las colisiones y la cámara siguen idénticos.
    */
+  /** Fase 15.2: datos del panel de diagnóstico (los que el motor ya mide). */
+  diagnostics() {
+    const f = this.engine.frameInfo();
+    return { fps: f.fps, frameMs: f.frameMs, worstMs: f.worstMs, drawCalls: f.drawCalls, triangles: f.triangles, pixelRatio: f.pixelRatio, ...this.qualityState };
+  }
+  /** Calidad elegida por el jugador (Ajustes) y efectiva (puede ser una bajada automática). */
+  private selectedTier: QualityTier = 'normal';
+  get qualityState(): { selected: QualityTier; effective: QualityTier; automatic: boolean } {
+    return { selected: this.selectedTier, effective: this.quality.tier, automatic: this.engine.autoReduced };
+  }
+  /** Elección del jugador: se guarda y anula cualquier bajada automática. */
   setQuality(tier: QualityTier): void {
+    this.selectedTier = tier;
+    saveQuality(tier);
+    this.applyQuality(tier, false);
+  }
+  private applyQuality(tier: QualityTier, automatic: boolean): void {
+    this.engine.autoReduced = automatic;
     if (tier === this.quality.tier) return;
     const q = buildQuality(tier, window.devicePixelRatio || 1, this.isTouch);
     this.quality = q;
@@ -1212,8 +1234,8 @@ export class Game {
     for (const o of this.shadowCasters) o.castShadow = q.shadows;
     for (const a of this.allAvatars()) a.castShadow = q.shadows;
     this.blobs.visible = q.blobShadows;
-    saveQuality(tier);
-    this.events.emit('quality', tier);
+    // El selector de Ajustes muestra la calidad ELEGIDA; la efectiva va en el panel de información.
+    if (!automatic) this.events.emit('quality', tier);
   }
 
   private syncRemotes(session: GameSession): void {

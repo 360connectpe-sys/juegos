@@ -15,6 +15,8 @@ interface Props {
   /** Volumen de efectos 0..1 (se guarda aparte). */
   volume?: number;
   onVolume?(v: number): void;
+  /** Fase 15.2: versión, build en ejecución, calidad efectiva y panel de diagnóstico. */
+  info?: ReactNode;
 }
 
 const MODE_HELP: Record<CameraMode, string> = {
@@ -27,7 +29,7 @@ const MODE_HELP: Record<CameraMode, string> = {
  * Ajustes del jugador. La perspectiva SOLO se elige aquí. Todo se guarda en
  * este dispositivo y se puede restablecer.
  */
-export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEditHud, onResetAll, onFullscreen, onClose, onExit, volume = DEFAULT_VOLUME, onVolume }: Props) {
+export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEditHud, onResetAll, onFullscreen, onClose, onExit, volume = DEFAULT_VOLUME, onVolume, info }: Props) {
   const ids = { look: useId(), aim: useId(), invert: useId() };
   const [confirmExit,setConfirmExit]=useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -152,6 +154,7 @@ export function SettingsPanel({ settings, quality, canFullscreen, onChange, onEd
             </div>
           )}
         </section>
+        {info}
       </div>
     </div>
   );

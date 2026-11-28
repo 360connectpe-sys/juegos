@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { PROTOCOL_VERSION } from '@shared/protocol';
 
 declare const __BR_BUILD_ID__: string;
+/** Build que se está ejecutando realmente ('dev' sin compilar). */
+export const RUNNING_BUILD: string = typeof __BR_BUILD_ID__ === 'string' ? __BR_BUILD_ID__ : 'dev';
+/** Fase 15.2: un solo intento automático por build en ejecución (evita bucles de actualización). */
+const AUTO_KEY = 'br.pwa.auto';
 interface Release { build: string; protocol: number }
 
 function ask<T>(worker: ServiceWorker, type: string): Promise<T> {
@@ -69,6 +73,21 @@ export function PwaUpdate({ isBusy, server }: { isBusy: () => boolean; server: s
     };
   }, []);
 
+  // Fase 15.2: en el lobby y sin partida activa, la actualización se aplica sola (una vez por
+  // build en ejecución). Nunca durante una partida; preferencias y HUD viven en localStorage.
+  const applyRef = useRef<() => Promise<void>>(async () => undefined);
+  useEffect(() => {
+    if (!waiting && !reloadReady) return;
+    const tick = () => {
+      if (busy.current() || applying) return;
+      try { if (sessionStorage.getItem(AUTO_KEY) === RUNNING_BUILD) return; sessionStorage.setItem(AUTO_KEY, RUNNING_BUILD); } catch { return; }
+      void applyRef.current();
+    };
+    tick();
+    const timer = window.setInterval(tick, 2000);
+    return () => window.clearInterval(timer);
+  }, [waiting, reloadReady, applying]);
+
   const apply = async () => {
     if (busy.current()) return;
     if (reloadReady) { window.location.reload(); return; }
@@ -90,6 +109,7 @@ export function PwaUpdate({ isBusy, server }: { isBusy: () => boolean; server: s
       setNotice(error instanceof Error ? error.message : 'No se pudo actualizar. Inténtalo con conexión.');
     }
   };
+  applyRef.current = apply;
   if ((!waiting && !reloadReady) || isBusy()) return null;
   return <aside className="pwa-update" role="status">
     <img src="./icons/icon-192.png" width="36" height="36" alt="" />

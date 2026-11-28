@@ -22,8 +22,9 @@ import type { PlayerInput } from './types';
  * v9 (fase 12): avión de transporte (planes/air en la ronda), modificadores aéreos, zombis.
  * v10 (fase 14): francotirador, scope2, mira equipada en gear bit 10, petición scope.
  * v11 (fase 15): paredes en el borde de la casilla y paneles de hueco (BuildRequest.slot/yaw/w/h).
+ * v12 (fase 15.2): agachado más alto (cápsula 1,3 m, caja de impacto −0,40 m); mismo formato de mensajes.
  */
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 /** Nombre de la sala registrada en el servidor. */
 export const ROOM_NAME = 'brothers';

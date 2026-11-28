@@ -2,8 +2,31 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 28 de noviembre de 2026: fase 15 publicada; fase 15.1 preparada en rama independiente, sin desplegar.
+Estado a 28 de noviembre de 2026: fase 15.1 publicada (037ad49 / bc538f9); fase 15.2 preparada en ramas independientes, sin publicar.
 
+
+## Fase 15.2 — correcciones de la auditoría (preparada, SIN publicar)
+
+Base `037ad49` (15.1 de Codex publicada). Ramas: `brothers-royale-phase-15.2-ready` (desarrollo) y
+`brothers-royale-phase-15.2-beta-ready` (beta). **Protocolo v12** (cambian constantes de simulación del agachado).
+- Cabello: casquete continuo (`hairCap`, esfera abierta 110° girada hacia atrás) + mechón; sin hueco en coronilla,
+  laterales ni nuca (comprobado con capturas desde atrás, arriba, nuca y lateral).
+- Agachado: bajada VISUAL 0,28 m (`CROUCH_VISUAL_DROP`), torso 0,36 rad: postura de combate, no sentadilla. Caja de
+  impacto y cámara −0,40 m (`PLAYER.crouchDrop`, antes 0,55); cápsula agachada 1,3 m (`crouchHalfHeight` 0,3).
+- PWA: actualización automática en el lobby sin partida (`PwaUpdate`, un intento por build en ejecución: sin
+  bucles; el botón manual sigue si falla o el servidor aún no es compatible). Build y versión en Ajustes.
+- Calidad: elegida (guardada) ≠ efectiva. `PerformanceGovernor` baja a Baja solo en la sesión (6 ventanas lentas
+  con resolución mínima) y vuelve a la elegida tras 12 ventanas holgadas; cada vuelta duplica la espera de la
+  siguiente bajada. Mínimos: Normal 1,0 (antes 0,75) y Baja 0,8 (antes 0,6). Ya no se guarda la bajada.
+- Tormenta: una sola cara (interior si la cámara está dentro, exterior si está fuera): mitad de fragmentos
+  transparentes; morada, mezcla normal; mecánicas intactas.
+- Diagnóstico: panel opcional (Ajustes → Información; `br.diag.v1`, desactivado por defecto), 2 Hz: FPS, ms,
+  peor frame, draw calls, triángulos, pixel ratio, calidad elegida/efectiva, build y protocolo.
+- Validación: 482 pruebas OK + 2 omitidas; capturas de cabello y agachado; práctica offline con 4 muñecos: el
+  minimapa no los dibuja (`minimapState` sin otros jugadores). Sin mediciones en iPhone.
+- Publicar (con autorización y sin partidas): push de `brothers-royale-phase-15.2-ready` a
+  `brothers-royale-phase-3.1`, esperar `/health` con `protocol: 12`, luego `brothers-royale-phase-15.2-beta-ready`
+  a `brothers-royale-beta-pages`. Clientes v11 se actualizan solos en el lobby (los que ya tengan 15.2) o con el botón.
 
 ## Fase 15.1 — preparada, pendiente de ventana sin partidas (2026-11-28)
 

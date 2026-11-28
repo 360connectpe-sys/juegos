@@ -6,6 +6,7 @@ import {
   CircleGeometry,
   CylinderGeometry,
   IcosahedronGeometry,
+  SphereGeometry,
   Float32BufferAttribute,
   Group,
   InstancedMesh,
@@ -52,10 +53,14 @@ interface Pose {
   drop: number;
 }
 
+/** Bajada VISUAL al agacharse (la caja de impacto y la cámara usan PLAYER.crouchDrop). */
+export const CROUCH_VISUAL_DROP = 0.28;
+
 const POSE_KEYS: (keyof Pose)[] = ['armSwing', 'legSwing', 'cadence', 'lean', 'armsUp', 'legsTuck', 'bob', 'drop'];
 
 const POSES: Record<Locomotion, Pose> = {
-  crouch: { drop: PLAYER.crouchDrop, armSwing: 0.25, legSwing: 0.35, cadence: 2.6, lean: 0.24, armsUp: 0.15, legsTuck: 0, bob: 0.02 },
+  // Fase 15.2: postura de combate (cadera ~0,48 m, rodilla ~105°, torso inclinado), no sentadilla.
+  crouch: { drop: CROUCH_VISUAL_DROP, armSwing: 0.25, legSwing: 0.35, cadence: 2.6, lean: 0.36, armsUp: 0.15, legsTuck: 0, bob: 0.02 },
   idle: { drop: 0, armSwing: 0.05, legSwing: 0, cadence: 0, lean: 0, armsUp: 0, legsTuck: 0, bob: 0.02 },
   walk: { drop: 0, armSwing: 0.7, legSwing: 0.75, cadence: 2.1, lean: 0.06, armsUp: 0, legsTuck: 0, bob: 0.05 },
   run: { drop: 0, armSwing: 1.1, legSwing: 1.0, cadence: 1.75, lean: 0.22, armsUp: 0.2, legsTuck: 0, bob: 0.09 },
@@ -98,6 +103,14 @@ function bind(geo: BufferGeometry, bone: number): BufferGeometry {
  * en UNA malla (1 draw call) y cada pieza ligada a su hueso. Se cachea por
  * paleta: 8 jugadores con 8 colores = como mucho 8 geometrías pequeñas.
  */
+/** Casquete de pelo: esfera abierta (thetaLength 110°) girada 0,6 rad hacia atrás. */
+function hairCap(color: string): BufferGeometry {
+  const g = paint(new SphereGeometry(0.262, 10, 7, 0, Math.PI * 2, 0, (110 * Math.PI) / 180), color);
+  g.rotateX(-0.6);
+  g.scale(0.97, 1.05, 0.98);
+  return transform(g, 0, 1.745, -0.005);
+}
+
 export function avatarGeometry(colors: AvatarColors): BufferGeometry {
   const key = `${colors.shirt}|${colors.pants}|${colors.skin}|${colors.hair}`;
   const cached = geometryCache.get(key);
@@ -122,8 +135,10 @@ export function avatarGeometry(colors: AvatarColors): BufferGeometry {
     bind(ball(0.11, colors.shirt, 0.3, 1.4, 0, 1, 0.8, 1), BONE.body),
     bind(cyl(0.075, 0.085, 0.14, colors.skin, 0, 1.5, 0), BONE.body),
     bind(ball(0.24, colors.skin, 0, 1.73, 0.01, 0.95, 1.05, 0.95), BONE.body),
-    bind(cyl(0.22, 0.27, 0.22, colors.hair, 0, 1.94, -0.01, 0.96), BONE.body),
-    bind(box(0.4, 0.22, 0.08, colors.hair, 0, 1.73, -0.19), BONE.body),
+    // Fase 15.2: pelo continuo. Un casquete facetado (media esfera algo mayor que la cabeza)
+    // inclinado hacia atrás: cubre coronilla, laterales y nuca sin huecos y deja la frente libre.
+    bind(hairCap(colors.hair), BONE.body),
+    bind(ball(0.1, colors.hair, 0.06, 1.96, 0.1, 1.3, 0.7, 1), BONE.body),
     bind(box(0.07, 0.07, 0.02, '#1d1d1d', -0.09, 1.75, 0.225), BONE.body),
     bind(box(0.07, 0.07, 0.02, '#1d1d1d', 0.09, 1.75, 0.225), BONE.body),
     bind(box(0.05, 0.07, 0.05, colors.skin, 0, 1.69, 0.235), BONE.body),
@@ -367,7 +382,7 @@ export class PlayerAvatar {
     const mix = (cur: number, target: number) => cur + (target - cur) * w;
     if (gun) {
       const reload = g.action === 'reload';
-      const lean=this.pose.drop/PLAYER.crouchDrop*.24;
+      const lean=this.pose.drop/CROUCH_VISUAL_DROP*.24;
       const kick = (this.kickT / 0.12) * (g.held === 'sniper' ? 0.6 : g.held === 'shotgun' ? 0.45 : 0.22);
       const t = this.time * (g.held === 'sniper' ? 5 : 9);
       armR.rotation.x = mix(armR.rotation.x, reload ? -0.7 + Math.sin(t) * 0.12 : -Math.PI / 2 - kick - lean);

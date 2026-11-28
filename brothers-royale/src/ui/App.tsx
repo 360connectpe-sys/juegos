@@ -22,7 +22,10 @@ import { OnlinePanel } from './components/OnlinePanel';
 import { loadSavedName, readOnlineParams } from '@/net/config';
 import { LoadingScreen } from './components/LoadingScreen';
 import { TouchControls } from './components/TouchControls';
-import { PwaUpdate } from './components/PwaUpdate';
+import { PwaUpdate, RUNNING_BUILD } from './components/PwaUpdate';
+import { DiagnosticsPanel, loadDiagnostics, saveDiagnostics } from './components/DiagnosticsPanel';
+import { QUALITY_LABEL } from '@/engine/quality';
+import { PROTOCOL_VERSION } from '@shared/protocol';
 
 declare global {
   interface Window {
@@ -47,6 +50,7 @@ export function App() {
   const [hudLayout, setHudLayout] = useState<HudLayout>(() => loadHudLayout());
   const [volume, setVolume] = useState(() => loadVolume());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [diag, setDiag] = useState(loadDiagnostics);
   const [mapOpen,setMapOpen]=useState(false);
   const [editingHud, setEditingHud] = useState(false);
   const [profile,setProfile]=useState(loadProfile);
@@ -152,6 +156,7 @@ export function App() {
         return !ready || editingHud || settingsOpen || mapOpen || live?.net === 'connecting' || live?.net === 'reconnecting'
           || live?.battle?.phase === 'countdown' || live?.battle?.phase === 'running' || (playing && !result);
       }} />
+      {ready && game && diag && <DiagnosticsPanel game={game} />}
       <canvas ref={canvasRef} className="app__canvas" aria-label="Escena del juego" onClick={onCanvasClick} onContextMenu={(e) => e.preventDefault()} />
       <div ref={overlayRef} className="app__combat" />
       {ready && game && !editingHud && playing && (
@@ -216,6 +221,12 @@ export function App() {
           }}
           onClose={() => setSettingsOpen(false)}
           onExit={playing?()=>{game.returnToMenu();setPractice(false);setSettingsOpen(false);setMapOpen(false);}:undefined}
+          info={<section className="settings__sec settings__info" aria-label="Información">
+            <h3>Información</h3>
+            <p className="settings__help">Versión v{PROTOCOL_VERSION} · build <code>{RUNNING_BUILD}</code></p>
+            <p className="settings__help">Calidad efectiva: {QUALITY_LABEL[game.qualityState.effective]}{game.qualityState.automatic ? ' (bajada automática por rendimiento; se recupera sola)' : ''}</p>
+            <label className="settings__check"><input type="checkbox" checked={diag} onChange={(e) => { setDiag(e.target.checked); saveDiagnostics(e.target.checked); }} /> Panel de diagnóstico</label>
+          </section>}
         />
       )}
       {ready && game && editingHud && (

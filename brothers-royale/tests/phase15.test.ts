@@ -71,16 +71,21 @@ describe('fase 15 H1: config.js no bloquea el arranque', () => {
 });
 
 describe('fase 15.1: capacidad por rendimiento real', () => {
-  it('pasa a Baja solo tras varias ventanas lentas con la resolución mínima, una vez', () => {
-    const g = new PerformanceGovernor(4);
-    for (let i = 0; i < 3; i++) expect(g.feed('normal', 40, 60, 0.75, 0.75)).toBe(false);
-    expect(g.feed('normal', 40, 60, 0.75, 0.75)).toBe(true);
-    expect(g.feed('normal', 40, 60, 0.75, 0.75)).toBe(false);
-    const h = new PerformanceGovernor(2);
-    expect(h.feed('normal', 40, 60, 1, 0.75)).toBe(false); // aún puede bajar resolución
-    expect(h.feed('normal', 40, 60, 1, 0.75)).toBe(false);
-    expect(h.feed('low', 80, 60, 0.6, 0.6)).toBe(false); // nunca decide en Baja
-    expect(h.feed('normal', 18, 60, 0.75, 0.75)).toBe(false); // 18 ms ≈ 55 FPS: aceptable
+  it('fase 15.2: baja a Baja tras ventanas lentas con la resolución mínima, se recupera sola y no oscila', () => {
+    const g = new PerformanceGovernor(4, 3);
+    for (let i = 0; i < 3; i++) expect(g.feed('normal', 40, 60, 1, 1)).toBeNull();
+    expect(g.feed('normal', 40, 60, 1, 1)).toBe('down');
+    expect(g.feed('normal', 40, 60, 1.2, 1)).toBeNull(); // aún puede bajar resolución
+    expect(g.feed('normal', 18, 60, 1, 1)).toBeNull(); // 18 ms ≈ 55 FPS: aceptable
+    // En Baja automática, holgado con la resolución máxima: vuelve a la elegida.
+    expect(g.feed('low', 15, 60, 1, 0.8, 1, true)).toBeNull();
+    expect(g.feed('low', 15, 60, 1, 0.8, 1, true)).toBeNull();
+    expect(g.feed('low', 15, 60, 1, 0.8, 1, true)).toBe('up');
+    // Baja ELEGIDA por el jugador: nunca sube sola.
+    for (let i = 0; i < 10; i++) expect(g.feed('low', 15, 60, 1, 0.8, 1, false)).toBeNull();
+    // Tras recuperarse, la siguiente bajada exige el doble de ventanas.
+    for (let i = 0; i < 7; i++) expect(g.feed('normal', 40, 60, 1, 1)).toBeNull();
+    expect(g.feed('normal', 40, 60, 1, 1)).toBe('down');
   });
 });
 
@@ -177,11 +182,11 @@ import { PLAYER } from '@shared/constants';
 import { packPlayer, unpackPlayers } from '@shared/netcodec';
 import { rayHitbox } from '@shared/combat/hitscan';
 describe('fase 15.6: agacharse', () => {
-  it('mitad de velocidad, pasa bajo un hueco de 1,3 m y no se levanta debajo; al salir, de pie', async () => {
+  it('mitad de velocidad, pasa bajo un hueco de 1,45 m y no se levanta debajo; al salir, de pie', async () => {
     const ph = new PhysicsWorld(await loadRapier());
     ph.addStatic({ kind: 'box', center: { x: 0, y: -0.5, z: 0 }, halfExtents: { x: 30, y: 0.5, z: 30 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, layer: 'world' });
-    // Viga baja: su cara inferior a 1,3 m (de pie no se cabe: 1,7 m).
-    ph.addStatic({ kind: 'box', center: { x: 0, y: 1.8, z: 5 }, halfExtents: { x: 3, y: 0.5, z: 1 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, layer: 'structure' });
+    // Viga baja: su cara inferior a 1,45 m (agachado 1,3 m cabe; de pie, 1,7 m, no).
+    ph.addStatic({ kind: 'box', center: { x: 0, y: 1.95, z: 5 }, halfExtents: { x: 3, y: 0.5, z: 1 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, layer: 'structure' });
     ph.step();
     const b = new CharacterBody(ph, 'c', 'C', { x: 0, y: 0.1, z: 0 });
     let seq = 0;
@@ -205,7 +210,7 @@ describe('fase 15.6: agacharse', () => {
   });
   it('la caja de impacto agachada es más baja y la locomoción viaja en el snapshot', () => {
     const feet = { x: 0, y: 0, z: 0 };
-    const head = { x: 0, y: 1.25, z: -5 }, dir = { x: 0, y: 0, z: 1 };
+    const head = { x: 0, y: 1.45, z: -5 }, dir = { x: 0, y: 0, z: 1 };
     expect(rayHitbox(head, dir, feet, 50)).not.toBeNull();
     expect(rayHitbox(head, dir, { ...feet, y: -PLAYER.crouchDrop }, 50)).toBeNull();
     const out: number[] = [];

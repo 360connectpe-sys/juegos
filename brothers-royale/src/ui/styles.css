@@ -1590,3 +1590,6 @@ kbd {
 .structure-health { position:absolute;top:0;left:0; width:68px;height:13px;background:#171323dd;border:1px solid #fff8;border-radius:4px;overflow:hidden;pointer-events:none;text-align:center;font:800 10px/11px sans-serif;color:white;text-shadow:0 1px 2px #000; }
 .structure-health__fill { position:absolute;inset:0;background:#bc9860;transform-origin:left; }
 .structure-health span { position:relative; }
+/* Fase 15.2: panel de diagnóstico (opcional) e información de versión. */
+.diag { position: fixed; right: calc(8px + var(--safe-right, 0px)); top: calc(96px + var(--safe-top, 0px)); z-index: 20; display: grid; gap: 1px; padding: 5px 8px; border-radius: 6px; background: #0d0b1fcc; color: #d8f5d0; font: 600 10px/1.35 ui-monospace, Menlo, monospace; pointer-events: none; }
+.settings__info code { font-size: .85em; }
