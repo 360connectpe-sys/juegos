@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, Color, Mesh, MeshLambertMaterial, PlaneGeometry } from 'three';
 import { WORLD } from '@shared/constants';
-import { sampleTerrainGrid, sectorAt, type Sector, type TerrainParams } from '@shared/world/terrain';
+import { sampleTerrainGrid, sectorAt, WATER_LEVEL, type Sector, type TerrainParams } from '@shared/world/terrain';
 
 const SAND = new Color('#e8d08a');
 const GRASS_LOW = new Color('#7cc456');
@@ -106,7 +106,7 @@ export function createWater(size: number): Mesh {
   // Se dibuja al FINAL de la pasada opaca: así la prueba de profundidad descarta
   // todo lo que ya cubre el terreno y no se pinta la pantalla dos veces.
   mesh.renderOrder = 1;
-  mesh.position.y = -0.55;
+  mesh.position.y = WATER_LEVEL;
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();
   return mesh;

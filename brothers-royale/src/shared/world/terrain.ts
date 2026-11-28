@@ -2,6 +2,9 @@ import { WORLD } from '../constants';
 import { smoothstep } from '../math';
 import { hash2 } from '../random';
 
+/** Cota visual compartida con el agua del escenario (sin cambiar la física). */
+export const WATER_LEVEL=-.55;
+
 /** Ruido de valor 2D suavizado, determinista. */
 function valueNoise(x: number, z: number, seed: number): number {
   const x0 = Math.floor(x);

@@ -1,12 +1,12 @@
 import { Color } from 'three';
 import type { WorldLayout } from '@shared/world/layout';
-import { terrainHeight,sectorAt } from '@shared/world/terrain';
+import { terrainHeight,sectorAt,WATER_LEVEL } from '@shared/world/terrain';
 import { placePart } from '@shared/world/prefab';
 import { Vector3,Quaternion } from 'three';
 
 export const MAP_PIXELS=768;
 const cache=new WeakMap<WorldLayout,HTMLCanvasElement>();
-/** Rasteriza una vez por escenario. Agua a la misma cota (-.9) que createWater. */
+/** Rasteriza una vez por escenario. Agua a la misma cota que createWater. */
 export function mapTerrain(layout:WorldLayout):HTMLCanvasElement {
   const cached=cache.get(layout);if(cached)return cached;
   const canvas=document.createElement('canvas');canvas.width=canvas.height=MAP_PIXELS;
@@ -14,13 +14,13 @@ export function mapTerrain(layout:WorldLayout):HTMLCanvasElement {
   const size=layout.terrain.size,half=size/2,u=(x:number)=>(x+half)/size*MAP_PIXELS;
   const tint={residential:[1.04,1.02,.94],rural:[1.08,1.04,.82],forest:[.82,.92,.8],open:[1,1.06,.92]} as const;
   const img=ctx.createImageData(MAP_PIXELS,MAP_PIXELS);
-  // Una muestra cada 2 px (~.31m), interpolación visual sin otro render 3D.
-  for(let z=0;z<MAP_PIXELS;z+=2)for(let x=0;x<MAP_PIXELS;x+=2){
+  // Una muestra cada 4 px (~.63m), interpolación visual sin otro render 3D.
+  for(let z=0;z<MAP_PIXELS;z+=4)for(let x=0;x<MAP_PIXELS;x+=4){
     const wx=(x/MAP_PIXELS-.5)*size,wz=(z/MAP_PIXELS-.5)*size,h=terrainHeight(wx,wz,layout.terrain);
     const k=Math.max(0,Math.min(1,h/3)),t=tint[sectorAt(wx,wz,layout.seed)];
     const slope=h-terrainHeight(wx+.5,wz+.5,layout.terrain),shade=Math.max(.78,Math.min(1.12,1+slope*.22));
-    const color=h<-.9?[54,137,168]:h<-.2?[232,208,138]:[(124-45*k)*t[0]*shade,(196-42*k)*t[1]*shade,(86-28*k)*t[2]*shade];
-    for(let dz=0;dz<2;dz++)for(let dx=0;dx<2;dx++){const i=((z+dz)*MAP_PIXELS+x+dx)*4;img.data[i]=color[0]!;img.data[i+1]=color[1]!;img.data[i+2]=color[2]!;img.data[i+3]=255;}
+    const color=h<WATER_LEVEL?[54,137,168]:h<-.2?[232,208,138]:[(124-45*k)*t[0]*shade,(196-42*k)*t[1]*shade,(86-28*k)*t[2]*shade];
+    for(let dz=0;dz<4;dz++)for(let dx=0;dx<4;dx++){const i=((z+dz)*MAP_PIXELS+x+dx)*4;img.data[i]=color[0]!;img.data[i+1]=color[1]!;img.data[i+2]=color[2]!;img.data[i+3]=255;}
   }
   ctx.putImageData(img,0,0);
   ctx.strokeStyle='#b59a6a';ctx.lineWidth=2.2/size*MAP_PIXELS;ctx.lineCap='round';
