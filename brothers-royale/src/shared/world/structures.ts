@@ -1,8 +1,9 @@
 import type { Vec3 } from '../types';
 import type { BoxPart, PartLayer, PrefabDef, PrefabPart } from './prefab';
+import { furniture } from './buildings';
 
 /** Ayudante para declarar cajas de forma compacta. */
-function bx(
+export function bx(
   center: [number, number, number],
   size: [number, number, number],
   color: string,
@@ -195,6 +196,15 @@ export function createHouseDef(): PrefabDef {
   parts.push(bx([0, top + roofHeight + 0.12, 0], [0.3, 0.3, D + 0.9], C.trim, 'roof'));
   parts.push(bx([hw * 0.45, top + roofHeight * 0.8, -hd * 0.4], [0.6, 1.4, 0.6], C.chimney, 'roof'));
 
+  // Fase 12: muebles (abajo comedor y sofá; en la entreplanta, cama y estantería).
+  parts.push(...furniture('table', 1.5, 0, -1.8, 'base'));
+  parts.push(...furniture('chair', 1.5, 0, -0.95, 'base'));
+  parts.push(...furniture('chair', 1.5, 0, -2.65, 'base'));
+  parts.push(...furniture('shelf', 3.4, 0, -hd + t + 0.2, 'base'));
+  parts.push(...furniture('sofa', 2.2, 0, 1.6, 'base'));
+  parts.push(...furniture('bed', 0.8, G, -3.6, 'upper', true));
+  parts.push(...furniture('shelf', -2.4, G, -hd + t + 0.2, 'upper'));
+
   return {
     id: 'house',
     parts,
@@ -336,6 +346,11 @@ export function createSmallHouseDef(variant: SmallHouseVariant, paletteIndex: nu
     parts.push(bx([0, 2.45, hd + 0.75], [W, 0.12, 1.7], pal.roof, 'roof'));
   }
   if (variant === 'cabin') parts.push(bx([-hw * 0.5, H + 1.2, -hd * 0.3], [0.45, 1.1, 0.45], '#8a8a8a', 'roof'));
+  // Fase 12: muebles pegados a las paredes; el cofre sigue en la esquina del fondo izquierda.
+  if (variant === 'cabin') parts.push(...furniture('bed', 1.85, 0, -1.05, 'base'), ...furniture('table', -1.3, 0, 0.6, 'base'), ...furniture('chair', -1.3, 0, 1.45, 'base'));
+  if (variant === 'stone') parts.push(...furniture('shelf', 2.05, 0, 0.8, 'base', true), ...furniture('crate', 1.8, 0, -1.8, 'base'));
+  if (variant === 'long') parts.push(...furniture('bed', 1.25, 0, -2.2, 'base'), ...furniture('table', 1.2, 0, 0.8, 'base'));
+  if (variant === 'porch') parts.push(...furniture('table', 1.3, 0, -0.9, 'base'), ...furniture('chair', 1.3, 0, -0.2, 'base'));
 
   return {
     id: `small-${variant}`,

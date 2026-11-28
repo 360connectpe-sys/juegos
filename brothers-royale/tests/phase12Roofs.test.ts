@@ -32,8 +32,7 @@ export const roofed = (l = layout): PlacedPrefab[] => {
 };
 const world = (s: PlacedPrefab, lx: number, lz: number) => { const r = rotateXZ(lx, lz, s.rotationY); return { x: s.x + r.x, z: s.z + r.z }; };
 /** Altura de las paredes (tope de las piezas que no son techo). */
-const wallTop = (s: PlacedPrefab) => Math.max(...s.def.parts.filter((p): p is BoxPart => p.kind === 'box' && p.layer !== 'roof' && p.collide && p.visible).map((p) => p.center.y + p.size.y / 2));
-const halfWidth = (s: PlacedPrefab) => Math.max(...s.def.parts.filter((p): p is BoxPart => p.kind === 'box' && p.layer === 'roof' && p.collide).map((p) => Math.abs(p.center.x) + p.size.x / 4));
+const wallTop = (s: PlacedPrefab) => Math.max(...s.def.parts.filter((p): p is BoxPart => p.kind === 'box' && p.layer !== 'roof' && p.collide && p.visible && !!p.facing).map((p) => p.center.y + p.size.y / 2));
 
 describe('fase 12: techos sólidos', () => {
   it('todos los tejados colisionan igual en cliente y servidor (misma lista de piezas)', () => {
@@ -49,17 +48,20 @@ describe('fase 12: techos sólidos', () => {
   it('se aterriza desde el cielo sobre cada tejado, sin atravesarlo, y cuenta como fuera', () => {
     const ph = makeWorld();
     for (const s of roofed()) {
-      for (const side of [-1, 1]) {
-        const p = world(s, side * halfWidth(s) * 0.5, 0.3);
+      // Punto de caída: el centro de cada losa de tejado grande (las dos aguas, azoteas, media cubierta).
+      const slabs = s.def.parts.filter((p): p is BoxPart => p.kind === 'box' && p.layer === 'roof' && p.collide && p.size.x * p.size.z > 4);
+      expect(slabs.length, s.def.id).toBeGreaterThan(0);
+      for (const slab of slabs) {
+        const p = world(s, slab.center.x, slab.center.z);
         const top = wallTop(s);
         const b = new CharacterBody(ph, 'r', 'r', { x: p.x, y: s.y + top + 25, z: p.z });
         const st = run(b, ph, {}, 150);
-        expect(st.grounded, `${s.def.id} lado ${side}`).toBe(true);
+        expect(st.grounded, `${s.def.id} en ${slab.center.x},${slab.center.z}`).toBe(true);
         expect(st.position.y - s.y, s.def.id).toBeGreaterThan(top - 0.05);
         expect(insideState(s, st.position.x, st.position.y, st.position.z), s.def.id).toBe('outside');
-        // Camina, corre y salta encima sin caer dentro.
-        const back = rotateXZ(-side, 0, s.rotationY);
-        run(b, ph, { moveX: back.x * 0.5, moveZ: back.z * 0.5 }, 10);
+        // Camina hacia la cumbrera/centro, corre y salta encima sin caer dentro.
+        const dir = rotateXZ(-Math.sign(slab.center.x) * 0.5, 0, s.rotationY);
+        run(b, ph, { moveX: dir.x, moveZ: dir.z, buttons: Buttons.SPRINT }, 8);
         run(b, ph, { buttons: Buttons.JUMP }, 2);
         const after = run(b, ph, {}, 40);
         expect(after.position.y - s.y, `${s.def.id} tras saltar`).toBeGreaterThan(top - 0.05);

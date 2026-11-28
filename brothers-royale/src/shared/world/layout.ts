@@ -9,12 +9,14 @@ import {
   createSmallHouseDef,
   createTowerDef,
   HOUSE,
+  SMALL_HOUSE_PALETTES,
   SMALL_HOUSE_SIZE,
   SMALL_HOUSE_VARIANTS,
   smallHouseChestSpot,
   TOWER,
   type SmallHouseVariant,
 } from './structures';
+import { createExtraDef, EXTRA_SIZE, EXTRA_VARIANTS, extraChestSpots, type ExtraVariant } from './buildings';
 import { defaultTerrainParams, terrainHeight, villageHeight, type FlatZone, type TerrainParams } from './terrain';
 
 export interface TreePlacement {
@@ -36,7 +38,7 @@ export interface ChestPlacement {
   z: number;
   yaw: number;
   /** Dónde está: dentro de una casa (id del prefab) o fuera. */
-  where: 'outside' | 'house' | 'loft' | 'tower' | 'small-house';
+  where: 'outside' | 'house' | 'loft' | 'tower' | 'small-house' | 'upper';
 }
 
 export interface WorldLayout {
@@ -61,31 +63,47 @@ export const MAP = {
   outsideChests: 6,
 } as const;
 
+/** Todos los diseños repartidos por el mapa (fase 12: + moderna, balcón, garaje y abandonado). */
+export type BuildingVariant = SmallHouseVariant | ExtraVariant;
+export const BUILDING_VARIANTS: readonly BuildingVariant[] = [...SMALL_HOUSE_VARIANTS, ...EXTRA_VARIANTS];
+/** Diseños que aparecen en TODAS las partidas (junto con la casa familiar de dos plantas del pueblo). */
+export const REQUIRED_VARIANTS: readonly BuildingVariant[] = ['cabin', 'modern', 'balcony', 'garage', 'ruin'];
+const isExtra = (v: BuildingVariant): v is ExtraVariant => (EXTRA_VARIANTS as readonly string[]).includes(v);
+/** Radio de la zona plana que necesita cada diseño (incluye porche, escalera exterior o balcón). */
+function footprint(v: BuildingVariant): number {
+  if (isExtra(v)) { const s = EXTRA_SIZE[v]; return Math.hypot(s.w + s.extra, s.d + s.extra) / 2 + 0.8; }
+  const size = SMALL_HOUSE_SIZE[v];
+  return Math.hypot(size.w, size.d + (v === 'porch' ? 3 : 0)) / 2 + 1.5;
+}
+export const variantOf = (p: PlacedPrefab): BuildingVariant => p.def.id.replace('small-', '') as BuildingVariant;
+
 /**
- * Casas pequeñas por sectores alrededor del pueblo (así quedan en distintas
- * zonas del mapa), a la altura de su colina y con la puerta hacia el centro.
+ * Casas por sectores alrededor del pueblo (así quedan en distintas zonas del mapa), a la
+ * altura de su colina y con la puerta hacia el centro. Los primeros sectores llevan los
+ * diseños obligatorios (orden barajado con la semilla) y el resto, uno al azar.
  */
 function placeSmallHouses(seed: number, terrain: TerrainParams): { houses: PlacedPrefab[]; zones: FlatZone[] } {
   const rng = createRng(seed ^ 0x51ed27);
   const count = MAP.minHouses + Math.floor(rng() * (MAP.maxHouses - MAP.minHouses + 1));
   const houses: PlacedPrefab[] = [];
   const zones: FlatZone[] = [];
-  const order = [...SMALL_HOUSE_VARIANTS];
-  const tryPlace = (k: number, sectors: number, relaxed: boolean): boolean => {
+  const required = [...REQUIRED_VARIANTS];
+  for (let i = required.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [required[i], required[j]] = [required[j]!, required[i]!]; }
+  const tryPlace = (k: number, sectors: number, relaxed: boolean, fixed?: BuildingVariant): boolean => {
     for (let attempt = 0; attempt < 60; attempt++) {
       const angle = ((k + 0.1 + rng() * 0.8) / sectors) * Math.PI * 2;
       const r = randRange(rng, MAP.houseRing.min, MAP.houseRing.max);
       const x = Math.cos(angle) * r;
       const z = Math.sin(angle) * r;
-      const variant: SmallHouseVariant = order[(k + Math.floor(rng() * 4)) % order.length]!;
-      const size = SMALL_HOUSE_SIZE[variant];
-      const radius = Math.hypot(size.w, size.d + (variant === 'porch' ? 3 : 0)) / 2 + 1.5;
-      if (Math.max(Math.abs(x), Math.abs(z)) + radius * 1.8 > MAP.houseEdge) continue;
+      const variant: BuildingVariant = fixed ?? BUILDING_VARIANTS[Math.floor(rng() * BUILDING_VARIANTS.length)]!;
+      const radius = footprint(variant);
+      if (Math.max(Math.abs(x), Math.abs(z)) + radius * (isExtra(variant) ? 1.4 : 1.8) > MAP.houseEdge) continue;
       const base = villageHeight(x, z, terrain);
       // Ni en la arena ni en el agua (relajado: se admite subir un poco el terreno junto a la playa).
       if (base < (relaxed ? -0.3 : 0.25)) continue;
       if (zones.some((o) => Math.hypot(o.x - x, o.z - z) < (o.radius + radius) * 1.3 + 2)) continue;
-      const def = createSmallHouseDef(variant, Math.floor(rng() * 4));
+      const palette = Math.floor(rng() * 4);
+      const def = isExtra(variant) ? createExtraDef(variant, SMALL_HOUSE_PALETTES[palette]!) : createSmallHouseDef(variant, palette);
       zones.push({ x, z, radius, base: Math.max(base, 0.25) });
       houses.push({ def, x, y: Math.max(base, 0.25), z, rotationY: Math.atan2(-x, -z) });
       return true;
@@ -94,7 +112,12 @@ function placeSmallHouses(seed: number, terrain: TerrainParams): { houses: Place
   };
   // Cada sector intenta primero un sitio ideal y, si no lo hay, uno aceptable: así
   // ninguna zona del mapa se queda sin casas.
-  for (let k = 0; k < count; k++) if (!tryPlace(k, count, false)) tryPlace(k, count, true);
+  for (let k = 0; k < count; k++) {
+    const fixed = required[k];
+    if (!tryPlace(k, count, false, fixed)) tryPlace(k, count, true, fixed);
+  }
+  // Un diseño obligatorio que no cupo en su sector se intenta en cualquier otro.
+  for (const v of required) for (let k = 0; !houses.some((h) => variantOf(h) === v) && k < 64; k++) tryPlace(k, 16, true, v);
   // Si algún sector no tenía sitio, se completa el mínimo relajando condiciones.
   for (let k = 0; houses.length < MAP.minHouses && k < 64; k++) tryPlace(k, 16, true);
   return { houses, zones };
@@ -146,10 +169,12 @@ export function generateWorldLayout(opts: LayoutOptions = {}): WorldLayout {
     return { x: p.x + r.x, z: p.z + r.z };
   };
   for (const h of houses) {
-    const variant = h.def.id.replace('small-', '') as SmallHouseVariant;
-    const spot = smallHouseChestSpot(variant);
-    const w = local(h, spot.x, spot.z);
-    addChest(w.x, h.y, w.z, h.rotationY + spot.yaw, 'small-house');
+    const variant = variantOf(h);
+    const spots = isExtra(variant) ? extraChestSpots(variant) : [{ ...smallHouseChestSpot(variant), y: 0 }];
+    spots.forEach((spot, i) => {
+      const w = local(h, spot.x, spot.z);
+      addChest(w.x, h.y + spot.y, w.z, h.rotationY + spot.yaw, i === 0 ? 'small-house' : 'upper');
+    });
   }
   const big = structures[0]!;
   const g = local(big, HOUSE.width / 2 - 1.1, HOUSE.depth / 2 - 1.3);

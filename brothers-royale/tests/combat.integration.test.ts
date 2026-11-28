@@ -65,9 +65,10 @@ async function makeClient(name: string, code: string): Promise<TestClient> {
 
 /** Un claro sin árboles ni edificios en `radius` metros (determinista para el mapa de prueba). */
 function clearing(radius: number): { x: number; z: number } {
-  const blocked = [...layout.trees.map((t) => ({ x: t.x, z: t.z, r: 1.5 })), ...layout.structures.map((p) => ({ x: p.x, z: p.z, r: 7 }))];
-  for (let x = -45; x <= 45; x += 3)
-    for (let z = -45; z <= 45; z += 3) {
+  // Fase 12: edificios más grandes → se usa el radio libre real de cada prefab y una rejilla más fina.
+  const blocked = [...layout.trees.map((t) => ({ x: t.x, z: t.z, r: 1.5 })), ...layout.structures.map((p) => ({ x: p.x, z: p.z, r: Math.min(7, p.def.clearRadius) }))];
+  for (let x = -48; x <= 48; x += 1.5)
+    for (let z = -48; z <= 48; z += 1.5) {
       if (blocked.every((b) => Math.hypot(b.x - x, b.z - z) > radius + b.r) && Math.abs(terrainHeight(x, z, layout.terrain) - terrainHeight(x + radius, z, layout.terrain)) < 0.6 && terrainHeight(x, z, layout.terrain) > 0)
         return { x, z };
     }
@@ -104,7 +105,7 @@ describe('combate en línea con 8 jugadores y latencia simulada', () => {
     const room = roomOf(clients[0]!);
     room.world.round.start();await wait(80);
     expect(room.world.players.size).toBe(8);
-    const center = clearing(8);
+    const center = clearing(6.5);
     const ids = clients.map((c) => c.session.localPlayerId);
     ids.forEach((id, i) => {
       const a = (i / 8) * Math.PI * 2;
@@ -173,7 +174,7 @@ describe('combate en línea con 8 jugadores y latencia simulada', () => {
     addLatency(shooter.session, 150, 20, 7);
     const room = roomOf(shooter);
     room.world.round.start();await wait(80);
-    const center = clearing(8);
+    const center = clearing(6.5);
     const place = (c: TestClient, x: number, z: number) => {
       const p = room.world.players.get(c.session.localPlayerId)!;
       p.body.teleport({ x, y: terrainHeight(x, z, layout.terrain) + 0.1, z });
