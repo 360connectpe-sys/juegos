@@ -17,7 +17,7 @@ import {
   type SmallHouseVariant,
 } from './structures';
 import { createExtraDef, EXTRA_SIZE, EXTRA_VARIANTS, extraChestSpots, type ExtraVariant } from './buildings';
-import { defaultTerrainParams, terrainHeight, villageHeight, type FlatZone, type TerrainParams } from './terrain';
+import { defaultTerrainParams, sectorAt, terrainHeight, villageHeight, type FlatZone, type TerrainParams } from './terrain';
 
 export interface TreePlacement {
   x: number;
@@ -50,7 +50,53 @@ export interface WorldLayout {
   houses: PlacedPrefab[];
   chests: ChestPlacement[];
   trees: TreePlacement[];
+  /** Fase 15: rocas (colisionan: cobertura) y arbustos (solo visuales). */
+  rocks: RockPlacement[];
+  bushes: RockPlacement[];
   spawn: { x: number; z: number };
+}
+
+/** Roca o arbusto: posición en el suelo, escala y giro. */
+export interface RockPlacement { x: number; y: number; z: number; scale: number; rotation: number }
+const SPAWN = { x: 2.5, z: 7.5 } as const;
+/** Probabilidad de aceptar un árbol según el sector (fase 15). */
+const TREE_DENSITY = { forest: 1, rural: 0.45, residential: 0.35, open: 0.12 } as const;
+const ROCK_DENSITY = { open: 1, rural: 0.8, forest: 0.45, residential: 0.2 } as const;
+
+/** Rocas de cobertura (su propio RNG): en terreno firme, lejos de edificios, cofres y árboles. */
+function placeRocks(seed: number, terrain: TerrainParams, structures: PlacedPrefab[], chests: ChestPlacement[], trees: TreePlacement[]): RockPlacement[] {
+  const rng = createRng(seed ^ 0x70c55);
+  const out: RockPlacement[] = [];
+  const half = terrain.size / 2 - 7;
+  for (let k = 0; out.length < 24 && k < 1500; k++) {
+    const x = randRange(rng, -half, half), z = randRange(rng, -half, half);
+    if (rng() > ROCK_DENSITY[sectorAt(x, z, seed)]) continue;
+    const y = terrainHeight(x, z, terrain);
+    if (y < 0.3 || Math.abs(terrainHeight(x + 1.2, z, terrain) - terrainHeight(x - 1.2, z, terrain)) > 0.8) continue;
+    if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 6 || Math.hypot(x, z) < 8) continue;
+    if (structures.some((s) => Math.hypot(x - s.x, z - s.z) < s.def.clearRadius + 2)) continue;
+    if (chests.some((c) => Math.hypot(x - c.x, z - c.z) < 2.5) || trees.some((t) => Math.hypot(x - t.x, z - t.z) < 2.6)) continue;
+    if (out.some((r) => Math.hypot(x - r.x, z - r.z) < 5)) continue;
+    out.push({ x, y, z, scale: randRange(rng, 0.8, 1.5), rotation: randRange(rng, 0, Math.PI * 2) });
+  }
+  return out;
+}
+
+/** Arbustos (solo visuales, no colisionan): bordes de bosque, campo y jardines. */
+function placeBushes(seed: number, terrain: TerrainParams, structures: PlacedPrefab[], chests: ChestPlacement[], rocks: RockPlacement[]): RockPlacement[] {
+  const rng = createRng(seed ^ 0xb05e5);
+  const out: RockPlacement[] = [];
+  const half = terrain.size / 2 - 6;
+  for (let k = 0; out.length < 48 && k < 1500; k++) {
+    const x = randRange(rng, -half, half), z = randRange(rng, -half, half);
+    if (sectorAt(x, z, seed) === 'open' && rng() < 0.7) continue;
+    const y = terrainHeight(x, z, terrain);
+    if (y < 0.2) continue;
+    if (structures.some((s) => Math.hypot(x - s.x, z - s.z) < s.def.clearRadius)) continue;
+    if (chests.some((c) => Math.hypot(x - c.x, z - c.z) < 1.8) || rocks.some((r) => Math.hypot(x - r.x, z - r.z) < 2)) continue;
+    out.push({ x, y, z, scale: randRange(rng, 0.7, 1.3), rotation: randRange(rng, 0, Math.PI * 2) });
+  }
+  return out;
 }
 
 export const MAP = {
@@ -208,23 +254,32 @@ export function generateWorldLayout(opts: LayoutOptions = {}): WorldLayout {
     const z = randRange(rng, -half + margin, half - margin);
     if (structures.some((s) => Math.hypot(x - s.x, z - s.z) < s.def.clearRadius + 1.5)) continue;
     if (Math.hypot(x, z) < 6) continue;
+    // Fase 15: la zona de aparición queda despejada y la densidad depende del sector
+    // (bosque denso, campo y pueblo intermedios, claro abierto casi sin árboles).
+    if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 4.5) continue;
+    const sector = sectorAt(x, z, seed);
+    if (rng() > TREE_DENSITY[sector]) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < minTreeGap)) continue;
     trees.push({
       x,
       y: terrainHeight(x, z, terrain),
       z,
-      scale: randRange(rng, 0.8, 1.35),
+      // Más grandes y variados (antes 0,8-1,35).
+      scale: randRange(rng, 1.0, 1.6),
       rotation: randRange(rng, 0, Math.PI * 2),
-      variant: rng() < 0.55 ? 0 : 1,
+      variant: rng() < (sector === 'forest' ? 0.7 : 0.45) ? 0 : 1,
     });
   }
+  const rocks = placeRocks(seed, terrain, structures, chests, trees);
+  const bushes = placeBushes(seed, terrain, structures, chests, rocks);
 
-  return { seed, terrain, structures, houses, chests, trees, spawn: { x: 2.5, z: 7.5 } };
+  return { seed, terrain, structures, houses, chests, trees, rocks, bushes, spawn: { ...SPAWN } };
 }
 
 /** ¿Se puede aparecer en (x, z)? Fuera de estructuras y lejos de troncos. */
 export function isClearSpawn(layout: WorldLayout, x: number, z: number): boolean {
   if (layout.structures.some((s) => Math.hypot(x - s.x, z - s.z) < s.def.clearRadius)) return false;
+  if (layout.rocks?.some((r) => Math.hypot(x - r.x, z - r.z) < 1.4 * r.scale + 0.5)) return false;
   return !layout.trees.some((t) => Math.hypot(x - t.x, z - t.z) < 1.5);
 }
 

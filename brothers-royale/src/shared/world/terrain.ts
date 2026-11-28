@@ -77,7 +77,46 @@ export function villageHeight(x: number, z: number, p: TerrainParams): number {
 /** Altura de las colinas sin ninguna zona plana ni costa. */
 export function rawHeight(x: number, z: number, p: Pick<TerrainParams, 'seed' | 'maxHeight'>): number {
   const n = valueNoise(x * 0.03, z * 0.03, p.seed) * 0.65 + valueNoise(x * 0.08, z * 0.08, p.seed + 17) * 0.35;
-  return (n - 0.35) * p.maxHeight;
+  let h = (n - 0.35) * p.maxHeight;
+  // Fase 15: colinas pequeñas tácticas (2-3,5 m, suaves: < 35°) en los sectores rural y abierto.
+  for (const hill of hillsFor(p.seed)) {
+    const d2 = (x - hill.x) ** 2 + (z - hill.z) ** 2;
+    if (d2 < hill.r * hill.r * 4) h += hill.h * Math.exp(-d2 / (hill.r * hill.r * 0.5));
+  }
+  return h;
+}
+
+/** Sectores del mapa (fase 15): el pueblo y las casas, campo, bosque y claro abierto. */
+export type Sector = 'residential' | 'rural' | 'forest' | 'open';
+const sectorStart = (seed: number) => (hash2(seed, 77, 3) * Math.PI * 2);
+/**
+ * Sector de un punto: residencial dentro de 24 m del pueblo; fuera, tres porciones angulares
+ * (bosque 150°, campo 120°, abierto 90°) giradas con la semilla. Puro y determinista.
+ */
+export function sectorAt(x: number, z: number, seed: number): Sector {
+  if (Math.hypot(x, z) < 24) return 'residential';
+  let a = Math.atan2(z, x) - sectorStart(seed);
+  a = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const deg = (a * 180) / Math.PI;
+  return deg < 150 ? 'forest' : deg < 270 ? 'rural' : 'open';
+}
+interface Hill { x: number; z: number; r: number; h: number }
+const hillCache = new Map<number, Hill[]>();
+/** Cuatro colinas por semilla, en anillo 30-46 m (lejos del pueblo), en campo o abierto. */
+export function hillsFor(seed: number): Hill[] {
+  let hills = hillCache.get(seed);
+  if (hills) return hills;
+  hills = [];
+  for (let i = 0, k = 0; hills.length < 4 && k < 40; k++) {
+    const a = hash2(seed, k, 11) * Math.PI * 2, r = 30 + hash2(seed, k, 12) * 16;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const sec = sectorAt(x, z, seed);
+    if (sec === 'forest' && i < 3) { i++; continue; }
+    if (hills.some((o) => Math.hypot(o.x - x, o.z - z) < 20)) continue;
+    hills.push({ x, z, r: 7 + hash2(seed, k, 13) * 4, h: 2 + hash2(seed, k, 14) * 1.5 });
+  }
+  hillCache.set(seed, hills);
+  return hills;
 }
 
 /** Muestrea el terreno en una rejilla (segments+1)² con orden fila = z, columna = x. */

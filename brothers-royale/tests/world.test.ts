@@ -93,7 +93,7 @@ describe('prefabs', () => {
     expect(ramp.rot!.x).toBeCloseTo(Math.atan2(2.8, 3.7));
   });
   it('genera colisionadores de estructuras, árboles y bordes', () => {
-    const expected = layout.structures.reduce((n, s) => n + prefabColliders(s).length, 0) + layout.trees.length + 4;
+    const expected = layout.structures.reduce((n, s) => n + prefabColliders(s).length, 0) + layout.trees.length + layout.rocks.length + 4; // fase 15: + rocas
     expect(worldColliders(layout)).toHaveLength(expected);
     expect(boundaryColliders(100)).toHaveLength(4);
     expect(createHouseDef().parts.some((p) => p.kind === 'gable')).toBe(true);

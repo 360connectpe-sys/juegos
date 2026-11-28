@@ -57,14 +57,16 @@ describe('fase 12: techos sólidos', () => {
         const b = new CharacterBody(ph, 'r', 'r', { x: p.x, y: s.y + top + 25, z: p.z });
         const st = run(b, ph, {}, 150);
         expect(st.grounded, `${s.def.id} en ${slab.center.x},${slab.center.z}`).toBe(true);
-        expect(st.position.y - s.y, s.def.id).toBeGreaterThan(top - 0.05);
+        // Sobre la losa (el tejadillo del porche está más bajo que las paredes).
+        const surface = Math.min(top, slab.center.y + slab.size.y / 2) - 0.05;
+        expect(st.position.y - s.y, s.def.id).toBeGreaterThan(surface);
         expect(insideState(s, st.position.x, st.position.y, st.position.z), s.def.id).toBe('outside');
         // Camina hacia la cumbrera/centro, corre y salta encima sin caer dentro.
         const dir = rotateXZ(-Math.sign(slab.center.x) * 0.5, 0, s.rotationY);
         run(b, ph, { moveX: dir.x, moveZ: dir.z, buttons: Buttons.SPRINT }, 8);
         run(b, ph, { buttons: Buttons.JUMP }, 2);
         const after = run(b, ph, {}, 40);
-        expect(after.position.y - s.y, `${s.def.id} tras saltar`).toBeGreaterThan(top - 0.05);
+        expect(after.position.y - s.y, `${s.def.id} tras saltar`).toBeGreaterThan(surface);
         b.dispose();
       }
     }

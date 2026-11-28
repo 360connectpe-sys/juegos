@@ -132,3 +132,40 @@ describe('fase 15 H17: publicación de la beta sin acumular builds', () => {
     expect(readFileSync(join(beta, 'index.html'), 'utf8')).toBe('c');
   });
 });
+
+import { generateWorldLayout } from '@shared/world/layout';
+import { hillsFor, sectorAt, terrainHeight } from '@shared/world/terrain';
+import { rockCollider, worldColliders } from '@shared/world/colliders';
+describe('fase 15.4: terreno, sectores y vegetación', () => {
+  const l = generateWorldLayout();
+  it('cuatro sectores, colinas suaves fuera del pueblo y mapa 120 m determinista', () => {
+    expect(l.terrain.size).toBe(120);
+    expect(generateWorldLayout()).toEqual(l);
+    const seen = new Set<string>();
+    for (let x = -55; x <= 55; x += 5) for (let z = -55; z <= 55; z += 5) seen.add(sectorAt(x, z, l.seed));
+    expect([...seen].sort()).toEqual(['forest', 'open', 'residential', 'rural']);
+    const hills = hillsFor(l.seed);
+    expect(hills.length).toBe(4);
+    for (const h of hills) {
+      expect(Math.hypot(h.x, h.z)).toBeGreaterThan(28);
+      // Pendiente máxima en la ladera: subir caminando (< 50°, límite del personaje).
+      let maxSlope = 0;
+      for (let a = 0; a < 6.28; a += 0.5) for (let r = 1; r < h.r * 1.6; r += 0.5) {
+        const x = h.x + Math.cos(a) * r, z = h.z + Math.sin(a) * r;
+        maxSlope = Math.max(maxSlope, Math.abs(terrainHeight(x + 0.25, z, l.terrain) - terrainHeight(x - 0.25, z, l.terrain)) / 0.5);
+      }
+      expect(Math.atan(maxSlope) * 180 / Math.PI).toBeLessThan(45);
+    }
+  });
+  it('bosque denso, claro abierto casi sin árboles; rocas de cobertura con colisión y lejos de cofres', () => {
+    const count = (sec: string) => l.trees.filter((t) => sectorAt(t.x, t.z, l.seed) === sec).length;
+    expect(count('forest')).toBeGreaterThan(count('open') * 2);
+    expect(l.rocks.length).toBeGreaterThanOrEqual(15);
+    expect(l.bushes.length).toBeGreaterThanOrEqual(30);
+    for (const r of l.rocks) expect(l.chests.every((c) => Math.hypot(c.x - r.x, c.z - r.z) >= 2.5)).toBe(true);
+    const cols = worldColliders(l, true);
+    expect(cols).toEqual(expect.arrayContaining([rockCollider(l.rocks[0]!)]));
+    expect(l.trees.every((t) => Math.hypot(t.x - l.spawn.x, t.z - l.spawn.z) >= 4.5)).toBe(true);
+    expect(Math.min(...l.trees.map((t) => t.scale))).toBeGreaterThanOrEqual(1);
+  });
+});

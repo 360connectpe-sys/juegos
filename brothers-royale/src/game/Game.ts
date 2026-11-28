@@ -43,6 +43,7 @@ import { addItem, type Inventory } from '@shared/inventory';
 import { itemName, isWeapon } from '@shared/items';
 import { findTarget, type InteractTarget, type NoticeCode } from '@shared/match/MatchState';
 import { createTerrainMesh, createWater } from './world/Terrain';
+import { createRocksAndBushes } from './world/Trees';
 import { CombatFx } from './combat/CombatFx';
 import { CombatOverlay } from './combat/CombatOverlay';
 import { LocalWeapon } from './combat/LocalWeapon';
@@ -316,7 +317,12 @@ export class Game {
   private buildWorldVisuals(layout: WorldLayout): void {
     const scene = this.engine.scene;
     scene.add(createWater(layout.terrain.size));
-    scene.add(createTerrainMesh(layout.terrain));
+    scene.add(createTerrainMesh(layout.terrain, undefined, layout.houses.map((h) => {
+      const d = h.def.nav?.door ?? { x: 0, z: 0 };
+      const c = Math.cos(h.rotationY), s = Math.sin(h.rotationY);
+      return { x: h.x + d.x * c + d.z * s, z: h.z - d.x * s + d.z * c };
+    })));
+    scene.add(createRocksAndBushes(layout.rocks, layout.bushes, layout.seed));
     // Edificios con interior: todos en un BatchedMesh (1 draw call); cada uno con su
     // vista recortable para cuando el jugador entra. El resto (sin interior), en un lote estático.
     const interiors = layout.structures.filter((p) => p.def.interior);

@@ -1,6 +1,6 @@
 import type { Quat } from '../math';
 import type { Vec3 } from '../types';
-import type { TreePlacement, WorldLayout } from './layout';
+import type { RockPlacement, TreePlacement, WorldLayout } from './layout';
 import { placePart, type PlacedPrefab } from './prefab';
 
 /**
@@ -42,6 +42,15 @@ export const treeCollider = (t: TreePlacement): StaticColliderSpec => ({
   layer: 'world',
 });
 
+/** Fase 15: roca de cobertura (cilindro bajo, capa mundo: para balas, jugadores y zombis). */
+export const rockCollider = (r: RockPlacement): StaticColliderSpec => ({
+  kind: 'cylinder',
+  center: { x: r.x, y: r.y + 0.45 * r.scale, z: r.z },
+  radius: 0.85 * r.scale,
+  halfHeight: 0.55 * r.scale,
+  layer: 'world',
+});
+
 /** Muros invisibles en el borde del mapa para no caer fuera del heightfield. */
 export function boundaryColliders(size: number, inset = 2): StaticColliderSpec[] {
   const half = size / 2 - inset;
@@ -60,6 +69,7 @@ export function worldColliders(layout: WorldLayout, omitTrees = false): StaticCo
   return [
     ...layout.structures.flatMap((s) => prefabColliders(s)),
     ...(omitTrees ? [] : layout.trees.map(treeCollider)),
+    ...(layout.rocks ?? []).map(rockCollider),
     ...boundaryColliders(layout.terrain.size),
   ];
 }

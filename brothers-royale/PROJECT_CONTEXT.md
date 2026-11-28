@@ -18,7 +18,7 @@ y seguir por el primer bloque PENDIENTE.
 | 15.1 Optimización | HECHO (ver abajo) |
 | 15.2 H1/H7/H16/H17 | HECHO (ver abajo) |
 | 15.3 Construcción | HECHO (protocolo v11) |
-| 15.4 Terreno/zonas/vegetación | PENDIENTE |
+| 15.4 Terreno/zonas/vegetación | HECHO |
 | 15.5 Personajes/armas/paracaídas | PENDIENTE |
 | 15.6 Animaciones/agacharse | PENDIENTE |
 | 15.7 Botín/HUD/tormenta | PENDIENTE |
@@ -48,6 +48,13 @@ delante en la casilla propia (o la siguiente si está pegado), techo sobre la ca
 `configureBuild(_, true)`); paneles a medida para huecos de puerta/boquete (`BuildRequest.slot/yaw/w/h`, la
 autoridad compara con `buildSlots(layout)`); vista previa verde/roja. Pruebas: `tests/phase15Build.test.ts`.
 Pendiente menor: botón táctil de giro (no añadido para no saturar el HUD).
+
+**15.4** (`terrain.ts` `sectorAt`/`hillsFor`, `layout.ts` rocas/arbustos, `colliders.ts` `rockCollider`, `Terrain.ts`,
+`Trees.ts`): mapa 120 m con sectores residencial/rural/bosque/abierto (girados por semilla), 4 colinas suaves
+(2-3,5 m, < 45°) a 30-46 m del pueblo, densidad de árboles por sector, árboles más grandes (escala 1-1,6) con tronco
+2,3 m y copas elevadas, 24 rocas de cobertura con colisión (cliente = servidor; zombis y aparición las evitan),
+48 arbustos visuales, caminos de tierra del pueblo a cada casa y tinte/variación por cara del terreno (solo color).
+Aparición despejada. Pruebas en `tests/phase15.test.ts`.
 
 Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
 izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.
