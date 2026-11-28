@@ -22,7 +22,7 @@ y seguir por el primer bloque PENDIENTE.
 | 15.5 Personajes/armas/paracaídas | HECHO (armas: solo cámara de apuntado) |
 | 15.6 Animaciones/agacharse | HECHO |
 | 15.7 Botín/HUD/tormenta | HECHO |
-| 15.8 Integración y preparación de publicación | PREPARADO (falta confirmación del usuario para publicar) |
+| 15.8 Integración y publicación | PUBLICADO: desarrollo `f900c76` (Render v11), beta `00ab6a7` (build `85bd8043d4782e2d`) |
 
 **15.1** (`quality.ts`, `AdaptiveResolution.ts`, `Engine.ts`, `Game.ts`): sin sombras ni manchas en Baja y Normal;
 resolución adaptativa con pasos más suaves (0,08, máx. ×2) y suelos 0,6/0,75; `PerformanceGovernor`: si Normal no
