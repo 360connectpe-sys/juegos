@@ -27,10 +27,13 @@ async function states() {
 
 async function cleanup() {
   const pages = await states();
-  // No borrar recursos de pestañas antiguas o de clientes que todavía no contestan.
-  if (pages.some(page => !page)) return;
-  const keep = new Set([CACHE, ...pages.map(page => PREFIX + page.build)]);
-  for (const key of await caches.keys()) if (key.startsWith(PREFIX) && !keep.has(key)) await caches.delete(key);
+  const keys = (await caches.keys()).filter(key => key.startsWith(PREFIX) && key !== CACHE);
+  // No borrar recursos de pestañas antiguas o de clientes que todavía no contestan…
+  const keep = new Set([CACHE, ...pages.filter(Boolean).map(page => PREFIX + page.build)]);
+  // …pero, si alguno no contesta, conservar solo la caché anterior más reciente (fase 15, H17):
+  // antes se conservaban todas para siempre y crecían con cada publicación.
+  if (pages.some(page => !page) && keys.length) keep.add(keys[keys.length - 1]);
+  for (const key of keys) if (!keep.has(key)) await caches.delete(key);
 }
 
 self.addEventListener('activate', event => {
@@ -72,7 +75,10 @@ self.addEventListener('fetch', event => {
     // La URL de Render y la información de versión se consultan en red; fallback sin conexión.
     if (path === new URL('./config.js', SCOPE).pathname || path === new URL('./version.json', SCOPE).pathname) {
       try {
-        const response = await fetch(new Request(request, { cache: 'no-store' }));
+        // Fase 15 (H1): red con tiempo máximo (2 s); si la red cuelga, la copia guardada.
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2000);
+        const response = await fetch(new Request(request, { cache: 'no-store', signal: ctrl.signal })).finally(() => clearTimeout(timer));
         if (!response.ok) throw new Error('Recurso no disponible');
         await (await caches.open(CACHE)).put(request, response.clone());
         return response;

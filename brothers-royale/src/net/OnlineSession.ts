@@ -239,6 +239,8 @@ export class OnlineSession implements GameSession {
       this.lastCorrectionTick = c.tick;
       const after = this.body.state.position;
       this.info.correction = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z);
+      // Fase 15 (H16): para suavizar solo el dibujo del salto de la corrección.
+      this.correctionDelta = { x: after.x - before.x, y: after.y - before.y, z: after.z - before.z, serial: this.correctionDelta.serial + 1 };
     }
     if (isValidPlayerInput(input, this.lastSentSeq)) {
       this.lastSentSeq = input.seq;
@@ -392,6 +394,8 @@ export class OnlineSession implements GameSession {
     this.ticksSinceSnapshot = 0;
   }
 
+  /** Último salto de posición aplicado por una corrección (render, no simulación). */
+  correctionDelta = { x: 0, y: 0, z: 0, serial: 0 };
   private zombieList: readonly PublicZombie[] = [];
   zombies(): readonly PublicZombie[] { return this.zombieList; }
 

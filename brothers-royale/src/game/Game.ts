@@ -142,6 +142,16 @@ export class Game {
   private airView: AirView | null = null;
   private zombieView: ZombieView | null = null;
   private wasAloft = false;
+  private lastInvTotal = -1;
+  private correctionSerial = 0;
+  private lastWood = -1;
+  /** Madera propia; al subir (talar o botín) suena el golpe de madera (fase 15, H7). */
+  private currentWood(): number {
+    const w = this.buildingWorld?.state.wood.get(this.session?.localPlayerId ?? '') ?? 0;
+    if (this.lastWood >= 0 && w > this.lastWood) this.sound.play('chop');
+    this.lastWood = w;
+    return w;
+  }
   private zombieSeen: readonly PublicZombie[] | null = null;
   private readonly zombieAnim = new Map<number, number>();
   /** Zombi al que se apunta (número) para la barra de salud. */
@@ -414,6 +424,8 @@ export class Game {
     if (attack) this.playLocalAttack(session, input, attack.type === 'shot' ? attack.weapon : 'axe');
     this.lastAiming = (input.buttons & Buttons.AIM) !== 0;
     session.tick(input, dt);
+    const cd = (session as { correctionDelta?: { x: number; y: number; z: number; serial: number } }).correctionDelta;
+    if (cd && cd.serial !== this.correctionSerial) { this.correctionSerial = cd.serial; this.avatar.absorbCorrection(cd.x, cd.y, cd.z); }
     this.updateInteractTarget(session);
     const local = session.localPlayer();
     if (local) {
@@ -423,6 +435,7 @@ export class Game {
     const color=session.identity(session.localPlayerId).color;
     if(color!==this.localColor)this.replaceLocalAvatar(color);
     this.syncRemotes(session);
+    this.currentWood();
   }
 
   /** Vista y controles del constructor; la autoridad vuelve a validar cada petición. */
@@ -1070,9 +1083,12 @@ export class Game {
 
   private onMatchEvent(e: ClientMatchEvent): void {
     switch (e.type) {
-      case 'chestOpened':
+      case 'chestOpened': {
         this.chestView?.setOpened(e.chestId, true);
+        const c = this.session?.match.chests[e.chestId];
+        if (c) this.playAt('pickup', c);
         break;
+      }
       case 'pickupAdded':
       case 'pickupUpdated':
         this.pickupView.add(e.pickup);
@@ -1081,10 +1097,15 @@ export class Game {
       case 'pickupRemoved':
         this.pickupView.remove(e.id);
         break;
-      case 'inventory':
+      case 'inventory': {
         this.localWeapon.sync(e.inventory);
+        // Fase 15 (H7): sonido al recoger (sube la cantidad total de objetos o munición).
+        const total = e.inventory.slots.reduce((n, it) => n + (it?.qty ?? 0), 0) + Object.values(e.inventory.ammo).reduce((n, v) => n + (v ?? 0), 0);
+        if (this.lastInvTotal >= 0 && total > this.lastInvTotal) this.sound.play('pickup');
+        this.lastInvTotal = total;
         this.events.emit('inventory', e.inventory);
         break;
+      }
       case 'notice':
         this.events.emit('notice', e.code);
         break;

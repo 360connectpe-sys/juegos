@@ -16,7 +16,7 @@ y seguir por el primer bloque PENDIENTE.
 | Bloque | Estado |
 |---|---|
 | 15.1 Optimización | HECHO (ver abajo) |
-| 15.2 H1/H7/H16/H17 | PENDIENTE |
+| 15.2 H1/H7/H16/H17 | HECHO (ver abajo) |
 | 15.3 Construcción | PENDIENTE |
 | 15.4 Terreno/zonas/vegetación | PENDIENTE |
 | 15.5 Personajes/armas/paracaídas | PENDIENTE |
@@ -30,6 +30,14 @@ llega al objetivo con la resolución mínima 4 ventanas seguidas pasa a Baja (so
 (sin cofres/objetos ni recorte de techos en avión/caída/paracaídas); remotos a > 45 m sin recalcular animación;
 precompilación de shaders de lo oculto (avión, paracaídas, zombis, tormenta, objetos). Medido (Chromium swiftshader,
 práctica offline 1280×720, NO dispositivo): Normal 20 → 12 draw calls, 33 k → 21 k triángulos; Baja 13 → 12.
+**15.2**: H1 `config.js` y fuentes ya no bloquean el primer pintado (`loadRuntimeConfig`, máx. 2,5 s; SW con red
+máx. 2 s y copia guardada). H7 `SoundFx`: desbloqueo en touchend/click/pointerup, `webkitAudioContext`, búfer
+silencioso, `navigator.audioSession='playback'` + `<audio>` silencioso (interruptor de silencio), reanudación tras
+segundo plano/`interrupted`; sonidos nuevos `chop` (madera) y `pickup` (recoger/abrir cofre). **Sin prueba en iPhone
+real.** H16 corrección del servidor absorbida solo en el dibujo (`PlayerAvatar.absorbCorrection`, ~0,18 s; >2,5 m =
+teletransporte). H17 `scripts/sync-beta.mjs` (publicar conservando build actual + anterior y `config.js`; borra
+los antiguos; `releases.json`) y SW que ya no conserva cachés viejas para siempre. Pruebas: `tests/phase15.test.ts`.
+
 Se corrigieron 5 pruebas desfasadas por la fase 14 (categoría `attachment`, munición por casilla, minimapa arriba a la
 izquierda) y la de 15 min (fixture fuera de zona). Suite: 443 OK + 2 omitidas.
 

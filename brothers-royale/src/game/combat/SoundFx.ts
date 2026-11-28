@@ -7,7 +7,7 @@
  */
 import type { WeaponKind } from '@shared/items';
 
-export type SoundName = WeaponKind | 'axe' | 'hit' | 'kill' | 'hurt' | 'reload' | 'empty' | 'heal' | 'impact' | 'zombie' | 'sniperReload';
+export type SoundName = WeaponKind | 'axe' | 'hit' | 'kill' | 'hurt' | 'reload' | 'empty' | 'heal' | 'impact' | 'zombie' | 'sniperReload' | 'chop' | 'pickup';
 
 interface Voice {
   end: number;
@@ -31,7 +31,15 @@ const PRESETS: Record<SoundName, { noise: number; tone: number; freq: number; fi
   heal: { noise: 0, tone: 1, freq: 520, filter: 0, decay: 0.4, gain: 0.25 },
   /** Fase 12: gruñido grave y corto del zombi (ataque o caída). */
   zombie: { noise: 0.45, tone: 0.75, freq: 68, filter: 520, decay: 0.42, gain: 0.32 },
+  /** Fase 15 (H7): golpe de madera al talar y recogida de objetos/madera. */
+  chop: { noise: 0.8, tone: 0.6, freq: 140, filter: 700, decay: 0.12, gain: 0.4 },
+  pickup: { noise: 0, tone: 1, freq: 880, filter: 0, decay: 0.12, gain: 0.22 },
 };
+
+/** Gestos que cuentan como activación de usuario en Safari/iOS y en el resto. */
+const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'] as const;
+/** WAV PCM de 1 muestra en silencio (44 bytes + 2): desbloquea la categoría de audio en iOS. */
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA==';
 
 export class SoundFx {
   static readonly MAX_VOICES = 10;
@@ -40,11 +48,23 @@ export class SoundFx {
   private noise: AudioBuffer | null = null;
   private voices: Voice[] = [];
   private _volume = 0.7;
-  private readonly unlock = () => this.ensure();
+  private readonly unlock = () => this.ensure(true);
+  private readonly onVisible = () => { if (typeof document === 'undefined' || document.visibilityState === 'visible') this.ensure(false); };
+  private mediaUnlocked = false;
+  /** Último estado del contexto (diagnóstico de audio en Ajustes/depuración). */
+  lastState: string = 'none';
 
+  /**
+   * Fase 15 (H7): en Safari/iOS el audio solo arranca dentro de un gesto real. Se escucha el
+   * final del toque y el clic (no solo pointerdown), se reanuda tras volver de segundo plano
+   * o de una interrupción (llamada, Siri) y se pide la sesión de audio "playback" para que
+   * el interruptor de silencio no apague los efectos del juego cuando el usuario lo permite.
+   */
   constructor(private readonly target: Window | null = typeof window === 'undefined' ? null : window) {
-    target?.addEventListener('pointerdown', this.unlock);
-    target?.addEventListener('keydown', this.unlock);
+    for (const ev of UNLOCK_EVENTS) target?.addEventListener(ev, this.unlock, { passive: true });
+    target?.addEventListener('focus', this.onVisible);
+    target?.addEventListener('pageshow', this.onVisible);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisible);
   }
 
   set volume(v: number) {
@@ -56,18 +76,27 @@ export class SoundFx {
     return this._volume;
   }
 
-  private ensure(): AudioContext | null {
+  private ensure(gesture = false): AudioContext | null {
+    if (gesture) this.unlockMedia();
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => undefined);
+      // 'interrupted' es propio de iOS (llamada, Siri, otra app con audio).
+      const st = this.ctx.state as string;
+      if (st === 'suspended' || st === 'interrupted') void this.ctx.resume().catch(() => undefined);
+      if (gesture) this.primeSilence();
       return this.ctx;
     }
-    const Ctor = (globalThis as { AudioContext?: typeof AudioContext }).AudioContext;
+    if (!gesture) return null; // crear el contexto fuera de un gesto lo deja suspendido en iOS
+    const Ctor = (globalThis as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext
+      ?? (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return null;
     try {
       this.ctx = new Ctor();
     } catch {
       return null;
     }
+    this.ctx.onstatechange = () => { this.lastState = this.ctx?.state ?? 'closed'; };
+    this.lastState = this.ctx.state;
+    if (this.ctx.state !== 'running') void this.ctx.resume().catch(() => undefined);
     this.master = this.ctx.createGain();
     this.master.gain.value = this._volume;
     this.master.connect(this.ctx.destination);
@@ -80,7 +109,41 @@ export class SoundFx {
       seed = (seed * 1103515245 + 12345) >>> 0;
       data[i] = (seed / 4294967296) * 2 - 1;
     }
+    this.primeSilence();
     return this.ctx;
+  }
+
+  /** Reproduce 1 muestra en silencio dentro del gesto: desbloqueo clásico de iOS. */
+  private primeSilence(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    try {
+      const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const src = ctx.createBufferSource();
+      src.buffer = b; src.connect(ctx.destination); src.start(0);
+    } catch { /* sin audio */ }
+  }
+
+  /**
+   * iOS: la sesión "playback" hace que el sonido no dependa del interruptor de silencio
+   * (Safari 16.4+: navigator.audioSession). En versiones anteriores, reproducir un
+   * elemento <audio> silencioso dentro del gesto cambia la categoría igual. Sin red.
+   */
+  private unlockMedia(): void {
+    if (this.mediaUnlocked || typeof navigator === 'undefined') return;
+    this.mediaUnlocked = true;
+    try {
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session) session.type = 'playback';
+    } catch { /* no disponible */ }
+    try {
+      const Audio = (globalThis as { Audio?: new (src?: string) => HTMLAudioElement }).Audio;
+      if (!Audio) return;
+      const a = new Audio(SILENT_WAV);
+      a.setAttribute('playsinline', '');
+      a.volume = 0;
+      void a.play()?.catch(() => { this.mediaUnlocked = false; });
+    } catch { this.mediaUnlocked = false; }
   }
 
   /**
@@ -89,7 +152,8 @@ export class SoundFx {
    */
   play(name: SoundName, distance = 0, pan = 0): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master || !this.noise || this._volume <= 0 || ctx.state !== 'running') return;
+    if (!ctx || !this.master || !this.noise || this._volume <= 0) return;
+    if (ctx.state !== 'running') { this.ensure(false); return; }
     const now = ctx.currentTime;
     this.voices = this.voices.filter((v) => v.end > now);
     if (this.voices.length >= SoundFx.MAX_VOICES) return;
@@ -120,7 +184,7 @@ export class SoundFx {
     }
     if (p.tone > 0) {
       const osc = ctx.createOscillator();
-      osc.type = name === 'heal' || name === 'kill' || name === 'hit' ? 'sine' : 'triangle';
+      osc.type = name === 'heal' || name === 'kill' || name === 'hit' || name === 'pickup' ? 'sine' : 'triangle';
       osc.frequency.setValueAtTime(p.freq, now);
       if (name === 'heal' || name === 'kill') osc.frequency.linearRampToValueAtTime(p.freq * 1.5, now + p.decay);
       else osc.frequency.exponentialRampToValueAtTime(Math.max(30, p.freq * 0.5), now + p.decay);
@@ -134,8 +198,10 @@ export class SoundFx {
   }
 
   dispose(): void {
-    this.target?.removeEventListener('pointerdown', this.unlock);
-    this.target?.removeEventListener('keydown', this.unlock);
+    for (const ev of UNLOCK_EVENTS) this.target?.removeEventListener(ev, this.unlock);
+    this.target?.removeEventListener('focus', this.onVisible);
+    this.target?.removeEventListener('pageshow', this.onVisible);
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisible);
     void this.ctx?.close().catch(() => undefined);
     this.ctx = null;
   }

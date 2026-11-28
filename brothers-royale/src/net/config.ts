@@ -1,6 +1,26 @@
 import { NET } from '@shared/protocol';
 import { sanitizeName, sanitizeRoomCode } from '@shared/session';
 
+/**
+ * Fase 15 (H1): carga `config.js` SIN bloquear el primer pintado. Resuelve al cargar, al
+ * fallar o al agotar `timeoutMs` (lo que ocurra antes); si no llega, se sigue con la URL de
+ * compilación (VITE_SERVER_URL) o la del mismo host. La validación de la URL no cambia.
+ */
+export function loadRuntimeConfig(timeoutMs = 2500, doc: Document | null = typeof document === 'undefined' ? null : document): Promise<'loaded' | 'error' | 'timeout' | 'skipped'> {
+  if (!doc) return Promise.resolve('skipped');
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (r: 'loaded' | 'error' | 'timeout') => { if (!done) { done = true; clearTimeout(timer); resolve(r); } };
+    const timer = setTimeout(() => finish('timeout'), timeoutMs);
+    const s = doc.createElement('script');
+    s.src = './config.js';
+    s.async = true;
+    s.onload = () => finish('loaded');
+    s.onerror = () => finish('error');
+    doc.head.append(s);
+  });
+}
+
 export interface OnlineParams {
   server: string;
   name: string;

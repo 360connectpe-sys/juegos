@@ -142,6 +142,18 @@ export class PlayerAvatar {
   private readonly bones: Bone[];
   private readonly prev = new Vector3();
   private readonly curr = new Vector3();
+  /**
+   * Fase 15 (H16): error visual de una corrección del servidor. La simulación ya está
+   * corregida; solo el dibujo absorbe el salto y lo reduce en ~0,1 s (sin retrasar controles).
+   */
+  private readonly smooth = new Vector3();
+  /** Suaviza una corrección (dx, dy, dz = posición nueva − anterior). Saltos grandes = teletransporte. */
+  absorbCorrection(dx: number, dy: number, dz: number): void {
+    const d = Math.hypot(dx, dy, dz);
+    if (d < 0.01) return;
+    if (d > 2.5) { this.smooth.set(0, 0, 0); return; }
+    this.smooth.x -= dx; this.smooth.y -= dy; this.smooth.z -= dz;
+  }
   private prevYaw = 0;
   private currYaw = 0;
   private phase = 0;
@@ -236,6 +248,12 @@ export class PlayerAvatar {
    */
   render(alpha: number, dt: number, animate = true): void {
     this.root.position.lerpVectors(this.prev, this.curr, alpha);
+    if (this.smooth.x !== 0 || this.smooth.y !== 0 || this.smooth.z !== 0) {
+      this.root.position.add(this.smooth);
+      const k = Math.exp(-dt / 0.06); // ≈95 % absorbido en 0,18 s
+      this.smooth.multiplyScalar(k);
+      if (this.smooth.lengthSq() < 1e-6) this.smooth.set(0, 0, 0);
+    }
     this.root.rotation.y = this.prevYaw + wrapAngle(this.currYaw - this.prevYaw) * alpha;
     this.time += dt;
     if (!animate) {
