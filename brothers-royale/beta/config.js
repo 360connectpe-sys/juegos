@@ -5,4 +5,4 @@
  * Vacío = sin servidor configurado: el juego sigue funcionando sin conexión.
  * Prioridad: ?server= en la URL > este archivo > VITE_SERVER_URL al compilar.
  */
-window.BR_CONFIG = { serverUrl: '' };
+window.BR_CONFIG = { serverUrl: 'wss://brothers-royale-server.onrender.com' };
