@@ -608,3 +608,8 @@ npm run server     # servidor multijugador en ws://localhost:2567 (otra terminal
 288 pruebas aprobadas. AUDIT-6.md describe cancelación de temporizadores al cambiar de hueco,
 limpieza de poses tras reaparecer, estadísticas acotadas y cierre seguro del loadout de pruebas.
 BR_BENCH_LOADOUT solo se permite con NODE_ENV=test y --br-bench-loadout.
+
+## Fase 12 — Mejoras de jugabilidad real
+Techos sólidos, partida de 15 min con 5 fases de tormenta y barrera visual, Ajustes para todos (z-index del HUD en
+móvil), seis diseños de edificio con muebles, avión de transporte con caída libre/paracaídas y reaparición en avión,
+zombis autoritativos (servidor y offline). Protocolo v9. Informe completo: PHASE-12-REPORT.md.

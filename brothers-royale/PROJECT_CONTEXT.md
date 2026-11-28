@@ -8,6 +8,8 @@ Estado a 27 de noviembre de 2026, tras cerrar la **fase 9 (lobby, personalizaci�
 
 ## Checkpoint fase 12 (jugabilidad real) — actualizar en cada avance
 
+Detalle completo en **PHASE-12-REPORT.md**. Protocolo v9.
+
 Continuar desde aquí sin repetir trabajo. Desarrollo local en `brothers-royale-phase-3.1`, pero **Render redepliega
 el servidor en cada push a esa rama** (`autoDeploy: true`): los checkpoints intermedios se suben a
 `claude/brothers-royale-setup-x3gvn0` y `brothers-royale-phase-3.1` solo se empuja al publicar (cliente y servidor
@@ -18,10 +20,10 @@ compatibles a la vez, protocolo v9). No fusionar con `main`, no tocar otros jueg
 | 1. Techos/azoteas sólidos (cliente = servidor) | HECHO 943f016 (`tests/phase12Roofs.test.ts`) |
 | 2-3. 15 min, 5 fases de tormenta, desempate, HUD, barrera visual, minimapa | HECHO 133e325 |
 | 4. Ajustes para todos (z-index del HUD sobre `.touch__look` en móvil) | HECHO 8da9e5d (8 clientes verificados) |
-| 7. Seis diseños de edificio con muebles y botín | PENDIENTE |
-| 5-6. Avión, caída libre, paracaídas, reaparición desde avión (protocolo v9) | PENDIENTE |
-| 8. Zombis del servidor | PENDIENTE |
-| 9-10. Rendimiento, pruebas, soak 30 min, PHASE-12-REPORT.md, beta + Render | PENDIENTE |
+| 7. Seis diseños de edificio con muebles y botín | HECHO c973d34 |
+| 5-6. Avión, caída libre, paracaídas, reaparición desde avión (protocolo v9) | HECHO 98ee242 |
+| 8. Zombis del servidor | HECHO ba0edf1, c2a5169 |
+| 9-10. Rendimiento, pruebas, PHASE-12-REPORT.md, beta + Render | HECHO (prueba de 30 min omitida por petición del usuario) |
 
 Comando para continuar a mano: `cd brothers-royale && git fetch origin claude/brothers-royale-setup-x3gvn0 &&
 git merge FETCH_HEAD && npm ci && npm run check`, y seguir por el primer bloque PENDIENTE.

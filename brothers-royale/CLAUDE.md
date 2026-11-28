@@ -129,8 +129,12 @@ tests/        Vitest (node por defecto; `// @vitest-environment jsdom` para DOM/
 
 ## Estado vigente y fuera de alcance
 
-Fases 7, 8, 9 y 10 implementadas; leer PHASE-7.md … PHASE-10.md. No iniciar fase 11, cuentas ni
-persistencia externa sin petición. Prueba de 30 min: tests/soak10.integration.test.ts (BR_SOAK10_SECONDS).
+Fases 7, 8, 9, 10 y 12 implementadas; leer PHASE-7.md … PHASE-10.md y PHASE-12-REPORT.md. No iniciar fase 11,
+cuentas ni persistencia externa sin petición. Pruebas largas: soak10/soak12 (BR_SOAK10_SECONDS, BR_SOAK12_SECONDS).
+Fase 12 (protocolo v9): techos sólidos; avión/caída/paracaídas en BattleRound (`flight.ts`, autoridad; sin daño ni
+acciones en el aire); zombis en `physics/ZombieDirector` (npc de CombatState: fuera de estadísticas y ganador);
+prefabs con `nav` (puerta/escaleras) y muebles con caja de volumen completo; `buildings.ts` = diseños nuevos.
+Render autodespliega en cada push a brothers-royale-phase-3.1: empujar solo con cliente y servidor compatibles.
 
 Construcción: BuildingState, BuildingWorld y BuildingView; materiales y colocaciones solo cambian
 en la autoridad. Respetar límites y soporte. Desde la corrección móvil (MOBILE-FIXES.md): sin ventana
