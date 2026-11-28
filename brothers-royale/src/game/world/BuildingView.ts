@@ -1,5 +1,6 @@
+import { crackGeometry,damageLevel } from './BuildingDamage';
 import { BufferAttribute, BufferGeometry, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshLambertMaterial } from 'three';
-import { BUILD, BUILD_KINDS, WALL_EDGE, buildDef, type BuildingSnapshot, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
+import { BUILD, BUILD_KINDS, WALL_EDGE, buildDef, type BuildPiece, type BuildingSnapshot, type BuildKind, type BuildRequest } from '@shared/building/BuildingState';
 import type { TreePlacement } from '@shared/world/layout';
 import { box, merge } from './geometry';
 
@@ -17,6 +18,12 @@ export const PREVIEW_COLORS = { valid: '#2fbf4a', invalid: '#e02424' } as const;
  */
 export class BuildingView {
   readonly root = new Group();
+  onDamage: ((piece:BuildPiece)=>void)|null=null;
+  onRemove: ((id:number)=>void)|null=null;
+  private readonly previousPieces=new Map<number,BuildPiece>();
+  private readonly variants=new Map<BuildKind,BufferGeometry[]>();
+  /** Número de reconstrucciones de buffer (para comprobaciones específicas). */
+  geometryWrites=0;
   readonly ghost: Mesh;
   private readonly geometries = new Map<BuildKind, BufferGeometry>();
   /** Malla única con todas las piezas colocadas. */
@@ -35,8 +42,11 @@ export class BuildingView {
         box(part.size.x, part.size.y, part.size.z, part.color, part.center.x, part.center.y, part.center.z, part.rot?.y, part.rot?.x, part.rot?.z),
       ] : []));
       this.geometries.set(kind, geometry);
+      const variants=[geometry];
+      for(const stage of [1,2,3] as const)variants.push(merge([geometry.clone(),crackGeometry(kind,stage)!]));
+      this.variants.set(kind,variants);
     }
-    const maxVerts = Math.max(...[...this.geometries.values()].map(g => g.getAttribute('position').count)) * BUILD.maxPieces;
+    const maxVerts = Math.max(...[...this.variants.values()].flat().map(g => g.getAttribute('position').count)) * BUILD.maxPieces;
     const geometry = new BufferGeometry();
     for (const name of ['position', 'normal', 'color']) {
       const attr = new BufferAttribute(new Float32Array(maxVerts * 3), 3);
@@ -64,7 +74,16 @@ export class BuildingView {
   update(state: BuildingSnapshot, dt: number): void {
     if (state !== this.lastState) {
       this.lastState = state;
-      this.writePieces(state);
+      let dirty=state.pieces.length!==this.previousPieces.size;
+      const present=new Set<number>();
+      for(const p of state.pieces){
+        present.add(p.id);const old=this.previousPieces.get(p.id);
+        if(old&&p.hp<old.hp)this.onDamage?.(p);
+        if(!old||damageLevel(old.hp)!==damageLevel(p.hp)||['kind','x','y','z','rotation','slot','yaw','w','h'].some(k=>old[k as keyof BuildPiece]!==p[k as keyof BuildPiece]))dirty=true;
+        this.previousPieces.set(p.id,p);
+      }
+      for(const id of this.previousPieces.keys())if(!present.has(id)){this.previousPieces.delete(id);this.onRemove?.(id);}
+      if(dirty)this.writePieces(state);
       state.trees.forEach((hp, i) => {
         if (this.treeHp[i] !== undefined && hp < this.treeHp[i]!) this.shake.set(i, 0.25);
         if (hp > 0 && this.treeHp[i] === 0) {
@@ -105,6 +124,7 @@ export class BuildingView {
   }
   /** Copia las piezas (rotadas, colocadas y tintadas por resistencia) en la malla única. */
   private writePieces(state: BuildingSnapshot): void {
+    this.geometryWrites++;
     const g = this.structures.geometry;
     const pos = g.getAttribute('position') as BufferAttribute;
     const nor = g.getAttribute('normal') as BufferAttribute;
@@ -114,7 +134,7 @@ export class BuildingView {
     let o = 0;
     this.counts.wall = this.counts.floor = this.counts.ramp = this.counts.roof = 0;
     for (const piece of state.pieces) {
-      const src = this.geometries.get(piece.kind);
+      const src = this.variants.get(piece.kind)?.[damageLevel(piece.hp)];
       if (!src) continue;
       const sp = src.getAttribute('position').array as ArrayLike<number>;
       const sn = src.getAttribute('normal').array as ArrayLike<number>;
@@ -126,7 +146,7 @@ export class BuildingView {
       const a = slot ? piece.yaw! : piece.rotation * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
       // Panel de hueco: misma geometría de pared, escalada al hueco y sin el desplazamiento al borde.
       const sx = slot ? piece.w! / BUILD.size : 1, sy = slot ? piece.h! / 3 : 1, oz = slot ? -WALL_EDGE : 0;
-      const tint = 0.7 + piece.hp / BUILD.hp * 0.3;
+      const tint = 1 - damageLevel(piece.hp)*.055;
       for (let i = 0; i < n; i++) {
         const k = i * 3, d = (o + i) * 3;
         const x = sp[k]! * sx, z = sp[k + 2]! + oz;
@@ -154,7 +174,8 @@ export class BuildingView {
   dispose(): void {
     this.root.removeFromParent();
     this.structures.geometry.dispose();
-    for (const geometry of this.geometries.values()) geometry.dispose();
+    for (const variants of this.variants.values()) for(const geometry of variants)geometry.dispose();
+    this.previousPieces.clear();this.onDamage=this.onRemove=null;
     const material = this.structures.material;
     for (const m of Array.isArray(material) ? material : [material]) m.dispose();
     (this.ghost.material as MeshBasicMaterial).dispose();

@@ -371,9 +371,9 @@ export class PlayerAvatar {
       const kick = (this.kickT / 0.12) * (g.held === 'sniper' ? 0.6 : g.held === 'shotgun' ? 0.45 : 0.22);
       const t = this.time * (g.held === 'sniper' ? 5 : 9);
       armR.rotation.x = mix(armR.rotation.x, reload ? -0.7 + Math.sin(t) * 0.12 : -Math.PI / 2 - kick - lean);
-      armR.rotation.z = mix(armR.rotation.z, 0.08);
+      armR.rotation.z = mix(armR.rotation.z, -0.55);
       armL.rotation.x = mix(armL.rotation.x, reload ? -1.0 - Math.sin(t) * 0.2 : -Math.PI / 2 * 0.92 - kick * 0.6 - lean);
-      armL.rotation.z = mix(armL.rotation.z, reload ? -0.3 : -0.55);
+      armL.rotation.z = mix(armL.rotation.z, reload ? 0.25 : 0.9);
       body.rotation.x = mix(body.rotation.x, lean + (reload ? 0.12 : 0.04));
     } else if (g.held === 'axe') {
       // Hachazo de arriba abajo en 0,3 s; en reposo, el hacha delante.

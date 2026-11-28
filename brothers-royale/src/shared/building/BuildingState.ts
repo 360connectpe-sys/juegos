@@ -144,11 +144,16 @@ export interface BuildPlan {
 const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
 
 /** Ordena alturas: a la altura de los pies o por debajo (lo más alto primero), luego por encima. */
-function orderHeights(heights: number[], feetY: number): number[] {
+function orderHeights(heights: number[], feetY: number, surfaceOffset=0): number[] {
   const unique: number[] = [];
   for (const h of heights) if (!unique.some((u) => Math.abs(u - h) < 0.005)) unique.push(h);
   const below = (h: number) => h <= feetY + 1.2;
-  return unique.sort((a, b) => (below(a) !== below(b) ? (below(a) ? -1 : 1) : below(a) ? b - a : a - b));
+  return unique.sort((a,b)=>{
+    if(below(a)!==below(b))return below(a)?-1:1;
+    if(!below(a))return a-b;
+    // Suelos: superficie a ras de los pies/rampa, antes de sumar otro grosor de 18 cm.
+    return surfaceOffset ? Math.abs(a+surfaceOffset-feetY)-Math.abs(b+surfaceOffset-feetY) : b-a;
+  });
 }
 
 /** Hueco de puerta al que se mira de cerca (≤ 2,8 m, delante, a la altura del jugador). */
@@ -209,31 +214,45 @@ export function planBuild(kind: BuildKind, feet: Vec3, yaw: number, ctx: BuildPl
   }
   // `+ 0` normaliza −0 (la solicitud viaja por red y se compara en pruebas).
   // El techo cubre la casilla propia (cerrar la habitación en la que se está); el resto, la siguiente.
-  const ahead = kind === 'roof' ? 0 : 1;
-  const x = cx + dx * BUILD.size * ahead + 0;
-  const z = cz + dz * BUILD.size * ahead + 0;
-  const rotation = (rotationForYaw(kind, yaw) + turn) % 4;
-  const heights: number[] = [groundRange(ctx.ground, x, z)[1]];
-  for (const p of pieces) {
-    if (p.kind !== 'wall' && near(p.x, x) && near(p.z, z)) heights.push(buildTop(p));
-    if (p.kind === 'wall' && p.slot === undefined) {
-      // La parte alta de una pared de esta casilla sostiene un suelo o techo encima.
-      const a = anchorOf(p);
-      if (Math.abs(a.x - x) <= 1.51 && Math.abs(a.z - z) <= 1.51) heights.push(kind === 'floor' ? buildTop(p) - 0.0 : buildTop(p));
+  // Una rampa puede ocupar la casilla propia si la siguiente está bloqueada.
+  const steps = kind === 'ramp' ? [1,0] : [kind === 'roof' ? 0 : 1];
+  let fallback: BuildRequest | null = null;
+  for (const ahead of steps) {
+    const x = cx + dx * BUILD.size * ahead + 0;
+    const z = cz + dz * BUILD.size * ahead + 0;
+    const rotation = (rotationForYaw(kind, yaw) + turn) % 4;
+    const heights: number[] = [groundRange(ctx.ground, x, z)[1]];
+    for (const p of pieces) {
+      if (p.kind !== 'wall' && near(p.x, x) && near(p.z, z)) heights.push(buildTop(p));
+      if (p.kind === 'wall' && p.slot === undefined) {
+        // La parte alta de una pared de esta casilla sostiene un suelo o techo encima.
+        const a = anchorOf(p);
+        if (Math.abs(a.x - x) <= 1.51 && Math.abs(a.z - z) <= 1.51) heights.push(kind === 'floor' ? buildTop(p) - 0.0 : buildTop(p));
+      }
+      if (p.kind === 'ramp') {
+        const [rx, rz] = rampRise(p.rotation);
+        if (near(p.x + rx * BUILD.size, x) && near(p.z + rz * BUILD.size, z)) heights.push(kind === 'floor' ? p.y + 3 - FLOOR_TOP : p.y + 3);
+      }
+      if (p.kind === 'floor' && Math.abs(p.x - x) + Math.abs(p.z - z) < BUILD.size + 0.01 && (p.x !== x || p.z !== z)) heights.push(kind === 'floor' ? p.y : buildTop(p));
     }
-    if (p.kind === 'ramp') {
-      const [rx, rz] = rampRise(p.rotation);
-      if (near(p.x + rx * BUILD.size, x) && near(p.z + rz * BUILD.size, z)) heights.push(kind === 'floor' ? p.y + 3 - FLOOR_TOP : p.y + 3);
+    let first: BuildRequest | null = null;
+    for (const y of orderHeights(heights, feet.y, kind==='floor'?FLOOR_TOP:0)) {
+      if(kind==='ramp'&&ahead===0&&y>feet.y+.4)continue;
+      const request: BuildRequest = { kind, x, y, z, rotation };
+      first ??= request;
+      if (ctx.canPlace(request)) return { request, valid: true };
     }
-    if (p.kind === 'floor' && Math.abs(p.x - x) + Math.abs(p.z - z) < BUILD.size + 0.01 && (p.x !== x || p.z !== z)) heights.push(kind === 'floor' ? p.y : buildTop(p));
+    fallback ??= first ?? { kind, x, y: feet.y, z, rotation };
   }
-  let first: BuildRequest | null = null;
-  for (const y of orderHeights(heights, feet.y)) {
-    const request: BuildRequest = { kind, x, y, z, rotation };
-    first ??= request;
-    if (ctx.canPlace(request)) return { request, valid: true };
-  }
-  return { request: first ?? { kind, x, y: feet.y, z, rotation }, valid: false };
+  return { request: fallback!, valid: false };
+}
+
+/** Solo un borde real puede tocar otra pieza; los paneles interiores nunca se ignoran. */
+export function perimeterContact(wall: BuildRequest, piece: BuildRequest): boolean {
+  if(wall.kind!=='wall'||wall.slot!==undefined||piece.kind==='wall')return false;
+  const a=anchorOf(wall);
+  return wall.rotation%2===0 ? Math.abs(Math.abs(a.z-piece.z)-WALL_EDGE)<.01 && Math.abs(a.x-piece.x)<.01
+    : Math.abs(Math.abs(a.x-piece.x)-WALL_EDGE)<.01 && Math.abs(a.z-piece.z)<.01;
 }
 
 /** Autoridad compartida. Las consultas de colisión son inyectadas por el mundo físico. */

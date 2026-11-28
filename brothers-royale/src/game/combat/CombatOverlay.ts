@@ -1,3 +1,4 @@
+import { StructureHealth } from './StructureHealth';
 import { type Camera, Vector3 } from 'three';
 import type { Vec3 } from '@shared/types';
 
@@ -19,6 +20,7 @@ const MARKER_LIFE = 0.85;
 export class CombatOverlay {
   static readonly MAX_MARKERS = 20;
   readonly root: HTMLDivElement;
+  readonly structures: StructureHealth;
   private readonly scope: HTMLDivElement;
   private scopeZoom = 0;
   private readonly crosshair: HTMLDivElement;
@@ -38,6 +40,7 @@ export class CombatOverlay {
   constructor(doc: Document = document) {
     this.root = doc.createElement('div');
     this.root.className = 'combat-layer';
+    this.structures=new StructureHealth(this.root);
     this.root.setAttribute('aria-hidden', 'true');
     this.hurt = doc.createElement('div');
     this.hurt.className = 'combat-hurt';
@@ -148,6 +151,7 @@ export class CombatOverlay {
   }
 
   dispose(): void {
+    this.structures.dispose();
     this.root.remove();
   }
 }

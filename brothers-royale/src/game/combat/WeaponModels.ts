@@ -1,6 +1,6 @@
-import { BatchedMesh, type BufferGeometry, Group, InstancedMesh, Matrix4, MeshLambertMaterial } from 'three';
+import { CylinderGeometry, BatchedMesh, type BufferGeometry, Group, InstancedMesh, Matrix4, MeshLambertMaterial } from 'three';
 import type { ItemKind, Rarity } from '@shared/items';
-import { box, merge } from '../world/geometry';
+import { box, merge, paint, transform } from '../world/geometry';
 
 /**
  * Modelos low poly de lo que se lleva en la mano (armas, hacha, botiquín),
@@ -17,60 +17,58 @@ const DARK = '#33383e';
 const WOOD = '#8b5a2b';
 
 /** Boca del cañón en coordenadas del arma (para fogonazos y trazadoras). */
-export const MUZZLE: Record<HeldKind, number> = { axe: 0.55, pistol: 0.24, smg: 0.44, shotgun: 0.72, rifle: 0.82, sniper: 1.15, scope2: 0.1, medkit: 0.1 };
+export const MUZZLE: Record<HeldKind, number> = { axe: 0.66, pistol: 0.29, smg: 0.48, shotgun: 0.76, rifle: 0.84, sniper: 1.03, scope2: 0.1, medkit: 0.1 };
+
+/** Cañones y lentes de seis lados, compartidos dentro de cada geometría fusionada. */
+function barrel(radius:number,length:number,z:number,y=.07,color=DARK):BufferGeometry {
+  return transform(paint(new CylinderGeometry(radius,radius,length,6),color),0,y,z,Math.PI/2,0,0);
+}
 
 function baseHeldGeometry(kind: HeldKind, rarity: Rarity): BufferGeometry {
   const accent = RARITY_COLOR[rarity];
   switch (kind) {
     case 'sniper':
       return merge([
-        box(.08,.11,.55,METAL,0,.05,.22), box(.035,.035,.65,DARK,0,.08,.82),
-        box(.07,.13,.35,WOOD,0,.02,-.2), box(.05,.12,.07,DARK,0,-.05,0),
-        box(.08,.025,.2,accent,0,.12,.3),
-        box(.04,.06,.07,DARK,0,.15,.12), box(.09,.08,.28,DARK,0,.21,.16),
-        box(.092,.07,.015,'#55a3bd',0,.21,.31),
-      ]);
+ box(.09,.12,.46,METAL,0,.05,.19),barrel(.022,.56,.75),
+ box(.075,.14,.38,WOOD,0,.015,-.21),box(.055,.13,.075,DARK,0,-.055,0,0,-.2),
+ box(.055,.10,.08,DARK,0,-.07,.23),box(.092,.025,.22,accent,0,.115,.21),
+ box(.04,.07,.08,DARK,0,.16,.14),barrel(.05,.32,.16,.225),barrel(.046,.008,.325,.225,'#55a3bd'),
+ ]);
     case 'scope2': return merge([box(.10,.09,.22,DARK,0,.05,.1),box(.105,.075,.01,'#55a3bd',0,.05,.22)]);
     case 'pistol':
       return merge([
-        box(0.07, 0.09, 0.24, METAL, 0, 0.05, 0.1),
-        box(0.05, 0.13, 0.07, DARK, 0, -0.03, 0, 0, -0.25),
-        box(0.072, 0.02, 0.1, accent, 0, 0.1, 0.12),
-      ]);
+ box(.085,.095,.30,METAL,0,.065,.13),barrel(.023,.08,.25,.065),
+ box(.065,.17,.09,DARK,0,-.055,0,0,-.2),box(.08,.025,.13,accent,0,.12,.12),
+ box(.018,.022,.025,DARK,0,.128,.24),box(.018,.022,.03,DARK,0,.128,.015),
+ box(.065,.02,.10,DARK,0,-.07,.08),
+ ]);
     case 'smg':
       return merge([
-        box(0.08, 0.1, 0.36, METAL, 0, 0.05, 0.14),
-        box(0.035, 0.035, 0.1, DARK, 0, 0.06, 0.37),
-        box(0.045, 0.16, 0.06, DARK, 0, -0.07, 0.16),
-        box(0.05, 0.12, 0.06, DARK, 0, -0.03, 0, 0, -0.2),
-        box(0.05, 0.06, 0.16, DARK, 0, 0.03, -0.1),
-        box(0.082, 0.025, 0.14, accent, 0, 0.1, 0.12),
-      ]);
+ box(.095,.12,.34,METAL,0,.06,.14),barrel(.027,.16,.40),
+ box(.06,.19,.075,DARK,0,-.08,.19),box(.055,.14,.08,DARK,0,-.04,0),
+ box(.055,.045,.18,DARK,0,.045,-.12),box(.10,.03,.16,accent,0,.13,.12),
+ box(.055,.10,.07,DARK,0,-.02,.32),box(.04,.025,.06,DARK,0,.145,.29),
+ ]);
     case 'rifle':
       return merge([
-        box(0.07, 0.1, 0.5, METAL, 0, 0.05, 0.2),
-        box(0.035, 0.035, 0.32, DARK, 0, 0.06, 0.62),
-        box(0.05, 0.15, 0.07, DARK, 0, -0.07, 0.24),
-        box(0.05, 0.12, 0.06, DARK, 0, -0.03, 0, 0, -0.2),
-        box(0.06, 0.11, 0.22, WOOD, 0, 0.03, -0.14),
-        box(0.045, 0.05, 0.16, DARK, 0, 0.13, 0.18),
-        box(0.072, 0.025, 0.2, accent, 0, 0.1, 0.32),
-      ]);
+ box(.085,.12,.43,METAL,0,.06,.2),barrel(.023,.36,.66),
+ box(.08,.055,.25,DARK,0,.045,.45),box(.065,.16,.09,DARK,0,-.07,.23,0,.16),
+ box(.065,.10,.11,DARK,0,-.15,.24,0,.3),box(.06,.13,.075,DARK,0,-.04,0,0,-.2),
+ box(.07,.12,.25,WOOD,0,.035,-.14),box(.09,.028,.20,accent,0,.13,.22),
+ box(.025,.04,.025,DARK,0,.1,.67),
+ ]);
     case 'shotgun':
       return merge([
-        box(0.08, 0.09, 0.3, METAL, 0, 0.05, 0.12),
-        box(0.045, 0.045, 0.46, DARK, 0, 0.07, 0.48),
-        box(0.04, 0.04, 0.4, DARK, 0, 0.02, 0.45),
-        box(0.07, 0.06, 0.16, WOOD, 0, 0.0, 0.42),
-        box(0.06, 0.11, 0.24, WOOD, 0, 0.02, -0.14),
-        box(0.082, 0.025, 0.12, accent, 0, 0.1, 0.12),
-      ]);
+ box(.095,.105,.30,METAL,0,.055,.12),barrel(.031,.48,.52,.08),barrel(.025,.43,.49,.01),
+ box(.10,.075,.20,WOOD,0,.005,.40),box(.08,.13,.27,WOOD,0,.02,-.16),
+ box(.06,.12,.07,DARK,0,-.035,0,0,-.2),box(.10,.022,.13,accent,0,.118,.12),
+ ]);
     case 'axe':
       return merge([
-        box(0.04, 0.04, 0.6, WOOD, 0, 0, 0.25),
-        box(0.03, 0.2, 0.14, '#c9ced4', 0, 0.06, 0.52),
-        box(0.032, 0.04, 0.05, DARK, 0, 0.14, 0.55),
-      ]);
+ box(.045,.045,.61,WOOD,0,0,.25),box(.06,.055,.16,DARK,0,0,.02),
+ box(.06,.17,.14,METAL,0,.04,.52),box(.035,.26,.12,'#c9ced4',0,.10,.57,0,-.18),
+ box(.065,.04,.07,accent,0,-.015,.49),
+ ]);
     case 'medkit':
       return merge([
         box(0.22, 0.16, 0.1, '#e8eef2', 0, 0, 0.05),

@@ -1,11 +1,12 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
-import { anchorOf, BuildingState, BUILD, validBuildRequest, buildPrefab, type BuildingSnapshot } from '@shared/building/BuildingState';
+import { perimeterContact, anchorOf, BuildingState, BUILD, validBuildRequest, buildPrefab, type BuildingSnapshot } from '@shared/building/BuildingState';
 import { prefabColliders, treeCollider } from '@shared/world/colliders';
 import { buildSlots, type WorldLayout } from '@shared/world/layout';
 import { terrainHeight } from '@shared/world/terrain';
 import type { Vec3 } from '@shared/types';
 import { placePart } from '@shared/world/prefab';
 import { PhysicsWorld } from './PhysicsWorld';
+import { PLAYER } from '@shared/constants';
 import { CAMERA_QUERY_GROUPS } from './groups';
 
 /** Adaptador de colisiones reutilizado por autoridad offline, servidor y réplica cliente. */
@@ -38,20 +39,22 @@ export class BuildingWorld {
           physics.world.intersectionsWithShape(spec.center, spec.rotation, shape, (collider) => {
             const id = this.handles.get(collider.handle)?.piece;
             const other = id === undefined ? undefined : this.state.pieces.get(id);
-            if (other && (r.kind === 'wall') !== (other.kind === 'wall')) return true; // seguir buscando
+            if (other && (r.kind === 'wall' ? perimeterContact(r,other) : perimeterContact(other,r))) return true; // seguir buscando
             blocked = true;
             return false;
           }, undefined, CAMERA_QUERY_GROUPS);
           if (blocked) return false;
         }
-        // Cápsulas de todos los jugadores, incluidas las plazas reservadas.
+        // Cápsula real de pie, sin inflar una caja alrededor de varios puntos:
+        // el margen anterior rechazaba espacios libres bajo el extremo alto de la rampa.
+        const capsule = new R.Capsule(PLAYER.halfHeight,PLAYER.radius);
+        const identity={x:0,y:0,z:0,w:1};
         for (const feet of players()) for (const part of buildPrefab(r).def.parts) {
-          if (part.kind !== 'box') continue;
-          const placed = placePart(buildPrefab(r), part);
-          const rotation = placed.rotation;
-          const shape = new R.Cuboid(part.size.x / 2 + 0.35, part.size.y / 2 + 0.35, part.size.z / 2 + 0.35);
-          // Muestrea toda la altura de la cápsula para paredes, suelos y rampas.
-          for (const dy of [0.1, 0.7, 1.3, 1.7]) if (shape.containsPoint(placed.center, rotation, { x: feet.x, y: feet.y + dy, z: feet.z })) return false;
+          if(part.kind!=='box')continue;
+          const placed=placePart(buildPrefab(r),part);
+          const shape=new R.Cuboid(Math.max(.01,part.size.x/2-.01),Math.max(.01,part.size.y/2-.01),Math.max(.01,part.size.z/2-.01));
+          const center={x:feet.x,y:feet.y+PLAYER.radius+PLAYER.halfHeight,z:feet.z};
+          if(shape.intersectsShape(placed.center,placed.rotation,capsule,center,identity))return false;
         }
         return true;
       },
@@ -69,9 +72,10 @@ export class BuildingWorld {
       !snapshot.pieces.every(p => validBuildRequest(p) && Number.isSafeInteger(p.id) && p.id > 0 && typeof p.owner === 'string' && Number.isFinite(p.hp) && p.hp > 0 && p.hp <= BUILD.hp) ||
       !snapshot.wood || typeof snapshot.wood !== 'object' || Object.values(snapshot.wood).some(n => !Number.isInteger(n) || n < 0 || n > BUILD.woodCap)) return false;
     const incoming = new Map(snapshot.pieces.map(p => [p.id, p]));
+    if(incoming.size!==snapshot.pieces.length)return false;
     for (const [id, colliders] of this.pieces) {
       const old = this.state.pieces.get(id), next = incoming.get(id);
-      if (!next || !old || ['kind', 'x', 'y', 'z', 'rotation'].some(key => old[key as keyof typeof old] !== next[key as keyof typeof next])) {
+      if (!next || !old || ['kind', 'x', 'y', 'z', 'rotation', 'slot', 'yaw', 'w', 'h'].some(key => old[key as keyof typeof old] !== next[key as keyof typeof next])) {
         for (const c of colliders) { this.handles.delete(c.handle); this.physics.removeStatic(c); this.collidersChanged = true; }
         this.pieces.delete(id);
       }
@@ -104,6 +108,14 @@ export class BuildingWorld {
       this.physics.step();
       this.collidersChanged = false;
     }
+  }
+  /** Ocluye con cualquier sólido salvo la propia pieza cuya barra se dibuja. */
+  visiblePiece(id:number,origin:Vec3,at:Vec3):boolean {
+    const piece=this.state.pieces.get(id);if(!piece)return false;
+    const targetY=piece.y+(piece.kind==='wall'||piece.kind==='ramp'?1.5:piece.kind==='roof'?.45:.1);
+    const dx=at.x-origin.x,dy=targetY-origin.y,dz=at.z-origin.z,len=Math.hypot(dx,dy,dz);if(len<.05)return true;
+    const ray=new this.physics.R.Ray(origin,{x:dx/len,y:dy/len,z:dz/len});
+    return !this.physics.world.castRay(ray,Math.max(0,len-.05),true,undefined,CAMERA_QUERY_GROUPS,undefined,undefined,c=>this.handles.get(c.handle)?.piece!==id);
   }
   damageRay(by: string, origin: Vec3, dir: Vec3, range: number, damage: number, axe: boolean): boolean {
     const hit = this.physics.world.castRay(new this.physics.R.Ray(origin, dir), range + 0.02, true, undefined, CAMERA_QUERY_GROUPS);

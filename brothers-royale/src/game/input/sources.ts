@@ -420,6 +420,9 @@ export class GamepadSource implements InputSource {
   private prevJump = false;
   private prevNext = false;
   private prevR3 = false;
+  private prevRotate=false;
+  private rotateLatch=false;
+  buildRotate=false;
   private crouchToggle = false;
   /** RB: pasar al hueco siguiente (se cuenta en el flanco). */
   nextSlotPressed = false;
@@ -452,6 +455,12 @@ export class GamepadSource implements InputSource {
     let actions = 0;
     for (const [btn, bit] of PAD_ACTIONS) if (pressed(btn)) actions |= bit;
     // Fase 15: R3 (pulsar el stick derecho) conmuta agacharse.
+    const rotate=pressed(PAD.Y)&&pressed(PAD.LB);
+    if(rotate&&!this.prevRotate)this.buildRotate=true;
+    this.prevRotate=rotate;
+    if(rotate)this.rotateLatch=true;
+    if(!pressed(PAD.Y))this.rotateLatch=false;
+    if(this.rotateLatch)actions &= ~Buttons.BUILD;
     const r3 = pressed(PAD.R3);
     if (r3 && !this.prevR3) this.crouchToggle = !this.crouchToggle;
     this.prevR3 = r3;

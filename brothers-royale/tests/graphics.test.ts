@@ -158,11 +158,11 @@ const countMeshes = (root: Object3D) => {
 };
 
 describe('avatar optimizado', () => {
-  it('es UNA malla con esqueleto de 6 huesos (1 draw call)', () => {
+  it('es UNA malla con esqueleto de 10 huesos (1 draw call)', () => {
     const a = new PlayerAvatar(3, true);
     expect(countMeshes(a.root)).toBe(1);
     expect(a.mesh).toBeInstanceOf(SkinnedMesh);
-    expect(a.mesh.skeleton.bones).toHaveLength(6);
+    expect(a.mesh.skeleton.bones).toHaveLength(10);
     expect(a.mesh.castShadow).toBe(true);
     expect(a.mesh.boundingSphere!.radius).toBeGreaterThan(1);
     a.dispose();

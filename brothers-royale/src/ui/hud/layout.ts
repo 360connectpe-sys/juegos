@@ -8,6 +8,7 @@ import { clamp } from '@shared/math';
 import { Buttons } from '@shared/types';
 
 export type HudElementId =
+  | 'buildRotate'
   | 'wood'
   | 'construction'
   | 'joystick'
@@ -49,6 +50,7 @@ export interface HudElementInfo {
 }
 
 export const HUD_ELEMENTS: readonly HudElementInfo[] = [
+  {id:'buildRotate',label:'Girar construcción',kind:'info'},
   { id: 'joystick', label: 'Joystick', kind: 'control' },
   { id: 'jump', label: 'Saltar', kind: 'control' },
   { id: 'sprint', label: 'Correr', kind: 'control' },
@@ -89,6 +91,7 @@ export function defaultHudLayout(): HudLayout {
   // la izquierda (pulgar izquierdo, sobre el joystick); combate compacto en el arco del
   // pulgar derecho. La salida está en Ajustes.
   return {
+    buildRotate: el(.11,.57,.75),
     wood: el(0.17, 0.50, 0.75),
     construction: el(0.055, 0.70, 0.85),
     joystick: el(0.23, 0.79, 0.85),

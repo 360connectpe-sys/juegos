@@ -32,6 +32,8 @@ export class CombatFx {
   readonly mesh: InstancedMesh;
   private readonly liveTracers: Tracer[] = [];
   private readonly liveSparks: Spark[] = [];
+  private readonly tracerPool:Tracer[]=Array.from({length:CombatFx.MAX/2},()=>({from:new Vector3(),to:new Vector3(),t:0}));
+  private readonly sparkPool:Spark[]=Array.from({length:CombatFx.MAX/2},()=>({at:new Vector3(),t:0,life:0,size:0,color:IMPACT_COLOR.world}));
   private readonly m = new Matrix4();
   private readonly q = new Quaternion();
   private readonly spin = new Quaternion().setFromEuler(new Euler(0.6, 0.785, 0));
@@ -51,13 +53,13 @@ export class CombatFx {
   }
 
   tracer(from: Vec3, to: Vec3): void {
-    if (this.liveTracers.length >= CombatFx.MAX / 2) this.liveTracers.shift();
-    this.liveTracers.push({ from: new Vector3(from.x, from.y, from.z), to: new Vector3(to.x, to.y, to.z), t: 0 });
+    const tr=this.tracerPool.pop()??this.liveTracers.shift()!;
+    tr.from.set(from.x,from.y,from.z);tr.to.set(to.x,to.y,to.z);tr.t=0;this.liveTracers.push(tr);
   }
 
   /** Fogonazo en la boca del cañón. */
   flash(at: Vec3, size = 0.09): void {
-    this.spark(at, IMPACT_COLOR.flash, size, FLASH_LIFE);
+    this.spark(at, IMPACT_COLOR.flash, size*1.6, FLASH_LIFE);
   }
 
   impact(at: Vec3, onPlayer: boolean): void {
@@ -65,8 +67,8 @@ export class CombatFx {
   }
 
   spark(at: Vec3, color: Color, size: number, life = SPARK_LIFE): void {
-    if (this.liveSparks.length >= CombatFx.MAX / 2) this.liveSparks.shift();
-    this.liveSparks.push({ at: new Vector3(at.x, at.y, at.z), t: 0, life, size, color });
+    const sp=this.sparkPool.pop()??this.liveSparks.shift()!;
+    sp.at.set(at.x,at.y,at.z);sp.t=0;sp.life=life;sp.size=size;sp.color=color;this.liveSparks.push(sp);
   }
 
   get active(): number {
@@ -79,7 +81,7 @@ export class CombatFx {
       const tr = this.liveTracers[i]!;
       tr.t += dt;
       if (tr.t >= TRACER_LIFE) {
-        this.liveTracers.splice(i, 1);
+        this.liveTracers.splice(i, 1);this.tracerPool.push(tr);
         continue;
       }
       // La trazadora avanza: su cola se acerca al impacto mientras vive.
@@ -101,12 +103,12 @@ export class CombatFx {
       const sp = this.liveSparks[i]!;
       sp.t += dt;
       if (sp.t >= sp.life) {
-        this.liveSparks.splice(i, 1);
+        this.liveSparks.splice(i, 1);this.sparkPool.push(sp);
         continue;
       }
       const k = sp.t / sp.life;
       const size = sp.size * (1 + k * 1.4) * (1 - k * 0.7);
-      this.s.set(size, size, size);
+      this.s.set(size, size, sp.life===FLASH_LIFE?size*1.6:size);
       this.m.compose(sp.at, this.spin, this.s);
       this.mesh.setMatrixAt(n, this.m);
       this.mesh.setColorAt(n, sp.color);

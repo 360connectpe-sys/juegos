@@ -361,6 +361,8 @@ export class Game {
     this.airView = new AirView(this.quality.shadows); scene.add(this.airView.planes, this.airView.chutes);
     this.zombieView = new ZombieView(this.quality.shadows); scene.add(this.zombieView.mesh);
     this.buildingView = new BuildingView(layout.trees, trees);
+    this.buildingView.onDamage=p=>this.overlay?.structures.damage(p);
+    this.buildingView.onRemove=id=>this.overlay?.structures.remove(id);
     scene.add(this.buildingView.root);
     this.buildingView.setShadows(this.quality.shadows);
     // Cofres y objetos: instanciados (2 + 3 draw calls para todos).
@@ -415,7 +417,7 @@ export class Game {
     const piece = this.input.keyboard.buildRequest;
     this.input.keyboard.buildRequest = null;
     if (piece && !this.inputSuspended && !this.inAir()) this.configureBuild(piece);
-    if (this.input.keyboard.buildRotate) { this.input.keyboard.buildRotate = false; if (this.buildOpen && !this.inputSuspended) this.configureBuild(undefined, true); }
+    if (this.input.keyboard.buildRotate || this.input.gamepad.buildRotate) { this.input.keyboard.buildRotate = false; this.input.gamepad.buildRotate=false; if (this.buildOpen && !this.inputSuspended) this.configureBuild(undefined, true); }
     if (this.buildOpen && this.buildHold === null && this.input.gamepad.nextSlotPressed) {
       this.input.gamepad.nextSlotPressed = false;
       this.buildKind = BUILD_KINDS[(BUILD_KINDS.indexOf(this.buildKind) + 1) % BUILD_KINDS.length]!;
@@ -456,6 +458,10 @@ export class Game {
     if (kind) { this.buildKind = kind; this.buildOpen = true; }
     if (rotate) this.buildRotation = (this.buildRotation + 1) % 4;
     this.buildLevel = Math.max(0, Math.min(4, this.buildLevel + levelDelta));
+    if(rotate && this.buildOpen && !this.inputSuspended){
+      this.updateBuildPlan(this.lastBuildYaw);
+      this.buildingView?.preview(this.buildCandidate,this.buildValid);
+    }
   }
   toggleBuild(): void { this.buildOpen = !this.buildOpen; if (!this.buildOpen) this.buildHold = null; }
   placeBuild(): boolean {
@@ -481,7 +487,9 @@ export class Game {
     this.buildCandidate = null;
     return placed;
   }
+  private lastBuildYaw=0;
   private buildStep(input: PlayerInput): void {
+    this.lastBuildYaw=input.aimYaw;
     const toggle = (input.buttons & Buttons.BUILD) !== 0;
     if (toggle && !this.buildHeld) this.toggleBuild();
     this.buildHeld = toggle;
@@ -490,24 +498,30 @@ export class Game {
     const feet = local?.position;
     const world = this.buildingWorld;
     if (feet && world && this.buildOpen) {
-      const id = this.session!.localPlayerId;
-      const blocked = this.vitals.dead || this.session?.battle?.phase === 'finished';
-      // Casilla, orientación y altura automáticas (cuadrícula de 3 m, dirección de la mirada).
-      // Fase 15: bordes de pared, huecos de puerta y giro previo (`buildRotation`).
-      this.buildSlots ??= buildSlots(world.layout);
-      const plan = planBuild(this.buildKind, feet, input.aimYaw, {
-        pieces: world.state.pieces.values(),
-        ground: (x, z) => terrainHeight(x, z, world.layout.terrain),
-        canPlace: (r) => !blocked && world.state.canPlace(id, r, feet),
-        slots: this.buildSlots,
-      }, this.buildRotation);
-      this.buildCandidate = plan.request;
-      this.buildValid = plan.valid;
+      this.updateBuildPlan(input.aimYaw);
       // Modo construcción con teclado/mando: el ataque coloca en el flanco (no dispara).
       if (this.buildHold === null && fire && !this.buildFireHeld && this.buildValid) this.placeBuild();
       input.buttons &= ~Buttons.FIRE;
     }
     this.buildFireHeld = fire;
+  }
+
+  private updateBuildPlan(yaw:number):void {
+    const feet=this.session?.localPlayer()?.position, world=this.buildingWorld;
+    if(!feet||!world||!this.buildOpen)return;
+    const id=this.session!.localPlayerId;
+    const blocked=this.inputSuspended||this.vitals.dead||this.inAir()||this.session?.battle?.phase==='finished';
+    // Casilla, orientación y altura automáticas (cuadrícula de 3 m, dirección de la mirada).
+    // Fase 15: bordes de pared, huecos de puerta y giro previo (`buildRotation`).
+    this.buildSlots ??= buildSlots(world.layout);
+    const plan = planBuild(this.buildKind, feet, yaw, {
+      pieces: world.state.pieces.values(),
+      ground: (x, z) => terrainHeight(x, z, world.layout.terrain),
+      canPlace: (r) => !blocked && world.state.canPlace(id, r, feet),
+      slots: this.buildSlots,
+    }, this.buildRotation);
+    this.buildCandidate = plan.request;
+    this.buildValid = plan.valid;
   }
 
   /** Estado de combate visible del jugador local (lo mismo que verán los demás). */
@@ -768,8 +782,8 @@ export class Game {
           const reload = g.action === 'reload' ? 0.12 : 0;
           const cam = cams.perspective;
           cam.updateMatrixWorld();
-          this.mTmp.makeRotationY(Math.PI).scale(this.vTmp.set(0.72, 0.72, 0.72));
-          this.viewmodel.makeTranslation(0.19, -0.19 - reload, -0.3 + this.kickBack * 1.2).multiply(this.mTmp);
+          this.mTmp.makeRotationY(Math.PI).scale(this.vTmp.set(0.68, 0.68, 0.68));
+          this.viewmodel.makeTranslation(0.22, -0.23 - reload, -0.32 + this.kickBack * 1.2).multiply(this.mTmp);
           this.viewmodel.premultiply(cam.matrixWorld);
           const m = this.heldMatrix.get(session.localPlayerId) ?? new Matrix4();
           m.copy(this.viewmodel);
@@ -916,6 +930,7 @@ export class Game {
       }
       this.overlay.root.style.visibility=this.presentation?'hidden':'visible';
       this.overlay.frame(cam, rect.width, rect.height, dt, gap);
+      this.overlay.structures.frame(cam,rect.width,rect.height,dt,(id,from,to)=>this.buildingWorld?.visiblePiece(id,from,to)??false);
     }
 
     if(this.nameTags){

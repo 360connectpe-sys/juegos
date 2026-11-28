@@ -258,12 +258,13 @@ export function LiveInventory({ game }: { game: Game | null }) {
 
 
 
-export type InfoWidgetId = 'wood' | 'construction' | 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
-export const INFO_WIDGETS: readonly InfoWidgetId[] = ['wood', 'construction', 'health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
+export type InfoWidgetId = 'buildRotate' | 'wood' | 'construction' | 'health' | 'ammo' | 'killfeed' | 'lives' | 'inventory' | 'minimap';
+export const INFO_WIDGETS: readonly InfoWidgetId[] = ['buildRotate', 'wood', 'construction', 'health', 'ammo', 'killfeed', 'lives', 'inventory', 'minimap'];
 
 /** Indicadores del HUD (todas las pantallas). */
 export function renderInfoWidget(id: InfoWidgetId, game: Game | null, preview = false, onMap?:()=>void) {
   switch (id) {
+    case 'buildRotate': return <BuildRotate game={game} preview={preview}/>;
     case 'wood':
       return <ConstructionWidget game={game} counter />;
     case 'construction':
@@ -359,4 +360,12 @@ function LiveLives({ game }: { game: Game }) {
   const [v, setV] = useState(game.currentVitals);
   useEffect(() => game.events.on('vitals', setV), [game]);
   return <Lives lives={v.lives ?? 3} />;
+}
+
+/** Un control independiente del dedo que mantiene la pieza: compatible con multitáctil. */
+export function BuildRotate({game,preview=false}:{game:Game|null;preview?:boolean}) {
+  const [open,setOpen]=useState(()=>preview||!!game?.buildingUi.open);
+  useEffect(()=>{if(preview||!game)return;const timer=window.setInterval(()=>setOpen(!!game.buildingUi.open),70);return()=>clearInterval(timer);},[game,preview]);
+  if(!open&&!preview)return null;
+  return <button type="button" className="build-rotate" aria-label="Girar construcción 90 grados" onPointerDown={e=>{e.preventDefault();e.stopPropagation();game?.configureBuild(undefined,true);}} onClick={e=>{if(e.detail===0)game?.configureBuild(undefined,true);}}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6"/></svg></button>;
 }

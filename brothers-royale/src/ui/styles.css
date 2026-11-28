@@ -1585,3 +1585,8 @@ kbd {
 .map-zoom { display:flex;align-items:center;gap:10px; color:white; }
 .map-zoom button { min-width:36px;min-height:34px;touch-action:manipulation; }
 .map-zoom output { min-width:38px;text-align:center;font-variant-numeric:tabular-nums; }
+.build-rotate { width:42px;height:42px;border:1px solid #ffe09b99;border-radius:50%;color:white;background:#271e49cc;touch-action:none; }
+.build-rotate svg { width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round; }
+.structure-health { position:absolute;top:0;left:0; width:68px;height:13px;background:#171323dd;border:1px solid #fff8;border-radius:4px;overflow:hidden;pointer-events:none;text-align:center;font:800 10px/11px sans-serif;color:white;text-shadow:0 1px 2px #000; }
+.structure-health__fill { position:absolute;inset:0;background:#bc9860;transform-origin:left; }
+.structure-health span { position:relative; }
