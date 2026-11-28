@@ -42,7 +42,7 @@ import {
 } from './weapons';
 
 /** Con qué se hizo el daño. */
-export type AttackKind = WeaponKind | 'axe' | 'storm' | 'fall';
+export type AttackKind = WeaponKind | 'axe' | 'storm' | 'fall' | 'zombie';
 
 /** Lo que el propio jugador necesita saber de sí mismo (HUD). */
 export interface Vitals {
@@ -170,6 +170,8 @@ interface Fighter {
   actionTimer: number;
   /** Objetivo sin inventario (muñeco de práctica): no ataca. */
   dummy: boolean;
+  /** Fase 12: criatura del servidor (zombi). No cuenta en estadísticas, victorias ni eliminaciones. */
+  npc: boolean;
 }
 
 const eye = (feet: Vec3): Vec3 => ({ x: feet.x, y: feet.y + EYE_HEIGHT, z: feet.z });
@@ -202,12 +204,12 @@ export class CombatState {
     return e;
   }
 
-  addFighter(id: string, dummy = false): void {
+  addFighter(id: string, dummy = false, npc?: { hp: number }): void {
     if (this.fighters.has(id)) return;
     this.fighters.set(id, {
-      id, lives: 3, descending: false, protection: 0, hp: HEALTH.max, dead: false, respawnIn: 0, cooldown: 0, equip: 0, slot: this.match.inventory(id)?.selected ?? 0,
+      id, lives: npc ? 1 : 3, descending: false, protection: 0, hp: npc ? npc.hp : HEALTH.max, dead: false, respawnIn: 0, cooldown: 0, equip: 0, slot: this.match.inventory(id)?.selected ?? 0,
       reload: null, heal: null, bloom: 0, bloomMax: 0, bloomRecovery: 1, reloadHeld: false, fireHeld: false, aiming: false,
-      action: 'none', actionTimer: 0, dummy,
+      action: 'none', actionTimer: 0, dummy: dummy || !!npc, npc: !!npc,
     });
   }
 
@@ -255,6 +257,12 @@ export class CombatState {
       if (f.respawnIn <= 1e-9) this.respawn(f);
     }
   }
+  /** Fase 12: golpe cuerpo a cuerpo de un zombi (la autoridad ya comprobó alcance y cadencia). */
+  zombieHit(victim: string, by: string, amount: number, at: Vec3, tick: number): void {
+    if (this.fighters.get(by)?.npc && !this.fighters.get(victim)?.npc) this.applyDamage(victim, by, 'zombie', amount, at, 0, tick);
+  }
+  /** ¿Es una criatura (zombi)? */
+  isNpc(id: string): boolean { return this.fighters.get(id)?.npc ?? false; }
   /** Fase 12: embarca en el avión / cae: sin daño ni ataques hasta aterrizar. */
   beginDescent(id: string): void {
     const f = this.fighters.get(id);
@@ -531,12 +539,17 @@ export class CombatState {
     const before=v.hp;
     v.hp = roundDamage(Math.max(0, v.hp - amount));
     const actual=roundDamage(before-v.hp);
-    this.log.of(victim).effectiveDamageTaken=(this.log.of(victim).effectiveDamageTaken??0)+actual;
-    if(this.fighters.has(by))this.log.of(by).effectiveDamageDealt=(this.log.of(by).effectiveDamageDealt??0)+actual;
+    // Fase 12: los zombis no entran en las estadísticas (ni como víctima ni como atacante).
+    const attacker = this.fighters.get(by);
+    const logged = !v.npc && !attacker?.npc;
+    if (logged) {
+      this.log.of(victim).effectiveDamageTaken=(this.log.of(victim).effectiveDamageTaken??0)+actual;
+      if(attacker)this.log.of(by).effectiveDamageDealt=(this.log.of(by).effectiveDamageDealt??0)+actual;
+      if (attacker) this.log.of(by).damageDealt += amount;
+      this.log.of(victim).damageTaken += amount;
+      this.log.push({ tick, kind: 'damage', attacker: by, victim, weapon, amount, distance: Math.round(distance * 10) / 10 });
+    }
     if (v.heal) v.heal = null; // recibir daño cancela la curación
-    if (this.fighters.has(by)) this.log.of(by).damageDealt += amount;
-    this.log.of(victim).damageTaken += amount;
-    this.log.push({ tick, kind: 'damage', attacker: by, victim, weapon, amount, distance: Math.round(distance * 10) / 10 });
     this.events.push({ type: 'damage', victim, by, weapon, amount, hp: v.hp, at: round2(at) });
     if (v.hp <= 0) {
       v.dead = true;
@@ -546,12 +559,14 @@ export class CombatState {
       v.reload = null;
       v.heal = null;
       v.fireHeld = false;
-      if (by !== victim && this.fighters.has(by)) {
-        this.log.of(by).kills++;
-        if (v.lives === 0) this.log.of(by).eliminations++;
+      if (logged) {
+        if (by !== victim && attacker) {
+          this.log.of(by).kills++;
+          if (v.lives === 0) this.log.of(by).eliminations++;
+        }
+        this.log.of(victim).deaths++;
+        this.log.push({ tick, kind: 'death', attacker: by, victim, weapon, amount, distance: Math.round(distance * 10) / 10 });
       }
-      this.log.of(victim).deaths++;
-      this.log.push({ tick, kind: 'death', attacker: by, victim, weapon, amount, distance: Math.round(distance * 10) / 10 });
       const death = { type: 'death' as const, victim, killer: by, weapon, tick, at: round2(at) };
       this.events.push(death);
       this.onDeath?.(death);

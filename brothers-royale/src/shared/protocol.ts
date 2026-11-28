@@ -170,6 +170,8 @@ export interface SnapshotMessage {
   tick: number;
   /** Jugadores empaquetados: PackedPlayer[] aplanado. */
   p: number[];
+  /** Fase 12: zombis empaquetados ([num, x, y, z (cm), yaw (mrad), anim, hp] cada uno). */
+  z?: number[];
 }
 
 /** Estado privado del propietario al final de su última entrada procesada. */

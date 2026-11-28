@@ -206,6 +206,14 @@ export class MatchState {
     if (r.dropped) this.spawn(r.dropped, feet, 0);
   }
 
+  /**
+   * Fase 12: botín de un zombi en el suelo. Única excepción, junto con abrir un cofre, a la
+   * conservación de `totals()` (se crea un objeto nuevo).
+   */
+  dropLoot(item: ItemStack, at: Vec3): void {
+    if (item.qty > 0 && ITEMS[item.kind]) this.addPickup(item, at);
+  }
+
   private spawn(item: ItemStack, at: Vec3, i: number): void {
     const a = i * 2.4;
     this.addPickup(item, { x: at.x + Math.cos(a) * 0.6, y: at.y, z: at.z + Math.sin(a) * 0.6 });

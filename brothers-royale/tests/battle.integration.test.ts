@@ -73,6 +73,7 @@ it('simula quince minutos con ocho clientes reales, cierre total y reinicio',asy
   try {
     for(let i=0;i<8;i++)clients.push(await connect('FAST8',i));
     const room=matchMaker.getLocalRoomById(clients[0]!.sdk.roomId) as BrothersRoom,w=room.world;
+    w.zombies.enabled=false; // mide el límite de 15 min, no la supervivencia frente a zombis
     w.round.start();await wait(80);
     const phases=new Set<number>();let ticks=0,previousPhase=-1;const start=performance.now();
     while(w.round.phase==='running' && ticks<ROUND_SECONDS*30+1){

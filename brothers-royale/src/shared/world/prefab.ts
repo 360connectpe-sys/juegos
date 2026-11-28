@@ -58,6 +58,17 @@ export interface PrefabDef {
   interior?: InteriorZone;
   /** Radio que debe quedar libre de árboles alrededor. */
   clearRadius: number;
+  /** Fase 12: puntos de navegación (locales) para las criaturas: puerta y escaleras/rampas. */
+  nav?: PrefabNav;
+}
+
+/** Navegación simplificada: fuera/dentro de la puerta y tramos de escalera (abajo → arriba). */
+export interface PrefabNav {
+  /** Punto delante de la puerta (fuera) y justo después (dentro); y = suelo del prefab. */
+  door: { x: number; z: number };
+  inside: { x: number; z: number };
+  /** Escaleras o rampas: recorrido del pie a la llegada (y local de cada punto). */
+  climbs: Vec3[][];
 }
 
 export interface PlacedPrefab {

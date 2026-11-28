@@ -22,7 +22,7 @@ export const fullVitals = (): Vitals => ({ hp: HEALTH.max, dead: false, respawnI
 const num = (v: unknown, min = -Infinity, max = Infinity): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 const isVec = (v: unknown): v is Vec3 => typeof v === 'object' && v !== null && num((v as Vec3).x) && num((v as Vec3).y) && num((v as Vec3).z);
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 64;
-const isAttack = (v: unknown) => v === 'axe' || v === 'storm' || v === 'fall' || (isItemKind(v) && isWeapon(v));
+const isAttack = (v: unknown) => v === 'axe' || v === 'storm' || v === 'fall' || v === 'zombie' || (isItemKind(v) && isWeapon(v));
 
 /** Valida la salud y acciones propias recibidas (nunca confiar a ciegas). */
 export function isValidVitals(v: unknown): v is Vitals {

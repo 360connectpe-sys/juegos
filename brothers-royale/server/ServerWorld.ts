@@ -7,6 +7,7 @@ import { DEFAULT_MODIFIERS } from '@shared/movement';
  * colisionadores, CharacterBody y validación de entradas).
  */
 import { BuildingWorld } from '@/physics/BuildingWorld';
+import { ZombieDirector } from '@/physics/ZombieDirector';
 import { CharacterBody } from '@/physics/CharacterBody';
 import { loadRapier, PhysicsWorld } from '@/physics/PhysicsWorld';
 import { SIMULATION, WORLD } from '@shared/constants';
@@ -66,6 +67,8 @@ export class ServerWorld {
   readonly combat: CombatState;
   readonly building: BuildingWorld;
   readonly round: BattleRound;
+  /** Fase 12: zombis (autoridad del servidor). */
+  readonly zombies: ZombieDirector;
   resetRevision = 0;
   /** Poses recientes de todos para la compensación de latencia. */
   readonly history = new PoseHistory();
@@ -99,11 +102,20 @@ export class ServerWorld {
     this.building.state.onHarvest=(id,n)=>this.round.harvest(id,n);
     this.building.state.onBuild=id=>this.round.built(id);
     this.combat.onRespawn = id => this.round.respawn(id);
+    this.zombies = new ZombieDirector({
+      physics, layout, combat: this.combat, round: this.round,
+      players: () => [...this.players.values()].filter(p => p.connected).map(p => ({ id: p.id, feet: p.body.state.position })),
+      drop: (item, at) => this.match.dropLoot(item, at),
+      giveWood: (id, n) => { this.building.state.giveWood(id, n); },
+    }, matchSeed);
+    this.zombies.onRemoved = id => this.history.forget(id);
   }
 
   /** Objetivos rebobinados al tick que veía el atacante (limitado a LAG_COMPENSATION). */
   targetsAt(viewTick: number | undefined): Iterable<TargetPose> {
-    return this.history.at(this.tick, viewTick, [...this.players.keys()].filter(id => !this.combat.isDead(id)));
+    const ids = [...this.players.keys()].filter(id => !this.combat.isDead(id));
+    for (const z of this.zombies.poses()) ids.push(z.id);
+    return this.history.at(this.tick, viewTick, ids);
   }
 
   /** Eventos de combate pendientes. */
@@ -274,17 +286,19 @@ export class ServerWorld {
       }
       if (p.body.state.position.y < -20 && !this.combat.isDead(p.id)) this.combat.environmentalDamage(p.id, 100, p.body.state.position, this.tick, 'fall');
     }
+    this.zombies.step(dt, this.tick);
     this.physics.step();
     this.round.after(dt, this.tick);
     this.tick++;
     for (const p of this.players.values()) this.history.record(this.tick, p.id, p.body.state.position);
+    for (const z of this.zombies.poses()) this.history.record(this.tick, z.id, z.feet);
   }
 
   canAct(id: string): boolean { return this.round.canAct(id); }
   /** Construir: solo en tierra (no en el avión, cayendo ni con paracaídas). */
   canBuild(id: string): boolean { return this.round.canFight(id); }
   private resetRound(ids: readonly string[]): void {
-    this.match.reset(ids); this.building.reset(); this.combat.reset(ids);
+    this.zombies.reset(); this.match.reset(ids); this.building.reset(); this.combat.reset(ids);
     for (const p of this.players.values()) {
       if (!ids.includes(p.id)) { this.match.addPlayer(p.id); this.combat.addFighter(p.id); this.combat.exclude(p.id); }
       this.building.state.addPlayer(p.id);
@@ -321,7 +335,10 @@ export class ServerWorld {
   snapshot(): SnapshotMessage {
     const p: number[] = [];
     for (const pl of this.players.values()) packPlayer(p, pl.netId, pl.body.state, this.combat.gear(pl.id));
-    return { tick: this.tick, p };
+    if (!this.zombies.zombies.size) return { tick: this.tick, p };
+    const z: number[] = [];
+    this.zombies.pack(z);
+    return { tick: this.tick, p, z };
   }
 
   /** Estado privado para el propietario si cambió desde el último envío. */
@@ -341,6 +358,7 @@ export class ServerWorld {
   }
 
   dispose(): void {
+    this.zombies.reset();
     for (const p of this.players.values()) p.body.dispose();
     this.players.clear();
     this.building.dispose();

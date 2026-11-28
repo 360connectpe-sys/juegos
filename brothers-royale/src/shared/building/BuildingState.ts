@@ -200,6 +200,13 @@ export class BuildingState {
     this.onBuild?.(id);
     this.touch(); return true;
   }
+  /** Fase 12: madera extra (botín de un zombi), con el mismo tope. Devuelve lo sumado. */
+  giveWood(id: string, amount: number): number {
+    if (!this.wood.has(id) || !(amount > 0)) return 0;
+    const before = this.wood.get(id)!, after = Math.min(BUILD.woodCap, before + Math.floor(amount));
+    if (after > before) { this.wood.set(id, after); this.touch(); }
+    return after - before;
+  }
   hitTree(id: string, index: number, damage: number, axe: boolean): boolean {
     if (!this.wood.has(id) || !(damage > 0) || !(this.trees[index]! > 0)) return false;
     const actual = Math.min(this.trees[index]!, damage);
