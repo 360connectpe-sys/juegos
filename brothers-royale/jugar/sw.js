@@ -1,5 +1,5 @@
-const RELEASE = {"build":"0344f5f2fe54bfc6","protocol":9};
-const PRECACHE = ["./assets/OnlineSession-DqXr018H.js","./assets/index-0IFM1sZH.js","./assets/index-B_nbdcG4.css","./assets/net-l_Ctl5Lz.js","./assets/rapier-BVOi10Q1.js","./assets/react-AMYRZFjK.js","./assets/rolldown-runtime-Dl_DZoUm.js","./assets/three-BDkWa-TC.js","./config.js","./favicon.svg","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png","./icons/mark.svg","./index.html","./manifest.webmanifest","./version.json"];
+const RELEASE = {"build":"f5e108a7c607f68c","protocol":10};
+const PRECACHE = ["./assets/OnlineSession-C_2j5iHO.js","./assets/index-C_0qhxBs.css","./assets/index-hs6qWvGW.js","./assets/net-l_Ctl5Lz.js","./assets/rapier-BVOi10Q1.js","./assets/react-AMYRZFjK.js","./assets/rolldown-runtime-Dl_DZoUm.js","./assets/three-BDkWa-TC.js","./config.js","./favicon.svg","./icons/apple-touch-icon.png","./icons/icon-192.png","./icons/icon-512.png","./icons/mark.svg","./index.html","./manifest.webmanifest","./version.json"];
 /* RELEASE y PRECACHE los genera el build. Ámbito y cachés exclusivos de esta instalación. */
 const SCOPE = self.registration.scope;
 const PREFIX = 'brothers-royale-pwa:' + SCOPE + ':';
