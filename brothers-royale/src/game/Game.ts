@@ -40,7 +40,7 @@ import { createStaticPrefabBatch, InteriorBatch, MergedInteriors, PrefabView } f
 import { ChestView, PickupView } from './world/Loot';
 import type { ClientMatchEvent } from '@/net/MatchView';
 import { addItem, type Inventory } from '@shared/inventory';
-import { itemName } from '@shared/items';
+import { itemName, isWeapon } from '@shared/items';
 import { findTarget, type InteractTarget, type NoticeCode } from '@shared/match/MatchState';
 import { createTerrainMesh, createWater } from './world/Terrain';
 import { CombatFx } from './combat/CombatFx';
@@ -52,7 +52,7 @@ import type { ClientCombatEvent } from '@/net/CombatView';
 import { fullVitals } from '@/net/CombatView';
 import type { Vitals } from '@shared/combat/CombatState';
 import { packGear, unpackGear } from '@shared/combat/gear';
-import { applySpread, rayHitbox } from '@shared/combat/hitscan';
+import { applySpread, rayHitbox, raySniperHead } from '@shared/combat/hitscan';
 import { AIM_PITCH_LIMIT, directionFromAim, EYE_HEIGHT, MELEE, rarityOf, WEAPON_STATS } from '@shared/combat/weapons';
 import { createRng } from '@shared/random';
 import { wrapAngle } from '@shared/math';
@@ -470,7 +470,7 @@ export class Game {
     const item = inv?.slots[inv.selected] ?? null;
     const v = this.vitals;
     const action = v.reload > 0 ? 'reload' : v.heal > 0 ? 'heal' : this.lastAiming ? 'aim' : 'none';
-    return packGear({ held: item?.kind ?? null, rarity: rarityOf(item?.rarity), action, dead: v.dead });
+    return packGear({ held: item?.kind ?? null, rarity: rarityOf(item?.rarity), action, dead: v.dead, scope: item?.scope });
   }
 
   /**
@@ -494,10 +494,14 @@ export class Game {
       const origin = { x: o.x, y: o.y, z: o.z };
       const dir = { x: f.x, y: f.y, z: f.z };
       let t = physics.castStatic(origin, dir, 150) ?? 150;
+      const inv = session.match.inventory;
+      const sniper = inv?.slots[inv.selected]?.kind === 'sniper';
       for (const st of session.players()) {
-        if (st.id === session.localPlayerId) continue;
+        if (st.id === session.localPlayerId || unpackGear(st.gear).dead) continue;
         const h = rayHitbox(origin, dir, st.position, t);
+        const head = sniper ? raySniperHead(origin,dir,st.position,t) : null;
         if (h !== null) t = h;
+        if (head !== null) t = Math.min(t,head);
       }
       for (const z of session.zombies?.() ?? []) {
         if (z.anim === 5) continue;
@@ -575,7 +579,7 @@ export class Game {
       this.kickBack = MELEE.kick;
       return;
     }
-    if (weapon === 'medkit') return;
+    if (!isWeapon(weapon)) return;
     const kind = weapon;
     const inv = session.match.inventory;
     const s = WEAPON_STATS[kind];
@@ -624,7 +628,7 @@ export class Game {
       case 'vitals': {
         const started = e.vitals.reload > 0 && this.vitals.reload <= 0;
         this.vitals = e.vitals;
-        if (started) this.sound.play('reload');
+        if (started) { const inv=session.match.inventory; this.sound.play(inv?.slots[inv.selected]?.kind==='sniper'?'sniperReload':'reload'); }
         this.events.emit('vitals', e.vitals);
         break;
       }
@@ -707,7 +711,7 @@ export class Game {
       const m = this.heldMatrix.get(owner) ?? new Matrix4();
       m.multiplyMatrices(av.handBone.matrixWorld, GRIP_IN_ARM);
       this.heldMatrix.set(owner, m);
-      w.place(owner, heldKey(g.held as HeldKind, g.rarity), m);
+      w.place(owner, heldKey(g.held as HeldKind, g.rarity, g.scope), m);
     };
     if (session && this.avatar) {
       if (first && cams && !this.vitals.dead) {
@@ -724,7 +728,7 @@ export class Game {
           const m = this.heldMatrix.get(session.localPlayerId) ?? new Matrix4();
           m.copy(this.viewmodel);
           this.heldMatrix.set(session.localPlayerId, m);
-          w.place(session.localPlayerId, heldKey(g.held as HeldKind, g.rarity), m);
+          w.place(session.localPlayerId, heldKey(g.held as HeldKind, g.rarity, g.scope), m);
         }
       } else {
         place(session.localPlayerId, this.avatar);
@@ -780,6 +784,11 @@ export class Game {
       }
     }
     this.stormView?.update(battle?.phase === 'running' ? battle.zone.current : null, dt, !!battle && battle.phase === 'running' && !contains(battle.zone.current, p));
+    const opticalItem = this.session?.match.inventory?.slots[this.session.match.inventory.selected];
+    const optic: 1|2|4 = opticalItem?.kind === 'sniper' ? 4 : opticalItem?.scope === 'x2' ? 2 : 1;
+    const ads = this.lastAiming && !this.inputSuspended && !this.vitals.dead && !this.vitals.descending && this.vitals.reload <= 0 && !!opticalItem && isWeapon(opticalItem.kind);
+    if(cameras) { cameras.aiming=ads; cameras.magnification=optic; }
+    this.overlay?.setScope(ads && optic > 1 ? optic as 2|4 : 0);
     const zoom = this.input.consumeZoom();
     if (cameras) {
       if (zoom !== 0 && !this.inputSuspended) cameras.addZoom(zoom);
@@ -833,7 +842,7 @@ export class Game {
     this.pickupView.animate(dt);
     this.placeHeldItems(dt);
     this.fx.update(dt);
-    if (cameras) cameras.aiming = this.lastAiming && !this.vitals.dead;
+
     if (this.overlay) {
       const rect = this.engine.canvas.getBoundingClientRect();
       let gap = 0;
@@ -928,9 +937,18 @@ export class Game {
     return undefined;
   }
 
+  private mapMarkers: {x:number;z:number}[] = [];
+  addMapMarker(x:number,z:number):void {
+    const half=(this.layout?.terrain.size??0)/2;
+    if(!half||!Number.isFinite(x)||!Number.isFinite(z))return;
+    this.mapMarkers.push({x:Math.max(-half,Math.min(half,x)),z:Math.max(-half,Math.min(half,z))});
+    if(this.mapMarkers.length>3)this.mapMarkers.shift();
+  }
+  clearMapMarkers():void{this.mapMarkers.length=0;}
   /** Posiciones para el minimapa (se consulta pocas veces por segundo). */
   minimapState(): {
     size: number;
+    markers: readonly {x:number;z:number}[];
     local: { x: number; z: number; yaw: number } | null;
     others: { x: number; z: number }[];
     chests: { x: number; z: number; opened: boolean }[];
@@ -942,6 +960,7 @@ export class Game {
     const m = this.session?.match;
     return {
       size: this.layout?.terrain.size ?? 0,
+      markers: this.mapMarkers,
       zone: this.session?.battle?.phase === 'running' ? this.session.battle.zone : undefined,
       local: local ? { x: local.position.x, z: local.position.z, yaw: local.yaw } : null,
       others: [...this.remotes.values()].map((r) => ({ x: r.position.x, z: r.position.z })),
@@ -993,6 +1012,8 @@ export class Game {
   }
 
   /** Elegir hueco desde el HUD (toque/clic en el inventario). */
+  equipScope(equipped: boolean): void { if(!this.inputSuspended) this.session?.equipScope(equipped); }
+
   selectSlot(slot: number): void {
     if (!this.inputSuspended) this.session?.selectSlot(slot);
   }

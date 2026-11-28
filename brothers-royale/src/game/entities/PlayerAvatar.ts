@@ -293,7 +293,7 @@ export class PlayerAvatar {
     root.rotation.x = -this.deadT * 1.45;
     root.position.y += this.deadT * 0.25;
     if (this.deadT > 0.5) return;
-    const gun = g.held === 'pistol' || g.held === 'smg' || g.held === 'rifle' || g.held === 'shotgun';
+    const gun = g.held === 'pistol' || g.held === 'smg' || g.held === 'rifle' || g.held === 'shotgun' || g.held === 'sniper';
     const holding = gun || g.held === 'axe' || g.held === 'medkit';
     this.hold = damp(this.hold, holding ? 1 : 0, 14, dt);
     this.kickT = Math.max(0, this.kickT - dt);
@@ -303,8 +303,8 @@ export class PlayerAvatar {
     const mix = (cur: number, target: number) => cur + (target - cur) * w;
     if (gun) {
       const reload = g.action === 'reload';
-      const kick = (this.kickT / 0.12) * (g.held === 'shotgun' ? 0.45 : 0.22);
-      const t = this.time * 9;
+      const kick = (this.kickT / 0.12) * (g.held === 'sniper' ? 0.6 : g.held === 'shotgun' ? 0.45 : 0.22);
+      const t = this.time * (g.held === 'sniper' ? 5 : 9);
       armR.rotation.x = mix(armR.rotation.x, reload ? -0.7 + Math.sin(t) * 0.12 : -Math.PI / 2 - kick);
       armR.rotation.z = mix(armR.rotation.z, 0.08);
       armL.rotation.x = mix(armL.rotation.x, reload ? -1.0 - Math.sin(t) * 0.2 : -Math.PI / 2 * 0.92 - kick * 0.6);

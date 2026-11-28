@@ -176,6 +176,12 @@ export class OfflineSession implements GameSession {
   get battle() { return (this.battleCache ??= this.round.snapshot()); }
   startRound(): boolean { this.invalidate(); const r = this.round.start(); this.invalidate(); return r; }
 
+  equipScope(equipped: boolean): void {
+    if(this.round.canFight(this.localPlayerId) && this.state.equipScope(this.localPlayerId,equipped,this.local.state.position)) {
+      this.fight.equipmentChanged(this.localPlayerId); this.invalidate(); this.flush();
+    }
+  }
+
   selectSlot(slot: number): void {
     this.invalidate();
     this.state.selectSlot(this.localPlayerId, slot);

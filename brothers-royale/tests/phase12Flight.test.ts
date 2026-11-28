@@ -50,10 +50,10 @@ describe('fase 12: rutas del avión (puras)', () => {
 });
 
 describe('fase 12: transporte autoritativo con 8 jugadores', () => {
-  it('todos empiezan en el avión: sin daño, sin disparar, construir ni abrir cofres; protocolo v9', async () => {
+  it('todos empiezan en el avión: sin daño, sin disparar, construir ni abrir cofres; protocolo v10', async () => {
     const { w, ids, tick } = await world(8);
     try {
-      expect(PROTOCOL_VERSION).toBe(9);
+      expect(PROTOCOL_VERSION).toBe(10);
       w.round.start();
       tick();
       const snap = w.round.snapshot();
@@ -187,7 +187,7 @@ describe('fase 12: transporte autoritativo con 8 jugadores', () => {
       for (let t = 0; t < 151; t++) tick();
       const two = w.round.snapshot().planes;
       expect(two).toHaveLength(2); expect(two[0]).toEqual(snap.planes[0]);
-      // Ninguno pulsa: salto automático y aterrizaje DENTRO de la zona, sin daño durante el descenso.
+      // Ninguno pulsa: salto automático y aterrizaje DENTRO de la zona, sin daño mientras siguen dentro de su avión.
       w.combat.environmentalDamage('p1', 30, w.players.get('p1')!.body.state.position, w.tick);
       expect(w.combat.hp('p1')).toBe(100);
       for (let t = 0; t < 30 * 30 && (w.round.airMode('p1') !== 0 || w.round.airMode('p2') !== 0); t++) tick();

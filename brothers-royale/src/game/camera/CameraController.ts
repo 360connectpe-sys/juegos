@@ -35,6 +35,7 @@ export class CameraController {
   lastHit: number | null = null;
   /** Apuntando (1ª/3ª): la cámara se acerca un poco (solo vista). */
   aiming = false;
+  magnification: 1 | 2 | 4 = 1;
   private zoomK = 1;
   private readonly forwardVec = new Vector3();
   private readonly focusPoint = new Vector3();
@@ -106,13 +107,20 @@ export class CameraController {
 
   /** Coloca la cámara activa. `feet` = posición interpolada del personaje. */
   update(feet: Vector3, vx: number, vz: number, dt: number): void {
+    const optical = this.aiming ? this.magnification : 1;
     if (this.mode === 'isometric') {
+      const cam = this.iso.camera;
+      const target = optical;
+      cam.zoom += (target-cam.zoom)*Math.min(1,dt>0?dt*14:1);
+      cam.updateProjectionMatrix();
       this.iso.follow(feet, vx, vz, dt);
       return;
     }
+    if (this.iso.camera.zoom !== 1) { this.iso.camera.zoom = 1; this.iso.camera.updateProjectionMatrix(); }
     const cam = this.perspective;
     const base = this.mode === 'first' ? CAMERA_RIG.firstFov : CAMERA_RIG.fov;
-    this.zoomK = dt > 0 ? this.zoomK + ((this.aiming ? CAMERA_RIG.aimZoom : 1) - this.zoomK) * Math.min(1, dt * 14) : this.aiming ? CAMERA_RIG.aimZoom : 1;
+    const targetK = optical > 1 ? (2*Math.atan(Math.tan(base*Math.PI/360)/optical)*180/Math.PI)/base : this.aiming ? CAMERA_RIG.aimZoom : 1;
+    this.zoomK = dt > 0 ? this.zoomK + (targetK - this.zoomK) * Math.min(1, dt * 14) : targetK;
     const fov = base * this.zoomK;
     if (Math.abs(cam.fov - fov) > 0.01) {
       cam.fov = fov;
@@ -131,7 +139,7 @@ export class CameraController {
     // 3ª persona: sobre el hombro derecho, detrás y elevada según la inclinación.
     const f = forwardFromYaw(this.look.yaw);
     // Al apuntar, la cámara se separa más del hombro para no tapar la mira con el personaje.
-    const offset = CAMERA_RIG.shoulderOffset * (1 + ((1 - this.zoomK) / (1 - CAMERA_RIG.aimZoom)) * 0.7);
+    const offset = CAMERA_RIG.shoulderOffset * (1 + Math.min(1, (1 - this.zoomK) / (1 - CAMERA_RIG.aimZoom)) * 0.7);
     const shoulder = { x: head.x - f.y * offset, y: head.y, z: head.z + f.x * offset };
     const d = thirdPersonDirection(this.look.yaw, this.look.pitch);
     const target = this.tmp.set(shoulder.x + d.x * this.desiredDistance, shoulder.y + d.y * this.desiredDistance, shoulder.z + d.z * this.desiredDistance);

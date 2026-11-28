@@ -4,6 +4,7 @@
  * reales, peldaños) lo resuelve `physics/ZombieDirector` con el mismo CharacterBody de
  * los jugadores, así nunca atraviesa sólidos.
  */
+import type { ItemStack } from '../items';
 import { rotateXZ } from '../math';
 import type { Vec3 } from '../types';
 import { insideState, type PlacedPrefab } from '../world/prefab';
@@ -11,9 +12,9 @@ import { insideState, type PlacedPrefab } from '../world/prefab';
 export const ZOMBIE = {
   hp: 40,
   damage: 5,
-  /** Una aparición por sala cada 30 s (mientras haya menos de `maxActive`). */
-  spawnEvery: 30,
-  attackInterval: 0.8,
+  /** Una aparición por sala cada 50 s (mientras haya menos de `maxActive`). */
+  spawnEvery: 50,
+  attackInterval: 1.3,
   /** Velocidad media: 0,7 × andar del jugador (3,5 m/s; el jugador anda a 5 y corre a 8). */
   speedMultiplier: 0.7,
   maxActive: 8,
@@ -25,8 +26,8 @@ export const ZOMBIE = {
   retargetEvery: 1,
   /** La IA piensa cada N ticks (escalonado por zombi); el cuerpo se mueve cada tick. */
   thinkEvery: 6,
-  /** Probabilidad (configurable) de soltar munición o madera al morir. */
-  dropChance: 0.3,
+  /** Botín garantizado de munición o curación (nunca madera ni armas). */
+  dropChance: 1,
   /** Cadáver visible antes de desaparecer (animación de muerte). */
   corpseSeconds: 2.5,
   /** Aturdimiento al recibir un golpe (animación). */
@@ -139,4 +140,10 @@ export function nextWaypoint(buildings: readonly PlacedPrefab[], from: Vec3, tar
     return flat(from, door) > 1.2 ? door : inside;
   }
   return target;
+}
+
+/** Exactamente una recompensa por muerte. No acepta objetos elegidos por el cliente. */
+export function zombieLoot(rng: () => number): ItemStack {
+  return rng()<0.5 ? {kind:'medkit',qty:1}
+    : {kind:rng()<0.5?'ammo_light':'ammo_medium',qty:15+Math.floor(rng()*16)};
 }

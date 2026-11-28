@@ -41,7 +41,7 @@ export class LocalWeapon {
     this.cooldown -= dt;
     this.equip = Math.max(0, this.equip - dt);
     this.bloom = Math.max(0, this.bloom - this.bloomRecovery * dt);
-    if (!inv || vitals.dead) return null;
+    if (!inv || vitals.dead || vitals.descending) return null;
     if (inv.selected !== this.slot) {
       if (this.slot !== -1) this.equip = EQUIP_SECONDS;
       this.slot = inv.selected;

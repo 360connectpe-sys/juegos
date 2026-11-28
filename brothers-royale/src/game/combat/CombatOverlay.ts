@@ -19,6 +19,8 @@ const MARKER_LIFE = 0.85;
 export class CombatOverlay {
   static readonly MAX_MARKERS = 20;
   readonly root: HTMLDivElement;
+  private readonly scope: HTMLDivElement;
+  private scopeZoom = 0;
   private readonly crosshair: HTMLDivElement;
   private readonly hitmarker: HTMLDivElement;
   private readonly hurt: HTMLDivElement;
@@ -54,6 +56,11 @@ export class CombatOverlay {
     this.barFill = doc.createElement('div');
     this.barFill.className = 'zbar__fill';
     this.bar.append(this.barFill);
+    this.scope = doc.createElement('div');
+    this.scope.className = 'optic';
+    this.scope.style.display='none';
+    this.scope.innerHTML='<div class="optic__lens"><svg viewBox="0 0 100 100"><path d="M0 50h43m14 0h43M50 0v43m0 14v43M40 60h20M44 70h12M47 80h6"/><circle cx="50" cy="50" r="1"/></svg><span class="optic__label"></span></div>';
+    this.root.append(this.scope);
     this.root.append(this.hurt, this.crosshair, this.hitmarker, this.bar);
     for (let i = 0; i < CombatOverlay.MAX_MARKERS; i++) {
       const el = doc.createElement('span');
@@ -100,8 +107,13 @@ export class CombatOverlay {
   /**
    * @param crosshairPx semiapertura de la mira en px (0 = oculta).
    */
+  setScope(zoom: 0 | 2 | 4): void {
+    if(this.scopeZoom===zoom)return;
+    this.scopeZoom=zoom; this.scope.style.display=zoom?'':'none'; this.scope.dataset.zoom=String(zoom);
+    this.scope.querySelector('.optic__label')!.textContent=zoom ? `x${zoom}` : '';
+  }
   frame(camera: Camera, width: number, height: number, dt: number, crosshairPx: number): void {
-    this.crosshair.style.display = crosshairPx > 0 ? '' : 'none';
+    this.crosshair.style.display = crosshairPx > 0 && !this.scopeZoom ? '' : 'none';
     if (crosshairPx > 0) this.crosshair.style.setProperty('--gap', `${Math.min(80, crosshairPx).toFixed(1)}px`);
     this.hitT = Math.max(0, this.hitT - dt);
     this.hitmarker.style.opacity = this.hitT > 0 ? String(Math.min(1, this.hitT * 8)) : '0';

@@ -10,15 +10,15 @@ export const FLIGHT = {
   /** Altura de vuelo sobre el nivel del mar (m). */
   altitude: 62,
   /** Velocidad del avión inicial y de los de reaparición (m/s). */
-  speed: 15,
-  respawnSpeed: 20,
+  speed: 10.5,
+  respawnSpeed: 14,
   /** Caída libre: velocidad vertical normal / en picado (botón correr) y control horizontal. */
   fallSpeed: 16,
   diveSpeed: 26,
   fallControl: 10,
   /** Paracaídas: descenso normal / rápido y control horizontal. */
-  chuteSpeed: 4.5,
-  chuteFastSpeed: 8,
+  chuteSpeed: 3.6,
+  chuteFastSpeed: 6.4,
   chuteControl: 6.5,
   /** Se abre solo por debajo de esta altura sobre el suelo (o antes, con saltar). */
   chuteHeight: 24,

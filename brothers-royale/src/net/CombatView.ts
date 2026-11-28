@@ -59,5 +59,5 @@ export function isValidDamageEvent(e: unknown): e is DamageEvent {
   if (typeof e !== 'object' || e === null) return false;
   const o = e as DamageEvent;
   return o.type === 'damage' && isId(o.victim) && isId(o.by) && isAttack(o.weapon)
-    && num(o.amount, 0, o.weapon === 'fall' ? HEALTH.max : o.weapon === 'storm' ? 50 : HEALTH.maxShotDamage) && num(o.hp, 0, HEALTH.max) && isVec(o.at);
+    && num(o.amount, 0, o.weapon === 'fall' || o.weapon === 'sniper' ? HEALTH.max : o.weapon === 'storm' ? 50 : HEALTH.maxShotDamage) && num(o.hp, 0, HEALTH.max) && isVec(o.at);
 }

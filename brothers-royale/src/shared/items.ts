@@ -3,11 +3,11 @@
  * Fase 6: las armas disparan (shared/combat), la munición se recarga y los
  * botiquines curan. NO hay escudos.
  */
-export type WeaponKind = 'pistol' | 'smg' | 'shotgun' | 'rifle';
+export type WeaponKind = 'pistol' | 'smg' | 'shotgun' | 'rifle' | 'sniper';
 export type AmmoKind = 'ammo_light' | 'ammo_medium' | 'ammo_shells';
-export type ItemKind = 'axe' | WeaponKind | AmmoKind | 'medkit';
+export type ItemKind = 'axe' | WeaponKind | AmmoKind | 'medkit' | 'scope2';
 export type Rarity = 'common' | 'rare' | 'epic';
-export type ItemCategory = 'tool' | 'weapon' | 'ammo' | 'heal';
+export type ItemCategory = 'tool' | 'weapon' | 'ammo' | 'heal' | 'attachment';
 
 export interface ItemDef {
   label: string;
@@ -24,6 +24,8 @@ export const ITEMS: Readonly<Record<ItemKind, ItemDef>> = {
   smg: { label: 'Subfusil', category: 'weapon', stack: 1, ammo: 'ammo_light' },
   shotgun: { label: 'Escopeta', category: 'weapon', stack: 1, ammo: 'ammo_shells' },
   rifle: { label: 'Rifle', category: 'weapon', stack: 1, ammo: 'ammo_medium' },
+  sniper: { label: 'Francotirador', category: 'weapon', stack: 1, ammo: 'ammo_medium' },
+  scope2: { label: 'Mira x2', category: 'attachment', stack: 1 },
   ammo_light: { label: 'Munición ligera', category: 'ammo', stack: 360 },
   ammo_medium: { label: 'Munición media', category: 'ammo', stack: 180 },
   ammo_shells: { label: 'Cartuchos', category: 'ammo', stack: 30 },
@@ -31,7 +33,7 @@ export const ITEMS: Readonly<Record<ItemKind, ItemDef>> = {
 };
 
 export const ITEM_KINDS = Object.keys(ITEMS) as ItemKind[];
-export const WEAPONS: readonly WeaponKind[] = ['pistol', 'smg', 'shotgun', 'rifle'];
+export const WEAPONS: readonly WeaponKind[] = ['pistol', 'smg', 'shotgun', 'rifle', 'sniper'];
 export const AMMO: readonly AmmoKind[] = ['ammo_light', 'ammo_medium', 'ammo_shells'];
 export const RARITIES: readonly Rarity[] = ['common', 'rare', 'epic'];
 export const RARITY_LABEL: Record<Rarity, string> = { common: 'común', rare: 'rara', epic: 'épica' };
@@ -51,6 +53,7 @@ export interface ItemStack {
    * de un cofre). Se conserva al soltar y recoger: no hay recarga gratis.
    */
   mag?: number;
+  scope?: 'x2';
 }
 
 export function itemName(s: ItemStack): string {
@@ -58,3 +61,7 @@ export function itemName(s: ItemStack): string {
   if (s.rarity) return `${def.label} ${RARITY_LABEL[s.rarity]}`;
   return s.qty > 1 ? `${def.label} ×${s.qty}` : def.label;
 }
+
+/** El francotirador lleva x4 fija; x2 es desmontable en las otras armas. */
+export const supportsScope = (kind: ItemKind): boolean => isWeapon(kind) && kind !== 'sniper';
+export const isValidScope = (s: {kind: ItemKind; scope?: unknown}): boolean => s.scope === undefined || (s.scope === 'x2' && supportsScope(s.kind));

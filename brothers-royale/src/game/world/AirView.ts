@@ -29,8 +29,8 @@ function chuteGeometry() {
   const dome = paint(new CylinderGeometry(1.4, 2.3, 0.7, 8, 1, false), '#ff5a5f');
   const cap = paint(new CylinderGeometry(0.6, 1.4, 0.35, 8, 1, false), '#ffffff');
   transform(cap, 0, 0.52, 0);
-  const cords = [[1.5, 1.5], [-1.5, 1.5], [1.5, -1.5], [-1.5, -1.5]].map(([x, z]) => box(0.05, 2.6, 0.05, '#e9e2d0', x! / 2, -1.5, z! / 2, 0, (z! > 0 ? -1 : 1) * 0.5, (x! > 0 ? 1 : -1) * 0.5));
-  return merge([dome, cap, ...cords]);
+  const cord = box(0.05, 2.6, 0.05, '#e9e2d0', 0, -1.5, 0);
+  return merge([dome, cap, cord]);
 }
 
 /**

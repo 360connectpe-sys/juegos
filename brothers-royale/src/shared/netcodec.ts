@@ -7,7 +7,7 @@ import type { Locomotion, PlayerState } from './types';
  *
  * Por jugador, 10 enteros:
  *   [netId, x, y, z (cm), yaw (mrad), vx, vy, vz (cm/s), flags, lastSeq]
- * flags: bit 0 = grounded; bits 1-3 = índice de locomoción; bits 4-13 =
+ * flags: bit 0 = grounded; bits 1-3 = índice de locomoción; bits 4-14 =
  * estado de combate visible (`shared/combat/gear.ts`: arma, rareza, acción, muerte).
  */
 export const PACKED_STRIDE = 10;
@@ -46,7 +46,7 @@ export function packPlayer(out: number[], netId: number, s: PlayerState, gear = 
     Math.round(s.velocity.x * VEL),
     Math.round(s.velocity.y * VEL),
     Math.round(s.velocity.z * VEL),
-    (s.grounded ? 1 : 0) | (loco << 1) | ((gear & 0x3ff) << 4),
+    (s.grounded ? 1 : 0) | (loco << 1) | ((gear & 0x7ff) << 4),
     s.lastProcessedSeq,
   );
 }
@@ -72,7 +72,7 @@ export function unpackPlayers(p: unknown): PublicPlayer[] {
       grounded: (flags & 1) === 1,
       locomotion: LOCOMOTIONS[(flags >> 1) & 7] ?? 'idle',
       lastSeq: n[9]!,
-      gear: (flags >> 4) & 0x3ff,
+      gear: (flags >> 4) & 0x7ff,
     });
   }
   return out;

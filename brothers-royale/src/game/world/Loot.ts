@@ -112,7 +112,7 @@ export class ChestView {
   }
 }
 
-type Category = 'weapon' | 'ammo' | 'heal';
+type Category = 'weapon' | 'ammo' | 'heal' | 'attachment';
 const RARITY_TINT: Record<string, string> = { common: '#c9ced6', rare: '#4d9de0', epic: '#b35cff' };
 const AMMO_TINT: Partial<Record<ItemKind, string>> = { ammo_light: '#f2c94c', ammo_medium: '#6fcf97', ammo_shells: '#eb5757' };
 
@@ -123,18 +123,18 @@ export function pickupTint(item: ItemStack): Color {
 
 const categoryOf = (item: ItemStack): Category => {
   const c = ITEMS[item.kind].category;
-  return c === 'weapon' ? 'weapon' : c === 'ammo' ? 'ammo' : 'heal';
+  return c === 'weapon' ? 'weapon' : c === 'ammo' ? 'ammo' : c === 'attachment' ? 'attachment' : 'heal';
 };
 
 /**
- * Objetos en el suelo: 3 InstancedMesh (armas, munición, botiquines) con
+ * Objetos en el suelo: 4 InstancedMesh (armas, munición, botiquines, miras) con
  * color por instancia (rareza o tipo de munición). Giran y flotan un poco
  * para verse; se recolocan como mucho unas decenas por frame.
  */
 export class PickupView {
   static readonly CAPACITY = 192;
   readonly meshes: Record<Category, InstancedMesh>;
-  private readonly slots: Record<Category, number[]> = { weapon: [], ammo: [], heal: [] };
+  private readonly slots: Record<Category, number[]> = { weapon: [], ammo: [], heal: [], attachment: [] };
   private readonly where = new Map<number, { cat: Category; index: number; p: Pickup }>();
   private time = 0;
   private readonly m = new Matrix4();
@@ -156,11 +156,12 @@ export class PickupView {
       mesh.count = 0;
       mesh.visible = false; // sin objetos no se dibuja (ni gasta draw call en la pasada de sombras)
       mesh.name = name;
-      mesh.frustumCulled = false; // los objetos están repartidos; son 3 draw calls como mucho
+      mesh.frustumCulled = false; // los objetos están repartidos; son 4 draw calls como mucho
       mesh.setColorAt(0, new Color(1, 1, 1));
       return mesh;
     };
-    this.meshes = { weapon: make(weapon, 'pickups-weapons'), ammo: make(ammo, 'pickups-ammo'), heal: make(heal, 'pickups-heal') };
+    const attachment = merge([box(.28,.19,.4,'#454851',0,.04,0),box(.285,.15,.02,'#67bacb',0,.04,.21),box(.16,.06,.18,'#777b83',0,-.08,0)]);
+    this.meshes = { attachment: make(attachment, 'pickups-scopes'), weapon: make(weapon, 'pickups-weapons'), ammo: make(ammo, 'pickups-ammo'), heal: make(heal, 'pickups-heal') };
   }
 
   get size(): number {

@@ -49,6 +49,7 @@ export interface GameSession {
   onMatchEvent: ((e: ClientMatchEvent) => void) | null;
   /** Pide cambiar el hueco seleccionado del inventario (lo valida la autoridad). */
   selectSlot(slot: number): void;
+  equipScope(equipped: boolean): void;
   /** Salud y acciones propias (lo decide la autoridad). */
   readonly combat: CombatView;
   /** Disparos, daño, bajas y salud (para FX, sonido y HUD). */

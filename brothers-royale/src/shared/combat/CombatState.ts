@@ -9,7 +9,7 @@
  *  - Paredes: cada bala se corta en el primer obstáculo estático (Rapier) y
  *    sale de los OJOS del cuerpo autoritativo (nunca dentro de una pared).
  *  - Daño manipulado: el daño sale de las tablas de weapons.ts; el cliente no
- *    lo envía. Ningún disparo supera HEALTH.maxShotDamage (< 100).
+ *    lo envía. Solo la cabeza del francotirador puede superar HEALTH.maxShotDamage.
  *  - Munición infinita: el cargador vive en el inventario del servidor y la
  *    recarga gasta la bolsa.
  *  - Ataques acelerados: la cadencia se mide con el tiempo de las entradas
@@ -22,7 +22,7 @@ import type { MatchState } from '../match/MatchState';
 import { createRng, type Rng } from '../random';
 import { Buttons, hasButton, type PlayerInput, type Vec3 } from '../types';
 import { packGear, type GearAction } from './gear';
-import { applySpread, hitboxAxisPoint, rayHitbox } from './hitscan';
+import { applySpread, hitboxAxisPoint, rayHitbox, raySniperHead } from './hitscan';
 import {
   DEATH,
   directionFromAim,
@@ -150,6 +150,8 @@ export class CombatLog {
 interface Fighter {
   lives: number;
   descending: boolean;
+  airProtected: boolean;
+  descentDamaged: boolean;
   protection: number;
   id: string;
   hp: number;
@@ -207,7 +209,7 @@ export class CombatState {
   addFighter(id: string, dummy = false, npc?: { hp: number }): void {
     if (this.fighters.has(id)) return;
     this.fighters.set(id, {
-      id, lives: npc ? 1 : 3, descending: false, protection: 0, hp: npc ? npc.hp : HEALTH.max, dead: false, respawnIn: 0, cooldown: 0, equip: 0, slot: this.match.inventory(id)?.selected ?? 0,
+      id, lives: npc ? 1 : 3, descending: false, airProtected: false, descentDamaged: false, protection: 0, hp: npc ? npc.hp : HEALTH.max, dead: false, respawnIn: 0, cooldown: 0, equip: 0, slot: this.match.inventory(id)?.selected ?? 0,
       reload: null, heal: null, bloom: 0, bloomMax: 0, bloomRecovery: 1, reloadHeld: false, fireHeld: false, aiming: false,
       action: 'none', actionTimer: 0, dummy: dummy || !!npc, npc: !!npc,
     });
@@ -263,14 +265,16 @@ export class CombatState {
   }
   /** ¿Es una criatura (zombi)? */
   isNpc(id: string): boolean { return this.fighters.get(id)?.npc ?? false; }
-  /** Fase 12: embarca en el avión / cae: sin daño ni ataques hasta aterrizar. */
-  beginDescent(id: string): void {
+  /** Embarque/descenso: solo el avión protege del daño; sin ataques hasta aterrizar. */
+  beginDescent(id: string, inPlane = false): void {
     const f = this.fighters.get(id);
-    if (f && !f.dead && !f.dummy) { f.descending = true; f.protection = 0; f.reload = f.heal = null; this.pushVitals(f); }
+    if (f && !f.dead && !f.dummy) { f.descending = true; f.airProtected = inPlane; f.descentDamaged = false; f.protection = 0; f.reload = f.heal = null; this.pushVitals(f); }
   }
+  leavePlane(id: string): void { const f=this.fighters.get(id); if(f) f.airProtected=false; }
+  equipmentChanged(id: string): void { const f=this.fighters.get(id); if(f){ f.reload=f.heal=null; f.equip=EQUIP_SECONDS; this.pushVitals(f); } }
   landed(id: string): void {
     const f = this.fighters.get(id);
-    if (f && f.descending && !f.dead) { f.descending = false; f.protection = 3; this.pushVitals(f); }
+    if (f && f.descending && !f.dead) { f.descending = false; f.airProtected = false; f.protection = f.descentDamaged ? 0 : 3; this.pushVitals(f); }
   }
   exclude(id: string): void {
     const f = this.fighters.get(id);
@@ -292,7 +296,7 @@ export class CombatState {
     if (f.reload) action = 'reload';
     else if (f.heal) action = 'heal';
     else if (action === 'none' && f.aiming) action = 'aim';
-    return packGear({ held: (item?.kind as ItemKind | undefined) ?? null, rarity: rarityOf(item?.rarity), action, dead: f.dead });
+    return packGear({ held: (item?.kind as ItemKind | undefined) ?? null, rarity: rarityOf(item?.rarity), action, dead: f.dead, scope: item?.scope });
   }
 
   /** Solo pruebas y depuración. */
@@ -460,10 +464,13 @@ export class CombatState {
     for (let i = 0; i < s.pellets; i++) {
       const d = applySpread(dir, spread, this.rng);
       const wall = ctx.castStatic(origin, d, s.range) ?? s.range;
-      let best: { id: string; t: number } | null = null;
+      let best: { id: string; t: number; head: boolean } | null = null;
       for (const t of targets) {
-        const hit = rayHitbox(origin, d, t.feet, wall);
-        if (hit !== null && (!best || hit < best.t)) best = { id: t.id, t: hit };
+        const body = rayHitbox(origin, d, t.feet, wall);
+        const head = kind === 'sniper' ? raySniperHead(origin, d, t.feet, wall) : null;
+        const isHead = head !== null && (body === null || head <= body);
+        const hit = isHead ? head : body;
+        if (hit !== null && (!best || hit < best.t)) best = { id: t.id, t: hit, head: isHead };
       }
       if (!best && wall < s.range) ctx.damageObstacle?.(f.id, origin, d, wall, pelletDamage(kind, rarity, wall), false);
       const end = along(origin, d, best ? best.t : wall);
@@ -471,7 +478,7 @@ export class CombatState {
       hits.push(best !== null);
       if (best) {
         const acc = damage.get(best.id) ?? { amount: 0, at: end, distance: best.t };
-        acc.amount += pelletDamage(kind, rarity, best.t);
+        acc.amount += best.head ? 100 : pelletDamage(kind, rarity, best.t);
         damage.set(best.id, acc);
       }
     }
@@ -489,7 +496,7 @@ export class CombatState {
     this.events.push({ type: 'shot', by: f.id, weapon: kind, rarity, origin: round2(origin), ends, hits });
     for (const [victim, d] of damage) {
       stats.hits++;
-      this.applyDamage(victim, f.id, kind, Math.min(HEALTH.maxShotDamage, roundDamage(d.amount)), d.at, d.distance, ctx.tick);
+      this.applyDamage(victim, f.id, kind, Math.min(kind === 'sniper' ? HEALTH.max : HEALTH.maxShotDamage, roundDamage(d.amount)), d.at, d.distance, ctx.tick);
     }
   }
 
@@ -534,8 +541,8 @@ export class CombatState {
   private applyDamage(victim: string, by: string, weapon: AttackKind, amount: number, at: Vec3, distance: number, tick: number): void {
     const v = this.fighters.get(victim);
     if (!v || v.dead || !this.active || v.protection > 0 || !(amount > 0) || !Number.isFinite(amount)) return;
-    // En el avión, cayendo o con paracaídas no se recibe daño (salvo caer fuera del mapa).
-    if (v.descending && weapon !== 'fall') return;
+    if (v.airProtected || (v.descending && weapon === 'fall')) return;
+    if (v.descending) v.descentDamaged = true;
     const before=v.hp;
     v.hp = roundDamage(Math.max(0, v.hp - amount));
     const actual=roundDamage(before-v.hp);
@@ -578,6 +585,7 @@ export class CombatState {
   private respawn(f: Fighter): void {
     f.dead = false;
     f.descending = true;
+    f.airProtected = false; f.descentDamaged = false;
     f.protection = 0;
     f.hp = HEALTH.max;
     f.respawnIn = 0;

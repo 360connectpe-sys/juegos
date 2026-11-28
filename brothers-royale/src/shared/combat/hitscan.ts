@@ -91,3 +91,13 @@ export function hitboxAxisPoint(feet: Vec3, p: Vec3): Vec3 {
   const y = Math.min(feet.y + HITBOX.top, Math.max(feet.y + HITBOX.bottom, p.y));
   return { x: feet.x, y, z: feet.z };
 }
+
+/** Solo francotirador: cabeza de radio 25 cm, centro a 1,75 m de los pies. */
+export function raySniperHead(o: Vec3, d: Vec3, feet: Vec3, maxDist: number): number | null {
+  const x=o.x-feet.x, y=o.y-feet.y-1.75, z=o.z-feet.z;
+  const b=x*d.x+y*d.y+z*d.z, c=x*x+y*y+z*z-0.25*0.25;
+  const disc=b*b-c;
+  if(disc<0)return null;
+  const t=c<=0?0:-b-Math.sqrt(disc);
+  return t>=0&&t<=maxDist?t:null;
+}

@@ -26,7 +26,7 @@ void main() {
   float streak = 0.5 + 0.5 * sin(around * 6.2831 + vY * 0.35 - uTime * 2.2);
   float band = smoothstep(0.82, 1.0, 0.5 + 0.5 * sin(vY * 0.9 - uTime * 3.0));
   float fade = (1.0 - smoothstep(0.55, 1.0, vUv.y)) * smoothstep(0.0, 0.08, vUv.y);
-  vec3 blue = vec3(0.30, 0.45, 1.0);
+  vec3 blue = vec3(0.45, 0.18, 0.80);
   vec3 violet = vec3(0.68, 0.32, 1.0);
   vec3 color = mix(blue, violet, streak) + band * 0.35;
   float alpha = (0.16 + 0.14 * streak + 0.22 * band) * fade * (0.85 + 0.3 * uPulse);

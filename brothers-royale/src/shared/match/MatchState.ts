@@ -5,8 +5,8 @@
  * orden, así que dos jugadores no pueden abrir el mismo cofre ni recoger el
  * mismo objeto: el primero gana y el segundo recibe un aviso.
  */
-import { addItem, createInventory, droppableItems, selectSlot, type Inventory } from '../inventory';
-import { ITEMS, type ItemStack } from '../items';
+import { addItem, clone, createInventory, droppableItems, selectSlot, type Inventory } from '../inventory';
+import { ITEMS, supportsScope, type ItemStack } from '../items';
 import type { Vec3 } from '../types';
 import type { ChestPlacement } from '../world/layout';
 import { rollChestLoot } from './loot';
@@ -182,6 +182,28 @@ export class MatchState {
     });
   }
 
+  /** Transacción atómica: nunca se fabrica ni duplica una mira. */
+  equipScope(by: string, equipped: unknown, feet: Vec3): boolean {
+    const inv = this.inventories.get(by);
+    if (typeof equipped !== 'boolean' || !inv) return false;
+    const item = inv.slots[inv.selected];
+    if (!item || !supportsScope(item.kind) || Boolean(item.scope) === equipped) return false;
+    const out = clone(inv);
+    if (equipped) {
+      const slot = out.slots.findIndex(s => s?.kind === 'scope2');
+      if (slot < 0) return false;
+      out.slots[slot] = null;
+      out.slots[out.selected]!.scope = 'x2';
+    } else {
+      delete out.slots[out.selected]!.scope;
+      const slot = out.slots.findIndex(s => s === null);
+      if (slot < 0) this.spawn({kind:'scope2',qty:1}, feet, 0);
+      else out.slots[slot] = {kind:'scope2',qty:1};
+    }
+    this.setInventory(by, out);
+    return true;
+  }
+
   private take(by: string, pickupId: number, feet: Vec3): void {
     const p = this.pickups.get(pickupId);
     const inv = this.inventories.get(by);
@@ -229,9 +251,9 @@ export class MatchState {
   totals(): Record<string, number> {
     const t: Record<string, number> = {};
     const add = (k: string, n: number) => (t[k] = (t[k] ?? 0) + n);
-    for (const p of this.pickups.values()) add(p.item.kind, p.item.qty);
+    for (const p of this.pickups.values()) { add(p.item.kind, p.item.qty); if(p.item.scope) add('scope2',1); }
     for (const inv of this.inventories.values()) {
-      for (const s of inv.slots) if (s && ITEMS[s.kind].category !== 'tool') add(s.kind, s.qty);
+      for (const s of inv.slots) if (s && ITEMS[s.kind].category !== 'tool') { add(s.kind, s.qty); if(s.scope) add('scope2',1); }
       for (const [k, n] of Object.entries(inv.ammo)) if (n) add(k, n);
     }
     return t;

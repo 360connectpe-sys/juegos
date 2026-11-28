@@ -42,20 +42,20 @@ describe('fase 12: decisiones de los zombis (puras)', () => {
     expect(chooseTarget(from, [{ ...c[0]!, feet: { x: 20, y: 0, z: 0 } }, c[1]!], 'a')).toBe('b');
     expect(chooseTarget(from, [c[2]!], null)).toBeNull();
     expect(chooseTarget(from, [{ id: 'far', feet: { x: 80, y: 0, z: 0 }, targetable: true }], null)).toBeNull();
-    expect(ZOMBIE).toMatchObject({ hp: 40, damage: 5, spawnEvery: 30, attackInterval: 0.8, maxActive: 8 });
+    expect(ZOMBIE).toMatchObject({ hp: 40, damage: 5, spawnEvery: 50, attackInterval: 1.3, maxActive: 8 });
   });
 });
 
 describe('fase 12: zombis autoritativos', () => {
-  it('aparece uno cada 30 s, nunca más de 8, en la zona, lejos de los jugadores y fuera de los edificios', async () => {
+  it('aparece uno cada 50 s, nunca más de 8, en la zona, lejos de los jugadores y fuera de los edificios', async () => {
     const { w, ids, tick } = await setup(8);
     try {
       w.round.start();
       const counts: number[] = [];
-      for (let s = 1; s <= 300; s++) {
+      for (let s = 1; s <= ZOMBIE.spawnEvery * 10; s++) {
         for (let t = 0; t < 30; t++) tick();
         for (const id of ids) w.combat.setHp(id, 100); // la prueba mide apariciones, no supervivencia
-        if (s % 30 === 0) counts.push(w.zombies.alive);
+        if (s % ZOMBIE.spawnEvery === 0) counts.push(w.zombies.alive);
         for (const z of w.zombies.zombies.values()) {
           if (z.deadT >= 0) continue;
           expect(contains(w.round.zone.current, z.body.state.position, -1)).toBe(true);
@@ -80,7 +80,7 @@ describe('fase 12: zombis autoritativos', () => {
     } finally { w.dispose(); }
   });
 
-  it('persigue, golpea cuerpo a cuerpo 5 HP cada 0,8 s y no persigue a quien está en el avión', async () => {
+  it('persigue, golpea cuerpo a cuerpo 5 HP cada 1,3 s y no persigue a quien está en el avión', async () => {
     const { w, tick, place } = await setup(2);
     try {
       w.round.start();
@@ -116,7 +116,7 @@ describe('fase 12: zombis autoritativos', () => {
     } finally { w.dispose(); }
   });
 
-  it('muere con armas (40 HP): sin contar para estadísticas ni ganador; puede soltar munición o madera', async () => {
+  it('muere con armas (40 HP): sin contar para estadísticas ni ganador; suelta solo munición o curación', async () => {
     const { w, tick, place } = await setup(2);
     try {
       w.round.start();
@@ -138,7 +138,9 @@ describe('fase 12: zombis autoritativos', () => {
       expect(killed).toBe(true);
       expect(w.combat.log.of('p0').kills).toBe(0);
       expect(w.combat.log.of('p0').eliminations).toBe(0);
-      expect(w.match.pickups.size > pickupsBefore || (w.building.state.wood.get('p0') ?? 0) > woodBefore).toBe(true);
+      expect(w.match.pickups.size).toBe(pickupsBefore + 1);
+      expect(w.building.state.wood.get('p0') ?? 0).toBe(woodBefore);
+      expect(['ammo_light','ammo_medium','medkit']).toContain([...w.match.pickups.values()].at(-1)!.item.kind);
       // Cadáver visible un momento y después desaparece (cuerpo y combate).
       for (let t = 0; t < 30 * 3; t++) tick();
       expect(w.zombies.zombies.has(zid)).toBe(false);

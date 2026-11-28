@@ -283,6 +283,8 @@ export class OnlineSession implements GameSession {
     this.room.send('build', request); return true;
   }
 
+  equipScope(equipped: boolean): void { if(this.info.status === 'connected') this.room.send('scope', {equipped}); }
+
   selectSlot(slot: number): void {
     if (this.info.status === 'connected' && Number.isInteger(slot)) this.room.send('select', { slot });
   }

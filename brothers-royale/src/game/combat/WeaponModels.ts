@@ -7,8 +7,8 @@ import { box, merge } from '../world/geometry';
  * con color por vértice y una franja del color de la rareza. Eje del arma: +Z
  * adelante, +Y arriba, empuñadura en el origen.
  */
-export type HeldKind = Extract<ItemKind, 'axe' | 'pistol' | 'smg' | 'shotgun' | 'rifle' | 'medkit'>;
-export const HELD_KINDS: readonly HeldKind[] = ['axe', 'pistol', 'smg', 'shotgun', 'rifle', 'medkit'];
+export type HeldKind = Extract<ItemKind, 'axe' | 'pistol' | 'smg' | 'shotgun' | 'rifle' | 'sniper' | 'scope2' | 'medkit'>;
+export const HELD_KINDS: readonly HeldKind[] = ['axe', 'pistol', 'smg', 'shotgun', 'rifle', 'sniper', 'scope2', 'medkit'];
 
 export const RARITY_COLOR: Record<Rarity, string> = { common: '#a7adb4', rare: '#3d8bff', epic: '#b45cff' };
 
@@ -17,11 +17,20 @@ const DARK = '#33383e';
 const WOOD = '#8b5a2b';
 
 /** Boca del cañón en coordenadas del arma (para fogonazos y trazadoras). */
-export const MUZZLE: Record<HeldKind, number> = { axe: 0.55, pistol: 0.24, smg: 0.44, shotgun: 0.72, rifle: 0.82, medkit: 0.1 };
+export const MUZZLE: Record<HeldKind, number> = { axe: 0.55, pistol: 0.24, smg: 0.44, shotgun: 0.72, rifle: 0.82, sniper: 1.15, scope2: 0.1, medkit: 0.1 };
 
-export function heldGeometry(kind: HeldKind, rarity: Rarity): BufferGeometry {
+function baseHeldGeometry(kind: HeldKind, rarity: Rarity): BufferGeometry {
   const accent = RARITY_COLOR[rarity];
   switch (kind) {
+    case 'sniper':
+      return merge([
+        box(.08,.11,.55,METAL,0,.05,.22), box(.035,.035,.65,DARK,0,.08,.82),
+        box(.07,.13,.35,WOOD,0,.02,-.2), box(.05,.12,.07,DARK,0,-.05,0),
+        box(.08,.025,.2,accent,0,.12,.3),
+        box(.04,.06,.07,DARK,0,.15,.12), box(.09,.08,.28,DARK,0,.21,.16),
+        box(.092,.07,.015,'#55a3bd',0,.21,.31),
+      ]);
+    case 'scope2': return merge([box(.10,.09,.22,DARK,0,.05,.1),box(.105,.075,.01,'#55a3bd',0,.05,.22)]);
     case 'pistol':
       return merge([
         box(0.07, 0.09, 0.24, METAL, 0, 0.05, 0.1),
@@ -71,13 +80,21 @@ export function heldGeometry(kind: HeldKind, rarity: Rarity): BufferGeometry {
   }
 }
 
-export const heldKey = (kind: HeldKind, rarity: Rarity): string => `${kind}:${kind === 'axe' || kind === 'medkit' ? 'common' : rarity}`;
+export function heldGeometry(kind: HeldKind, rarity: Rarity, scope?: 'x2'): BufferGeometry {
+  const base = baseHeldGeometry(kind,rarity);
+  if(!scope || !['pistol','smg','rifle','shotgun'].includes(kind)) return base;
+  return merge([base,box(.04,.06,.08,DARK,0,.15,.12),box(.08,.07,.19,DARK,0,.20,.12),box(.082,.06,.01,'#55a3bd',0,.20,.22)]);
+}
+export const heldKey = (kind: HeldKind, rarity: Rarity, scope?: 'x2'): string => `${kind}:${kind === 'axe' || kind === 'medkit' || kind === 'scope2' ? 'common' : rarity}${scope ? ':x2' : ''}`;
 
 function allHeldGeometries(): [string, BufferGeometry][] {
   const geos: [string, BufferGeometry][] = [];
   for (const kind of HELD_KINDS)
-    for (const rarity of kind === 'axe' || kind === 'medkit' ? (['common'] as const) : (['common', 'rare', 'epic'] as const))
-      geos.push([heldKey(kind, rarity), heldGeometry(kind, rarity)]);
+    for (const rarity of kind === 'axe' || kind === 'medkit' || kind === 'scope2' ? (['common'] as const) : (['common', 'rare', 'epic'] as const))
+      {
+        geos.push([heldKey(kind, rarity), heldGeometry(kind, rarity)]);
+        if(['pistol','smg','rifle','shotgun'].includes(kind)) geos.push([heldKey(kind,rarity,'x2'),heldGeometry(kind,rarity,'x2')]);
+      }
   return geos;
 }
 
@@ -212,9 +229,9 @@ export class InstancedHeldItems implements HeldItemsRenderer {
   place(_owner: string, key: string, matrix: Matrix4): void {
     let mesh = this.meshes.get(key);
     if (!mesh) {
-      const [kind, rarity] = key.split(':') as [HeldKind, Rarity];
+      const [kind, rarity, scope] = key.split(':') as [HeldKind, Rarity, 'x2' | undefined];
       if (!HELD_KINDS.includes(kind)) return;
-      mesh = new InstancedMesh(heldGeometry(kind, rarity ?? 'common'), this.material, InstancedHeldItems.MAX);
+      mesh = new InstancedMesh(heldGeometry(kind, rarity ?? 'common', scope), this.material, InstancedHeldItems.MAX);
       mesh.name = `held:${key}`;
       mesh.frustumCulled = false; // se reubican cada frame por todo el mapa
       mesh.count = 0;

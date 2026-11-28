@@ -7,7 +7,7 @@
  *  - Munición: en una bolsa aparte por tipo (no ocupa huecos), con tope.
  */
 import { WEAPON_STATS } from './combat/weapons';
-import { AMMO, isAmmo, isItemKind, isWeapon, ITEMS, RARITIES, type AmmoKind, type ItemStack, type WeaponKind } from './items';
+import { AMMO, isValidScope, isAmmo, isItemKind, isWeapon, ITEMS, RARITIES, type AmmoKind, type ItemStack, type WeaponKind } from './items';
 
 export const INVENTORY_SLOTS = 5;
 export const AXE_SLOT = 0;
@@ -149,7 +149,7 @@ export function isValidInventory(v: unknown): v is Inventory {
   return (
     Array.isArray(o.slots) &&
     o.slots.length === INVENTORY_SLOTS &&
-    o.slots.every((s) => s === null || (typeof s === 'object' && isItemKind(s.kind) && !isAmmo(s.kind) && Number.isSafeInteger(s.qty) && s.qty > 0 && s.qty <= ITEMS[s.kind].stack && (s.rarity === undefined || RARITIES.includes(s.rarity)) && isValidMag(s))) &&
+    o.slots.every((s) => s === null || (typeof s === 'object' && isItemKind(s.kind) && !isAmmo(s.kind) && Number.isSafeInteger(s.qty) && s.qty > 0 && s.qty <= ITEMS[s.kind].stack && (s.rarity === undefined || RARITIES.includes(s.rarity)) && isValidMag(s) && isValidScope(s))) &&
     o.slots[AXE_SLOT]?.kind === 'axe' && o.slots.every((s, i) => i === AXE_SLOT || s?.kind !== 'axe') &&
     typeof o.ammo === 'object' &&
     o.ammo !== null &&

@@ -2,7 +2,45 @@
 
 Este documento basta para continuar el trabajo en una sesión nueva sin el historial anterior.
 Léelo junto con `CLAUDE.md` (reglas permanentes) y `PROJECT.md` (bitácora detallada por fase).
-Estado a 28 de noviembre de 2026: fase 13 PWA sobre la fase 12 publicada.
+Estado a 28 de noviembre de 2026: fase 14 preparada; fase 13 PWA continúa publicada.
+
+
+## Fase 14 — lista para despliegue coordinado (2026-11-28)
+
+Base de desarrollo sincronizada: `2882118` (PWA fase 13). Trabajo aislado de los cambios
+antiguos de `/workspace/juegos`; solo se modifica `brothers-royale/`.
+
+- Contrato **v10** en cliente y servidor: francotirador (65 cuerpo / 100 cabeza, 5 balas,
+  1,5 s/disparo, 3 s recarga, 150 m), `scope2` y campo opcional `ItemStack.scope='x2'`.
+  `gear` pasa a 11 bits; bit 10 = x2 instalada. Mensaje `scope: {equipped:boolean}` limitado
+  por el presupuesto existente, permiso de jugador vivo en tierra y posesión real del objeto.
+- Mira x2 desmontable en las cuatro armas anteriores; francotirador con x4 fija. Equipar,
+  retirar, intercambiar, soltar y recoger conservan mira/cargador. Inventario lleno al retirar:
+  la mira cae al suelo. Ópticas DOM y cámara única; modelos/siluetas/sonidos sintetizados.
+- HUD: SVG distintos, munición por casilla, minimapa arriba a la izquierda, salud/vidas debajo,
+  mapa ampliado con tormenta y hasta tres destinos personales, indicadores compactos y salida
+  confirmada desde Ajustes. Migra solo posiciones de fábrica; conserva diseños personalizados.
+- Zombis: 40 HP / 5 daño / máximo 8; aparición 50 s, ataque 1,3 s, una recompensa de munición
+  o botiquín por muerte (también por tormenta), nunca armas ni madera.
+- Tormenta morada sin cambiar sus cinco fases. Aviones 10,5 / 14 m/s (-30%); paracaídas
+  3,6 / 6,4 m/s (-20%), misma dirección y rutas adaptadas a la zona. Una cuerda central.
+- Solo el avión impide recibir daño. Descenso vulnerable pero sin atacar/construir; daño
+  durante el descenso suprime la protección de aterrizaje. El servidor conserva ese estado
+  entre mensajes/reconexiones; morir retira el estado aéreo y la siguiente vida lo reinicia.
+- Comprobación limitada solicitada: 9 casos cortos de contrato, tipos, builds cliente/servidor,
+  `/health` local v10/máximo 8, sintaxis SW y rutas/manifest/caché. No se ejecutó la suite completa,
+  partidas, benchmarks ni pruebas físicas. Se actualizaron expectativas antiguas que cambiaron
+  expresamente con esta fase; no se declara que las suites no ejecutadas estén aprobadas.
+- **Publicación pendiente**: Render tiene `autoDeploy: true` sobre desarrollo. La red del entorno
+  bloquea Render y Pages (CONNECT 403); no hay credenciales de despliegue. No hacer push a desarrollo
+  hasta coordinar una ventana sin partidas; hacerlo reiniciaría el servidor gratuito. No publicar
+  cliente v10 contra servidor v9. La versión pública PWA v9 permanece operativa e intacta.
+- Entrega segura: commits por bloques y rama remota de preparación `brothers-royale-phase-14-ready`.
+  Después: avanzar desarrollo, desplegar Render en ventana acordada, comprobar `/health.protocol=10`,
+  copiar `jugar/` a `brothers-royale/beta/` conservando `config.js` y chunks anteriores, y publicar beta.
+  El SW existente aplaza la actualización hasta salir de partida y comprueba protocolo del servidor.
+  Las ventanas antiguas v9 deberán actualizar para entrar al servidor v10; no pueden seguir jugando
+  en línea tras la migración. Ver instrucciones breves en `PHASE-14.md`.
 
 
 ## Fase 13 — PWA iPhone (2026-11-28)

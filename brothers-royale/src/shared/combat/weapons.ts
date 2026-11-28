@@ -15,7 +15,7 @@ import type { Rarity, WeaponKind } from '../items';
 
 export const HEALTH = {
   max: 100,
-  /** Ningún disparo puede quitar más que esto (ni el más afortunado): < max. */
+  /** Tope de armas normales. Excepción explícita: cabeza de francotirador = 100. */
   maxShotDamage: 65,
 } as const;
 
@@ -33,7 +33,7 @@ export const EYE_HEIGHT = 1.5;
 
 /**
  * Caja de impacto del jugador: cápsula vertical algo más generosa que la de
- * colisión. Sin multiplicador por cabeza en esta fase (nadie muere de un tiro).
+ * colisión. El francotirador añade una cabeza explícita en hitscan.ts.
  */
 export const HITBOX = { radius: 0.42, bottom: 0.42, top: 1.3 } as const;
 
@@ -75,6 +75,11 @@ export interface WeaponStats {
 }
 
 export const WEAPON_STATS: Readonly<Record<WeaponKind, WeaponStats>> = {
+  sniper: {
+    label: 'Francotirador', damage: 65, pellets: 1, fireRate: 1 / 1.5, magazine: 5, reloadSeconds: 3,
+    range: 150, falloffStart: 150, falloffEnd: 151, minFalloff: 1,
+    spreadHip: 0.09, spreadAim: 0.0012, bloomPerShot: 0.015, bloomMax: 0.02, bloomRecovery: 0.1, kick: 0.13,
+  },
   pistol: {
     label: 'Pistola', damage: 20, pellets: 1, fireRate: 3, magazine: 12, reloadSeconds: 1.3,
     range: 60, falloffStart: 18, falloffEnd: 50, minFalloff: 0.65,
@@ -123,6 +128,7 @@ export const RARITY_MODS: Readonly<Record<Rarity, { spread: number; reload: numb
 
 /** Daño por bala/perdigón según rareza (la común es el valor base de WEAPON_STATS). */
 export const RARITY_DAMAGE: Readonly<Record<WeaponKind, Record<Rarity, number>>> = {
+  sniper: { common: 65, rare: 65, epic: 65 },
   pistol: { common: 20, rare: 21, epic: 22 },
   smg: { common: 12, rare: 12.2, epic: 12.4 },
   rifle: { common: 24, rare: 24.4, epic: 24.8 },
@@ -153,7 +159,7 @@ export function maxShotDamage(kind: WeaponKind, rarity: Rarity): number {
   return Math.min(HEALTH.maxShotDamage, roundDamage(pelletDamage(kind, rarity, 0) * WEAPON_STATS[kind].pellets));
 }
 
-export const reloadSeconds = (kind: WeaponKind, rarity: Rarity): number => WEAPON_STATS[kind].reloadSeconds * RARITY_MODS[rarity].reload;
+export const reloadSeconds = (kind: WeaponKind, rarity: Rarity): number => WEAPON_STATS[kind].reloadSeconds * (kind === 'sniper' ? 1 : RARITY_MODS[rarity].reload);
 
 export function spreadOf(kind: WeaponKind, rarity: Rarity, aiming: boolean): number {
   const s = WEAPON_STATS[kind];

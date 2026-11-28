@@ -1,5 +1,5 @@
 import { isValidInventory, isValidMag, type Inventory } from '@shared/inventory';
-import { isItemKind, ITEMS, RARITIES } from '@shared/items';
+import { isItemKind, isValidScope, ITEMS, RARITIES } from '@shared/items';
 import type { MatchSnapshot, NoticeCode, Pickup } from '@shared/match/MatchState';
 import type { PublicMatchEvent } from '@shared/protocol';
 import type { ChestPlacement } from '@shared/world/layout';
@@ -37,7 +37,7 @@ export function isValidPickup(p: unknown): p is Pickup {
     Number.isInteger(o.item.qty) &&
     o.item.qty > 0 && o.item.qty <= ITEMS[o.item.kind].stack &&
     (o.item.rarity === undefined || RARITIES.includes(o.item.rarity)) &&
-    isValidMag(o.item)
+    isValidMag(o.item) && isValidScope(o.item)
   );
 }
 

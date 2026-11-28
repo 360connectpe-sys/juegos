@@ -129,6 +129,7 @@ export class BattleRound {
   after(dt: number, tick: number): void {
     for (const a of this.hooks.actors()) {
       const air = this.air.get(a.id);
+      if (this.combat.isDead(a.id)) { this.air.delete(a.id); continue; }
       if (!air) { if (a.grounded) this.combat.landed(a.id); continue; }
       if (air.mode === 1) continue;
       if (a.grounded) { this.air.delete(a.id); this.combat.landed(a.id); continue; }
@@ -210,6 +211,7 @@ export class BattleRound {
     if (!a || !route) return false;
     const pose = planeAt(route, this.elapsed, this.pose);
     const at = constrain(this.airBound(id)!, pose, PLAYER.radius + 0.5);
+    this.combat.leavePlane(id);
     a.mode = 2; a.jumpY = pose.y - 2;
     this.hooks.spawn(id, { x: at.x, y: a.jumpY, z: at.z });
     return true;
@@ -222,7 +224,7 @@ export class BattleRound {
   }
   private board(id: string, route: PlaneRoute, bound: AirState['bound']): void {
     this.air.set(id, { mode: 1, plane: route.id, bound, jumpY: route.y });
-    this.combat.beginDescent(id);
+    this.combat.beginDescent(id, true);
     const pose = planeAt(route, this.elapsed, this.pose);
     this.hooks.spawn(id, { x: pose.x, y: pose.y, z: pose.z });
   }

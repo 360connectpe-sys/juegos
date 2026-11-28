@@ -17,7 +17,7 @@ import type { ItemStack } from '@shared/items';
 import { isClearSpawn, type WorldLayout } from '@shared/world/layout';
 import type { PlacedPrefab } from '@shared/world/prefab';
 import { terrainHeight } from '@shared/world/terrain';
-import { chooseTarget, nextWaypoint, ZOMBIE, type ZombieAnim, type ZombieCandidate } from '@shared/zombies/zombieAi';
+import { zombieLoot, chooseTarget, nextWaypoint, ZOMBIE, type ZombieAnim, type ZombieCandidate } from '@shared/zombies/zombieAi';
 import { CharacterBody } from './CharacterBody';
 import type { PhysicsWorld } from './PhysicsWorld';
 
@@ -63,6 +63,7 @@ interface Zombie {
 export class ZombieDirector {
   readonly zombies = new Map<string, Zombie>();
   /** Probabilidad de botín (configurable por sala). */
+  /** Compatibilidad con fixtures anteriores; la fase 14 garantiza un único botín. */
   dropChance: number = ZOMBIE.dropChance;
   /** Se puede desactivar (p. ej. pruebas de otros sistemas). */
   enabled = true;
@@ -256,12 +257,10 @@ export class ZombieDirector {
     const z = this.zombies.get(e.victim);
     if (!z || z.deadT >= 0) return;
     z.deadT = ZOMBIE.corpseSeconds; z.anim = 5; z.target = null;
-    // Botín ocasional para quien lo eliminó (no para la tormenta).
-    if (this.host.combat.has(e.killer) && !this.host.combat.isNpc(e.killer) && this.rng() < this.dropChance) {
-      const at = z.body.state.position;
-      if (this.rng() < 0.5) this.host.giveWood(e.killer, 15);
-      else this.host.drop({ kind: this.rng() < 0.5 ? 'ammo_light' : 'ammo_medium', qty: 15 + Math.floor(this.rng() * 16) }, { x: at.x, y: at.y, z: at.z });
-    }
+    // Una sola tirada autoritativa por muerte, también si mata la tormenta.
+    const at = z.body.state.position;
+    const item = zombieLoot(this.rng);
+    this.host.drop(item, {x:at.x,y:at.y,z:at.z});
   }
 
   /** Avisa al retirar un zombi (p. ej. para olvidar su historial de poses). */

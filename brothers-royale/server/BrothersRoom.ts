@@ -129,6 +129,12 @@ export class BrothersRoom extends Room {
       const p = this.world.players.get(client.sessionId);
       if (p) this.world.building.state.place(p.id, message, p.body.state.position);
     });
+    this.onMessage('scope', (client, message: unknown) => {
+      if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready || !this.world.canBuild(client.sessionId)) return;
+      if (!message || typeof message !== 'object' || Object.keys(message).length !== 1 || !('equipped' in message) || typeof message.equipped !== 'boolean') return;
+      const p = this.world.players.get(client.sessionId);
+      if (p && this.world.match.equipScope(p.id, message.equipped, p.body.state.position)) this.world.combat.equipmentChanged(p.id);
+    });
     this.onMessage('select', (client, message: { slot?: unknown }) => {
       if (!this.countMessage(client) || !this.meta.get(client.sessionId)?.ready) return;
       this.world.selectSlot(client.sessionId, message?.slot);
